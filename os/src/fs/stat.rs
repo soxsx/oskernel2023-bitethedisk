@@ -1,25 +1,15 @@
-#![allow(unused)]
-pub const S_IFDIR: u32 = 0o0040000;
-pub const S_IFCHR: u32 = 0o0020000;
-pub const S_IFBLK: u32 = 0o0060000;
-pub const S_IFREG: u32 = 0o0100000;
-pub const S_IFIFO: u32 = 0o0010000;
-pub const S_IFLNK: u32 = 0o0120000;
-pub const S_IFSOCK: u32 = 0o0140000;
-
-#[derive(Debug)]
 #[repr(C)]
 pub struct Kstat {
-    st_dev: u64,   // 包含文件的设备 ID
+    st_dev: u32,   // 包含文件的设备 ID
     st_ino: u64,   // 索引节点号
     st_mode: u32,  // 文件类型和模式
     st_nlink: u32, // 硬链接数
     st_uid: u32,   // 所有者的用户 ID
     st_gid: u32,   // 所有者的组 ID
-    st_rdev: u64,  // 设备 ID（如果是特殊文件）
+    st_rdev: u32,  // 设备 ID（如果是特殊文件）
     __pad: u64,
     st_size: i64,    // 总大小，以字节为单位
-    st_blksize: i32, // 文件系统 I/O 的块大小
+    st_blksize: i64, // 文件系统 I/O 的块大小
     __pad2: i32,
     st_blocks: u64,     // 分配的 512B 块数
     st_atime_sec: i64,  // 上次访问时间
@@ -56,54 +46,13 @@ impl Kstat {
         }
     }
 
-    pub fn init(&mut self, st_size: i64, st_blksize: i32, st_blocks: u64, st_mode: u32, time: u64) {
+    pub fn init(&mut self,st_size:i64,st_blksize:i64,st_blocks:u64) {
         self.st_nlink = 1;
         self.st_size = st_size;
         self.st_blksize = st_blksize;
         self.st_blocks = st_blocks;
-        self.st_mode = st_mode;
-        _ = time;
     }
 
-    pub fn as_bytes(&self) -> &[u8] {
-        let size = core::mem::size_of::<Self>();
-        unsafe { core::slice::from_raw_parts(self as *const _ as usize as *const u8, size) }
-    }
-}
-
-#[repr(C)]
-pub struct Statfs {
-    f_type: u64,
-    f_bsize: u64,
-    f_blocks: u64,
-    f_bfree: u64,
-    f_bavail: u64,
-    f_files: u64,
-    f_ffree: u64,
-    f_fsid: u64,
-    f_namelen: u64,
-    f_frsize: u64,
-    f_flag: u64,
-    f_spare: [u64; 4],
-}
-
-impl Statfs {
-    pub fn new() -> Self {
-        Self {
-            f_type:1,
-            f_bsize: 512,
-            f_blocks: 12345,
-            f_bfree: 1234,
-            f_bavail: 123,
-            f_files: 1000,
-            f_ffree: 100,
-            f_fsid: 1,
-            f_namelen: 123,
-            f_frsize: 4096,
-            f_flag: 123,
-            f_spare: [0; 4],
-        }
-    }
     pub fn as_bytes(&self) -> &[u8] {
         let size = core::mem::size_of::<Self>();
         unsafe { core::slice::from_raw_parts(self as *const _ as usize as *const u8, size) }

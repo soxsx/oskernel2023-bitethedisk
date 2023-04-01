@@ -1,5 +1,32 @@
+/// # `Trap` 上下文模块
+/// `os/src/trap/context.rs`
+/// 
+/// 提供 `Trap`上下文结构体
+/// ```
+/// pub struct TrapContext
+/// TrapContext::set_sp()
+/// TrapContext::app_init_context(entry: usize, sp: usize) -> Self()
+/// ```
+//
+
 use riscv::register::sstatus::{self, Sstatus, SPP};
 
+/// ### `Trap` 上下文的拷贝
+/// |数据|描述|
+/// |--|--|
+/// |`x[0]~x[31]`|通用寄存器|
+/// |`sstatus`|提供状态信息
+/// |`sepc`|程序跳转地址|
+/// |`kernel_satp`|内核地址空间的 token ，即内核页表的起始物理地址
+/// |`kernel_sp`|当前应用在内核地址空间中的内核栈栈顶的虚拟地址
+/// |`trap_handler`|内核中 trap handler 入口点的虚拟地址
+/// 
+/// 提供以下函数
+/// ```
+/// pub fn set_sp(&mut self, sp: usize)
+/// pub fn app_init_context(entry: usize, sp: usize) -> Self
+/// ```
+//
 #[repr(C)]
 pub struct TrapContext {
     /// 通用寄存器`x[0]~x[31]`
@@ -41,50 +68,4 @@ impl TrapContext {
         cx.set_sp(sp);
         cx
     }
-
-}
-
-impl TrapContext {
-    #[allow(unused)]
-    pub fn debug_show(&self){
-        println!("------------------TrapContext info------------------");
-        println!("sepc:         0x{:x}",self.sepc);
-        println!("kernel_satp:  0x{:x}",self.kernel_satp);
-        println!("kernel_sp:    0x{:x}",self.kernel_sp);
-        println!("trap_handler: 0x{:x}",self.trap_handler);
-        println!("zero: 0x{:x}", self.x[0]);
-        println!("ra: 0x{:x}", self.x[1]);
-        println!("sp: 0x{:x}", self.x[2]);
-        println!("gp: 0x{:x}", self.x[3]);
-        println!("tp: 0x{:x}", self.x[4]);
-        println!("t0: 0x{:x}", self.x[5]);
-        println!("t1: 0x{:x}", self.x[6]);
-        println!("t2: 0x{:x}", self.x[7]);
-        println!("s0/fp: 0x{:x}", self.x[8]);
-        println!("s1: 0x{:x}", self.x[9]);
-        println!("a0: 0x{:x}", self.x[10]);
-        println!("a1: 0x{:x}", self.x[11]);
-        println!("a2: 0x{:x}", self.x[12]);
-        println!("a3: 0x{:x}", self.x[13]);
-        println!("a4: 0x{:x}", self.x[14]);
-        println!("a5: 0x{:x}", self.x[15]);
-        println!("a6: 0x{:x}", self.x[16]);
-        println!("a7: 0x{:x}", self.x[17]);
-        println!("s2: 0x{:x}", self.x[18]);
-        println!("s3: 0x{:x}", self.x[19]);
-        println!("s4: 0x{:x}", self.x[20]);
-        println!("s5: 0x{:x}", self.x[21]);
-        println!("s6: 0x{:x}", self.x[22]);
-        println!("s7: 0x{:x}", self.x[23]);
-        println!("s8: 0x{:x}", self.x[24]);
-        println!("s9: 0x{:x}", self.x[25]);
-        println!("s10: 0x{:x}", self.x[26]);
-        println!("s11: 0x{:x}", self.x[27]);
-        println!("t3: 0x{:x}", self.x[28]);
-        println!("t4: 0x{:x}", self.x[29]);
-        println!("t5: 0x{:x}", self.x[30]);
-        println!("t6: 0x{:x}", self.x[31]);
-        println!("----------------------------------------------------");
-    }
-    
 }

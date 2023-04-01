@@ -1,8 +1,18 @@
-use super::File;
+/// # 标准输入输出接口
+/// `os/src/fs/stdio.rs`
+/// ```
+/// pub struct Stdin
+/// pub struct Stdout
+/// ```
+//
+
+use super::{File, Kstat, Dirent};
 use crate::mm::UserBuffer;
 use crate::sbi::console_getchar;
 use crate::task::suspend_current_and_run_next;
-use alloc::vec::Vec;
+use alloc::string::String;
+
+pub use super::{list_apps, open, OSInode, OpenFlags};
 
 pub struct Stdin;
 
@@ -14,9 +24,6 @@ impl File for Stdin {
     }
     fn writable(&self) -> bool {
         false
-    }
-    fn available(&self) -> bool {
-        true
     }
     fn read(&self, mut user_buf: UserBuffer) -> usize {
         assert_eq!(user_buf.len(), 1);
@@ -37,25 +44,26 @@ impl File for Stdin {
         }
         1
     }
-
     fn write(&self, _user_buf: UserBuffer) -> usize {
         panic!("Cannot write to stdin!");
     }
 
-    fn get_name(&self) -> &str {
-        "Stdin"
+    #[allow(unused_variables)]
+    fn get_fstat(&self, kstat:&mut Kstat){
+        panic!("Stdin not implement get_fstat");
     }
 
-    fn get_offset(&self) -> usize {
-        return 0;
+    #[allow(unused_variables)]
+    fn get_dirent(&self, dirent: &mut Dirent) -> isize{
+        panic!("Stdin not implement get_dirent");
     }
 
-    fn set_offset(&self, _offset: usize) {
-        return;
+    fn get_name(&self) -> String{
+        panic!("Stdin not implement get_name");
     }
 
-    fn file_size(&self) -> usize {
-        core::usize::MAX
+    fn set_offset(&self, offset: usize) {
+        panic!("Stdin not implement set_offset");
     }
 }
 
@@ -66,35 +74,31 @@ impl File for Stdout {
     fn writable(&self) -> bool {
         true
     }
-    fn available(&self) -> bool {
-        true
-    }
     fn read(&self, _user_buf: UserBuffer) -> usize {
         panic!("Cannot read from stdout!");
     }
     fn write(&self, user_buf: UserBuffer) -> usize {
-        // println!("buffer:{:?}",user_buf);
         for buffer in user_buf.buffers.iter() {
             print!("{}", core::str::from_utf8(*buffer).unwrap());
         }
         user_buf.len()
     }
 
-    fn get_name(&self) -> &str {
-        "Stdout"
+    #[allow(unused_variables)]
+    fn get_fstat(&self, kstat:&mut Kstat){
+        panic!("Stdout not implement get_fstat");
+    }
+    
+    #[allow(unused_variables)]
+    fn get_dirent(&self, dirent: &mut Dirent) -> isize{
+        panic!("Stdout not implement get_dirent");
     }
 
-    fn set_cloexec(&self) {
-        // 涉及刚开始的 open /dev/tty，然后 sys_fcntl:fd:2,cmd:1030,arg:Some(10)
-        // 可能是 sh: ls: unknown operan 等问题的原因
-        // panic!("Stdput not implement set_cloexec");
+    fn get_name(&self) -> String{
+        panic!("Stdout not implement get_name");
     }
 
-    fn write_kernel_space(&self, data: Vec<u8>) -> usize {
-        // println!("data:{:?}",data);
-        let buffer = data.as_slice();
-        // println!("str:{:?}",core::str::from_utf8(buffer).unwrap());
-        print!("{}", core::str::from_utf8(buffer).unwrap());
-        data.len()
+    fn set_offset(&self, offset: usize) {
+        panic!("Stdput not implement set_offset");
     }
 }

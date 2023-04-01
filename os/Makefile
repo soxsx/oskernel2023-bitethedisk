@@ -4,15 +4,25 @@ MODE := release
 KERNEL_ELF := target/$(TARGET)/$(MODE)/os
 KERNEL_BIN := $(KERNEL_ELF).bin
 
-BOARD ?= qemu
-debug ?= 0
+# BOARD
+BOOTLOADER := ../bootloader/rustsbi-k210.bin
+K210_BOOTLOADER_SIZE := 131072
 
-file ?= final/stage2
+BOARD ?= qemu
+
+# Run K210
+#K210-SERIALPORT	= /dev/ttyUSB0
+#K210-BURNER	= ../tools/kflash.py
 
 # Binutils
 OBJCOPY := rust-objcopy --binary-architecture=riscv64
 
-build: env initproc_submit $(KERNEL_BIN) 
+build: env initproc $(KERNEL_BIN) 
+
+build_submit: env initproc_submit $(KERNEL_BIN) 
+
+initproc:
+	@cd ../user_c && make build
 
 initproc_submit:
 	@cd ../user_c && make build_initproc_submit
@@ -26,115 +36,34 @@ env:
 $(KERNEL_BIN): kernel
 	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
 
+
 kernel:
-    # @cargo clean
+	@cargo clean
 	@echo Platform: $(BOARD)
 	@cp src/linker-$(BOARD).ld src/linker.ld
-	@cargo build --release --offline --features "board_$(BOARD)" --features "debug_$(debug)"
+	@cargo build --release --features "board_$(BOARD)"
 	@rm src/linker.ld
 
-run: build
+submit: build_submit
+	@cp $(BOOTLOADER) $(BOOTLOADER).copy
+	@dd if=$(KERNEL_BIN) of=$(BOOTLOADER).copy bs=$(K210_BOOTLOADER_SIZE) seek=1
+	@mv $(BOOTLOADER).copy ../os.bin
+
+run: run-inner
+
+copy_to_fs: 
+	cd ../fat32-fuse && sudo mount fat32.img fs && sudo cp -r ../user_c/bin/* fs/ && sudo umount fs
+
+new_fat32_img:
+	cd ../fat32-fuse && rm fat32.img && cp ~/fat32.img .
+
+run-inner: build copy_to_fs
 	@qemu-system-riscv64 \
 		-machine virt \
 		-nographic \
 		-bios ../bootloader/rustsbi-qemu.bin \
 		-device loader,file=$(KERNEL_BIN),addr=0x80200000 \
-		-drive file=../simple-fat32/fat32.img,if=none,format=raw,id=x0 \
+		-drive file=../fat32-fuse/fat32.img,if=none,format=raw,id=x0 \
         -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 
-copy-to-fs: 
-	@cd ../simple-fat32 \
-	&& rm -f ./fat32.img \
-	&& sh ./create_img.sh \
-	&& sudo rm -rf fs \
-	&& sudo mkdir fs \
-	&& sudo mount fat32.img fs \
-	&& sudo cp -r ../test_program/$(file)/sdcard_content/* fs/ \
-	&& sleep 1 \
-	&& sudo umount fs \
-	&& sudo rmdir fs
-	
-dump:
-	@riscv64-unknown-elf-objdump -S $(KERNEL_ELF) > os_dump
-
-.PHONY: test
-test: copy-to-fs 
-	@rm -f output
-	@make build > output
-	@echo "\nTest start! Please wait a minute..."
-	@qemu-system-riscv64 \
-		-machine virt \
-		-nographic \
-		-bios ../bootloader/rustsbi-qemu.bin \
-		-device loader,file=$(KERNEL_BIN),addr=0x80200000 \
-		-drive file=../simple-fat32/fat32.img,if=none,format=raw,id=x0 \
-        -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
-		> output
-	@sh auto_test.sh
-
-
-.PHONY: dump run submit build-custom-test
-
-.DEFAULT_GOAL = $(KERNEL)
-
-KERNEL = bite_the_disk
-
-NHART = 1 # hart 数
-MACHINE = virt # sifive_u 或者 virt
-CPU = rv64
-MEM = 128M
-
-KERNEL_ELF = target/riscv64gc-unknown-none-elf/release/$(KERNEL)
-KERNEL_BIN = target/riscv64gc-unknown-none-elf/release/$(KERNEL).bin
-
-BOOTLOADER = bootloader/rustsbi-qemu.bin
-
-QEMU = qemu-system-riscv64
-
-TOOLPREFIX = riscv64-unknown-elf-
-
-GDB = $(TOOLPREFIX)gdb
-
-
-LOG_LV = DEBUG
-
-$(KERNEL):
-	@LOG_LV=$(LOG_LV) cargo build --release
-	@rust-objcopy --strip-all $(KERNEL_ELF) -O binary $(KERNEL_BIN)
-
-.PHONY: run
-run: $(KERNEL)
-	@$(QEMU) \
-		-M $(MACHINE) \
-		-serial mon:stdio \
-		-nographic \
-		-cpu $(CPU) \
-		-bios $(BOOTLOADER) \
-		-m $(MEM) \
-		-kernel $(KERNEL_BIN) \
-		-smp $(NHART)
-
-.PHONY: debug-server
-debug-server: $(KERNEL)
-	@$(QEMU) \
-		-M $(MACHINE) \
-		-serial mon:stdio \
-		-nographic \
-		-cpu $(CPU) \
-		-bios $(BOOTLOADER) \
-		-m $(MEM) \
-		-kernel $(KERNEL_BIN) \
-		-smp $(NHART) \
-		-s -S
-
-.PHONY: debug
-debug:
-	@$(GDB) \
-		-ex 'file $(KERNEL_ELF)' \
-		-ex 'set arch riscv:rv64' \
-		-ex 'target remote localhost:1234'
-
-.PHONY: clean
-clean:
-	@cargo clean
-	@echo [make] all previous build has been cleaned up.
+.PHONY: build env kernel

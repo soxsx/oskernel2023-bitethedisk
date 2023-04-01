@@ -1,6 +1,15 @@
-use super::TaskContext;
+/// # 任务上下文切换模块
+/// `os/src/task/switch.rs`
+/// ## 实现功能
+/// ```
+/// pub fn __switch(current_task_cx_ptr: *mut TaskContext, next_task_cx_ptr: *const TaskContext);
+/// ```
+//
 
-core::arch::global_asm!(include_str!("switch.S"));
+use super::TaskContext;
+use core::arch::global_asm;
+
+global_asm!(include_str!("switch.S"));
 
 extern "C" {
     // 将汇编代码中的全局符号 __switch 解释为一个 Rust 函数

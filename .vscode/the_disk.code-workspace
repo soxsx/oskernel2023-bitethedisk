@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"path": "../os"
+		},
+		{
+			"path": "../simple-fat32"
+		}
+	],
+	"settings": {
+		"rust-analyzer.check.allTargets": false
+	}
+}
