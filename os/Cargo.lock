@@ -57,6 +57,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fat32"
+version = "0.0.1"
+dependencies = [
+ "lazy_static",
+ "riscv 0.6.0 (git+https://github.com/rcore-os/riscv)",
+ "spin 0.7.1",
+]
+
+[[package]]
 name = "k210-hal"
 version = "0.2.0"
 source = "git+https://github.com/wyfcyx/k210-hal#795ac3f845fb9e16c6edc03a2f0b9287a622a18d"
@@ -155,12 +164,12 @@ version = "0.1.0"
 dependencies = [
  "bitflags",
  "buddy_system_allocator",
+ "fat32",
  "k210-hal",
  "k210-pac",
  "k210-soc",
  "lazy_static",
  "riscv 0.6.0 (git+https://github.com/rcore-os/riscv)",
- "simple-fat32",
  "spin 0.7.1",
  "virtio-drivers",
  "xmas-elf",
@@ -257,15 +266,6 @@ name = "semver-parser"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
-
-[[package]]
-name = "simple-fat32"
-version = "0.0.1"
-dependencies = [
- "lazy_static",
- "riscv 0.6.0 (git+https://github.com/rcore-os/riscv)",
- "spin 0.7.1",
-]
 
 [[package]]
 name = "spin"

@@ -6,7 +6,7 @@
 /// pub fn console_getchar() -> usize
 /// pub fn shutdown()
 /// ```
-//
+///
 
 use core::arch::asm;
 
@@ -14,15 +14,10 @@ use core::arch::asm;
 const SBI_SET_TIMER:                usize = 0;
 const SBI_CONSOLE_PUTCHAR:          usize = 1;
 const SBI_CONSOLE_GETCHAR:          usize = 2;
-#[allow(unused)]
 const SBI_CLEAR_IPI:                usize = 3;
-#[allow(unused)]
 const SBI_SEND_IPI:                 usize = 4;
-#[allow(unused)]
 const SBI_REMOTE_FENCE_I:           usize = 5;
-#[allow(unused)]
 const SBI_REMOTE_SFENCE_VMA:        usize = 6;
-#[allow(unused)]
 const SBI_REMOTE_SFENCE_VMA_ASID:   usize = 7;
 const SBI_SHUTDOWN:                 usize = 8;
 

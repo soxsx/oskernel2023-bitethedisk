@@ -9,7 +9,6 @@
 /// pub fn set_next_trigger()
 /// ```
 //
-
 use crate::config::CLOCK_FREQ;
 use crate::sbi::set_timer;
 use riscv::register::time;
@@ -21,10 +20,11 @@ const MSEC_PER_SEC: usize = 1000;
 /// - `sec`：秒
 /// - `usec`：微秒
 /// - 两个值相加的结果是结构体表示的时间
-pub struct  TimeVal {
+pub struct TimeVal {
     /// 单位：秒
-    pub sec:usize,  /// 单位：微秒
-    pub usec:usize,
+    pub sec: usize,
+    /// 单位：微秒
+    pub usec: usize,
 }
 
 #[allow(non_camel_case_types)]
@@ -33,11 +33,15 @@ pub struct  TimeVal {
 /// - `tms_stime`：内核态时间
 /// - `tms_cutime`：已回收子进程的用户态时间
 /// - `tms_cstime`：已回收子进程的内核态时间
-pub struct tms {    /// 用户态时间
-    pub tms_utime:isize,    /// 内核态时间
-    pub tms_stime:isize,    /// 已回收子进程的用户态时间
-    pub tms_cutime:isize,   /// 已回收子进程的内核态时间
-    pub tms_cstime:isize,
+pub struct tms {
+    /// 用户态时间
+    pub tms_utime: isize,
+    /// 内核态时间
+    pub tms_stime: isize,
+    /// 已回收子进程的用户态时间
+    pub tms_cutime: isize,
+    /// 已回收子进程的内核态时间
+    pub tms_cstime: isize,
 }
 
 /// ### 取得当前 `mtime` 计数器的值
@@ -53,7 +57,7 @@ pub fn get_time_ms() -> usize {
 
 /// 获取 `TimeVal` 格式的时间信息
 #[allow(non_snake_case)]
-pub fn get_TimeVal() -> TimeVal{
+pub fn get_TimeVal() -> TimeVal {
     let time_ms = get_time_ms();
     TimeVal {
         sec: time_ms / 1000,

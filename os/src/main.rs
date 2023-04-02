@@ -5,6 +5,10 @@
 #![feature(panic_info_message)] // 让panic函数能通过 PanicInfo::message 获取报错信息
 #![feature(alloc_error_handler)]// 用于处理动态内存分配失败的情形
 
+// Suppress warning.
+#![allow(unused)]
+#![allow(dead_code)]
+
 extern crate alloc;
 
 #[macro_use]

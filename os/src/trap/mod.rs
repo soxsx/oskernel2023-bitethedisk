@@ -4,22 +4,21 @@
 /// ```
 /// pub fn init()
 /// pub fn enable_timer_interrupt()
-/// pub fn trap_handler() -> ! 
+/// pub fn trap_handler() -> !
 /// pub fn trap_return() -> !
 /// pub fn trap_from_kernel() -> !
 /// ```
 //
-
 mod context;
 
 use crate::config::{TRAMPOLINE, TRAP_CONTEXT};
+use crate::mm::{VirtAddr, VirtPageNum};
 use crate::syscall::syscall;
 use crate::task::{
-    check_signals_of_current, current_add_signal, current_trap_cx, current_user_token,
-    exit_current_and_run_next, suspend_current_and_run_next, SignalFlags,current_task
+    check_signals_of_current, current_add_signal, current_task, current_trap_cx,
+    current_user_token, exit_current_and_run_next, suspend_current_and_run_next, SignalFlags,
 };
 use crate::timer::set_next_trigger;
-use crate::mm::{ VirtAddr, VirtPageNum , translated_byte_buffer};
 use core::arch::{asm, global_asm};
 use riscv::register::{
     mtvec::TrapMode,
@@ -50,7 +49,7 @@ fn set_kernel_trap_entry() {
 }
 
 /// ### 设置用户态下的 Trap 入口
-/// 我们把 stvec 设置为内核和应用地址空间共享的跳板页面的起始地址 TRAMPOLINE 
+/// 我们把 stvec 设置为内核和应用地址空间共享的跳板页面的起始地址 TRAMPOLINE
 /// 而不是编译器在链接时看到的 __alltraps 的地址。这是因为启用分页模式之后，
 /// 内核只能通过跳板页面上的虚拟地址来实际取得 __alltraps 和 __restore 的汇编代码
 fn set_user_trap_entry() {
@@ -71,16 +70,19 @@ pub fn enable_timer_interrupt() {
 #[no_mangle]
 pub fn trap_handler() -> ! {
     set_kernel_trap_entry();
-    let scause = scause::read();    // 用于描述 Trap 的原因
-    let stval = stval::read();       // 给出 Trap 附加信息
+    let scause = scause::read(); // 用于描述 Trap 的原因
+    let stval = stval::read(); // 给出 Trap 附加信息
     match scause.cause() {
         // 触发 Trap 的原因是来自 U 特权级的 Environment Call，也就是系统调用
         Trap::Exception(Exception::UserEnvCall) => {
             // 由于应用的 Trap 上下文不在内核地址空间，因此我们调用 current_trap_cx 来获取当前应用的 Trap 上下文的可变引用
             let mut cx = current_trap_cx();
-            cx.sepc += 4;   // 我们希望trap返回后应用程序从下一条指令开始执行
-            // 从 Trap 上下文取出作为 syscall ID 的 a7 和系统调用的三个参数 a0~a2 传给 syscall 函数并获取返回值 放到 a0
-            let result = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]]);
+            cx.sepc += 4; // 我们希望trap返回后应用程序从下一条指令开始执行
+                          // 从 Trap 上下文取出作为 syscall ID 的 a7 和系统调用的三个参数 a0~a2 传给 syscall 函数并获取返回值 放到 a0
+            let result = syscall(
+                cx.x[17],
+                [cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]],
+            );
             // cx is changed during sys_exec, so we have to call it again
             cx = current_trap_cx();
             cx.x[10] = result as usize;
@@ -98,7 +100,9 @@ pub fn trap_handler() -> ! {
             // );
 
             let is_load: bool;
-            if scause.cause() == Trap::Exception(Exception::LoadFault) || scause.cause() == Trap::Exception(Exception::LoadPageFault) {
+            if scause.cause() == Trap::Exception(Exception::LoadFault)
+                || scause.cause() == Trap::Exception(Exception::LoadPageFault)
+            {
                 is_load = true;
             } else {
                 is_load = false;
@@ -110,8 +114,8 @@ pub fn trap_handler() -> ! {
                 current_add_signal(SignalFlags::SIGSEGV);
             }
             let lazy = current_task().unwrap().check_lazy(va, is_load);
-            if lazy != 0 { 
-                current_add_signal(SignalFlags::SIGSEGV); 
+            if lazy != 0 {
+                current_add_signal(SignalFlags::SIGSEGV);
             }
             // let token = current_user_token();
             // let buf = translated_byte_buffer(token, 0x60000000 as *const u8, 5);
@@ -122,8 +126,10 @@ pub fn trap_handler() -> ! {
             let pte = inner.memory_set.translate(vpn);
             let valid = pte.unwrap().is_valid();
             drop(inner);
-            println!("[kernel] lazy mmap finished {:?}->{:?} is valid {}",va, vpn, valid);
-            
+            println!(
+                "[kernel] lazy mmap finished {:?}->{:?} is valid {}",
+                va, vpn, valid
+            );
         }
 
         Trap::Exception(Exception::InstructionFault)

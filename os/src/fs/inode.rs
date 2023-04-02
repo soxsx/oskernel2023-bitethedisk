@@ -1,12 +1,12 @@
 use super::{Dirent, File, Kstat};
 use crate::drivers::BLOCK_DEVICE;
 use crate::mm::UserBuffer;
-use _core::str::FromStr;
+use core::str::FromStr;
 use alloc::vec::Vec;
 use alloc::{string::String, sync::Arc};
 use bitflags::*;
 use lazy_static::*;
-use simple_fat32::{FAT32Manager, VFile, ATTR_ARCHIVE, ATTR_DIRECTORY};
+use fat32::{FAT32Manager, VFile, ATTR_ARCHIVE, ATTR_DIRECTORY};
 use spin::Mutex;
 
 /// 表示进程中一个被打开的常规文件或目录

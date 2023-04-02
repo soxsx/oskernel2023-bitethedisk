@@ -16,5 +16,5 @@ _app_names:
     .global app_0_end
     .align 3
 app_0_start:
-    .incbin "../user_c/bin/usertests"
+    .incbin "../misc/user_c/bin/usertests"
 app_0_end:

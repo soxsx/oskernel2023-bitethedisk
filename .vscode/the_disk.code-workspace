@@ -7,7 +7,7 @@
 			"path": "../os"
 		},
 		{
-			"path": "../simple-fat32"
+			"path": "../fat32"
 		}
 	],
 	"settings": {
