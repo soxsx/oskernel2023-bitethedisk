@@ -12,15 +12,10 @@ env:
 initproc:
 	@cd ../misc/user_c && make build
 
-build: env initproc
-	@cargo clean
+build: env
 	@cp src/linker-$(BOARD).ld src/linker.ld
 	@cargo build --release --features "board_$(BOARD)"
 	@rm src/linker.ld
-
-initproc_submit:
-	@cd ../misc/user_c && make build_initproc_submit
-
 
 run: build copy_to_fs
 	@qemu-system-riscv64 \

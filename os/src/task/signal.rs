@@ -5,8 +5,6 @@
 /// ```
 //
 
-use bitflags::*;
-
 bitflags! {
     /// 进程状态标志
     pub struct SignalFlags: u32 {   /// - Killed

@@ -3,20 +3,19 @@
 /// ## 实现功能
 /// ```
 /// struct PidAllocator
-/// static ref PID_ALLOCATOR: UPSafeCell<PidAllocator>
+/// static ref PID_ALLOCATOR: Mutex<PidAllocator>
 /// pub struct PidHandle(pub usize)
 /// pub struct KernelStack
-/// 
+///
 /// pub fn pid_alloc() -> PidHandle
 /// pub fn kernel_stack_position(app_id: usize) -> (usize, usize)
 /// ```
 //
-
 use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE};
 use crate::mm::{MapPermission, VirtAddr, KERNEL_SPACE};
-use crate::sync::UPSafeCell;
 use alloc::vec::Vec;
 use lazy_static::*;
+use spin::Mutex;
 
 /// ### 栈式进程标识符分配器
 /// |成员变量|描述|
@@ -63,8 +62,7 @@ impl PidAllocator {
 }
 
 lazy_static! {
-    static ref PID_ALLOCATOR: UPSafeCell<PidAllocator> =
-        unsafe { UPSafeCell::new(PidAllocator::new()) };
+    static ref PID_ALLOCATOR: Mutex<PidAllocator> = unsafe { Mutex::new(PidAllocator::new()) };
 }
 
 /// 进程标识符
@@ -74,13 +72,13 @@ pub struct PidHandle(pub usize);
 impl Drop for PidHandle {
     fn drop(&mut self) {
         //println!("drop pid {}", self.0);
-        PID_ALLOCATOR.exclusive_access().dealloc(self.0);
+        PID_ALLOCATOR.lock().dealloc(self.0);
     }
 }
 
 /// 从全局栈式进程标识符分配器 `PID_ALLOCATOR` 分配一个进程标识符
 pub fn pid_alloc() -> PidHandle {
-    PID_ALLOCATOR.exclusive_access().alloc()
+    PID_ALLOCATOR.lock().alloc()
 }
 
 /// Return (bottom, top) of a kernel stack in kernel space.

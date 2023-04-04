@@ -3,7 +3,7 @@
 /// ```
 /// pub struct Processor
 /// pub static ref PROCESSOR: UPSafeCell<Processor>
-/// 
+///
 /// pub fn run_tasks()
 /// pub fn take_current_task() -> Option<Arc<TaskControlBlock>>
 /// pub fn current_task() -> Option<Arc<TaskControlBlock>>

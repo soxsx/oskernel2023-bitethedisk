@@ -1,3 +1,16 @@
 {
-    "rust-analyzer.check.allTargets": false
+    "rust-analyzer.check.allTargets": false,
+    "files.associations": {
+        "*.md": "markdown",
+        "LICENSE": "plaintext",
+        "*.S": "riscv",
+        "*.asm": "8051",
+        "ulib.h": "c",
+        "stddef.h": "c",
+        "syscall.h": "c",
+        "syscall_ids.h": "c",
+        "unistd.h": "c",
+        "stdio.h": "c"
+    },
+    "rust-analyzer.showUnlinkedFileNotification": false
 }

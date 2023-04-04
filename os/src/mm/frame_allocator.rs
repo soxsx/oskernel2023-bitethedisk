@@ -4,25 +4,24 @@
 /// ```
 /// pub struct FrameTracker
 /// FrameTracker::new(ppn: PhysPageNum) -> Self
-/// 
+///
 /// pub struct StackFrameAllocator
 /// type FrameAllocatorImpl = StackFrameAllocator
 /// // 全局物理页帧管理器
-/// pub static ref FRAME_ALLOCATOR: UPSafeCell<FrameAllocatorImpl>
-/// 
+/// pub static ref FRAME_ALLOCATOR: Mutex<FrameAllocatorImpl>
+///
 /// pub fn init_frame_allocator()
 /// pub fn frame_alloc() -> Option<FrameTracker>
 /// // 回收工作在FrameTracker生命周期结束时由编译器发起，故为私有
 /// fn frame_dealloc(ppn: PhysPageNum)
 /// ```
 //
-
 use super::{PhysAddr, PhysPageNum};
 use crate::config::MEMORY_END;
-use crate::sync::UPSafeCell;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug, Formatter};
 use lazy_static::*;
+use spin::Mutex;
 
 /// ### 物理页帧
 /// 借用RAII思想，在通过物理页号创建的时候初始化物理页帧
@@ -58,7 +57,7 @@ impl Drop for FrameTracker {
 
 /// 物理页帧管理器
 trait FrameAllocator {
-    /// 新建一个实例，在使用前需要初始化 
+    /// 新建一个实例，在使用前需要初始化
     fn new() -> Self;
     /// 从空闲物理页中分配一个物理页
     fn alloc(&mut self) -> Option<PhysPageNum>;
@@ -66,12 +65,11 @@ trait FrameAllocator {
     fn dealloc(&mut self, ppn: PhysPageNum);
 }
 
-
 /// ### 栈式物理页帧管理器
 /// - `current`:空闲内存的起始物理页号
 /// - `end`:空闲内存的结束物理页号
 /// - `recycled`:以后入先出的方式保存被回收的物理页号
-/// 
+///
 /// ```
 /// StackFrameAllocator::init(&mut self, l: PhysPageNum, r: PhysPageNum)
 /// ```
@@ -105,10 +103,12 @@ impl FrameAllocator for StackFrameAllocator {
         // 首先检查栈 recycled 内有没有之前回收的物理页号，如果有的话直接弹出栈顶并返回
         if let Some(ppn) = self.recycled.pop() {
             Some(ppn.into())
-        }   // 空间满返回 None
+        }
+        // 空间满返回 None
         else if self.current == self.end {
             None
-        }   // 否则就返回最低的物理页号
+        }
+        // 否则就返回最低的物理页号
         else {
             self.current += 1;
             Some((self.current - 1).into())
@@ -131,8 +131,8 @@ type FrameAllocatorImpl = StackFrameAllocator;
 lazy_static! {
     /// ### 物理页帧管理器实例
     /// - 全局变量，管理除内核空间外的内存空间
-    pub static ref FRAME_ALLOCATOR: UPSafeCell<FrameAllocatorImpl> =
-        unsafe { UPSafeCell::new(FrameAllocatorImpl::new()) };
+    pub static ref FRAME_ALLOCATOR: Mutex<FrameAllocatorImpl> =
+         Mutex::new(FrameAllocatorImpl::new());
 }
 
 /// ### 初始化物理页帧管理器
@@ -143,7 +143,7 @@ pub fn init_frame_allocator() {
     extern "C" {
         fn ekernel();
     }
-    FRAME_ALLOCATOR.exclusive_access().init(
+    FRAME_ALLOCATOR.lock().init(
         PhysAddr::from(ekernel as usize).ceil(),
         PhysAddr::from(MEMORY_END).floor(),
     );
@@ -151,15 +151,12 @@ pub fn init_frame_allocator() {
 
 /// 分配物理页帧
 pub fn frame_alloc() -> Option<FrameTracker> {
-    FRAME_ALLOCATOR
-        .exclusive_access()
-        .alloc()
-        .map(FrameTracker::new)
+    FRAME_ALLOCATOR.lock().alloc().map(FrameTracker::new)
 }
 
 /// 回收物理页帧
 pub fn frame_dealloc(ppn: PhysPageNum) {
-    FRAME_ALLOCATOR.exclusive_access().dealloc(ppn);
+    FRAME_ALLOCATOR.lock().dealloc(ppn);
 }
 
 #[allow(unused)]
@@ -168,10 +165,10 @@ pub fn frame_allocator_test() {
     for i in 0..5 {
         let frame = frame_alloc().unwrap();
         println!("{:?}", frame);
-        v.push(frame);  // 将分配到的 FrameTracker move到一个向量中，
-        // 他的生命周期被延长，否则在循环结束后循环作用域中的临时变量的生命周期就结束了
+        v.push(frame); // 将分配到的 FrameTracker move到一个向量中，
+                       // 他的生命周期被延长，否则在循环结束后循环作用域中的临时变量的生命周期就结束了
     }
-    v.clear();  // 被清空时里面的内容也会被释放
+    v.clear(); // 被清空时里面的内容也会被释放
     for i in 0..5 {
         let frame = frame_alloc().unwrap();
         println!("{:?}", frame);

@@ -141,7 +141,7 @@ pub fn sys_pipe(pipe: *mut u32, flag: usize) -> isize {
     let token = current_user_token();
     let mut inner = task.inner_exclusive_access();
 
-    // todo 
+    // todo
     _ = flag;
 
     let (pipe_read, pipe_write) = make_pipe();

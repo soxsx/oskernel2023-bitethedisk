@@ -59,7 +59,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     remove_from_pid2task(task.getpid());
     let mut inner = task.inner_exclusive_access();
     inner.task_status = TaskStatus::Zombie; // 后续才能被父进程在 waitpid 系统调用的时候回收
-    // 记录退出码，后续父进程在 waitpid 的时候可以收集
+                                            // 记录退出码，后续父进程在 waitpid 的时候可以收集
     inner.exit_code = exit_code;
     // do not move to its parent but under initproc
 
@@ -72,7 +72,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     }
 
     inner.children.clear(); // 引用计数 +1
-    // 对于当前进程占用的资源进行早期回收
+                            // 对于当前进程占用的资源进行早期回收
     inner.memory_set.recycle_data_pages();
     drop(inner);
     drop(task);
@@ -94,14 +94,14 @@ lazy_static! {
             fn _num_app();
         }
         let num_app_ptr = _num_app as usize as *const usize;
-        let num_app = unsafe { num_app_ptr.read_volatile() }; 
+        let num_app = unsafe { num_app_ptr.read_volatile() };
         let app_start = unsafe { core::slice::from_raw_parts(num_app_ptr.add(1), num_app + 1) };
 
         TaskControlBlock::new( unsafe{
             core::slice::from_raw_parts(
-                app_start[0] as *const u8, 
+                app_start[0] as *const u8,
                 app_start[1] - app_start[0]
-            ) } 
+            ) }
         )
     });
 }

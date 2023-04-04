@@ -93,7 +93,7 @@ pub fn sys_getpid() -> isize {
 
 /// ### 当前进程 fork/clone 出来一个子进程。
 /// - 参数：
-///     - `flags`: 
+///     - `flags`:
 ///     - `stack_ptr`
 ///     - `ptid`
 ///     - `ctid`
@@ -116,7 +116,7 @@ pub fn sys_fork(flags: usize, stack_ptr: usize, _ptid: usize, _ctid: usize, _new
     if !flags.contains(CloneFlags::SIGCHLD){
         panic!("sys_fork: FLAG not supported!");
     }
-  
+
     if stack_ptr != 0{
         let trap_cx = new_task.inner_exclusive_access().get_trap_cx();
         trap_cx.set_sp(stack_ptr);

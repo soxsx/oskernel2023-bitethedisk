@@ -1,1 +1,0 @@
-syscalltests 中的是区域赛给出的编译完后的 syscall 测例

@@ -3,7 +3,7 @@
 /// ```
 /// pub struct TaskManager
 /// pub static ref TASK_MANAGER: UPSafeCell<TaskManager>
-/// 
+///
 /// pub fn add_task(task: Arc<TaskControlBlock>)
 /// pub fn fetch_task() -> Option<Arc<TaskControlBlock>>
 /// ```

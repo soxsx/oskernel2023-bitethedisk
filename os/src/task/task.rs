@@ -14,6 +14,7 @@ use crate::fs::{File, Stdin, Stdout};
 use crate::mm::{translated_refmut, MemorySet, PhysPageNum, VirtPageNum, VirtAddr, KERNEL_SPACE, MmapArea, MapPermission};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
+use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
@@ -53,7 +54,7 @@ pub struct TaskControlBlock {
 /// |`children`|当前进程的所有子进程的任务控制块向量|
 /// |`exit_code`|退出码|
 /// |`fd_table`|文件描述符表|
-/// 
+///
 /// 注意我们在维护父子进程关系的时候大量用到了引用计数 `Arc/Weak` 。进程控制块的本体是被放到内核堆上面的，
 /// 对于它的一切访问都是通过智能指针 `Arc/Weak` 来进行的，这样是便于建立父子进程的双向链接关系（避免仅基于 `Arc` 形成环状链接关系）。
 /// 当且仅当智能指针 `Arc` 的引用计数变为 0 的时候，进程控制块以及被绑定到它上面的各类资源才会被回收。
@@ -72,21 +73,21 @@ pub struct TaskControlBlockInner {
     /// 维护当前进程的执行状态
     pub task_status: TaskStatus,
     /// 指向当前进程的父进程（如果存在的话）
-    pub parent: Option<Weak<TaskControlBlock>>, 
+    pub parent: Option<Weak<TaskControlBlock>>,
     /// 当前进程的所有子进程的任务控制块向量
-    pub children: Vec<Arc<TaskControlBlock>>,   
+    pub children: Vec<Arc<TaskControlBlock>>,
     /// 退出码
-    pub exit_code: i32,  
+    pub exit_code: i32,
 
     // 内存
     /// 应用数据仅有可能出现在应用地址空间低于 base_size 字节的区域中。
     /// 借助它我们可以清楚的知道应用有多少数据驻留在内存中
-    pub base_size: usize,           
+    pub base_size: usize,
     /// 应用地址空间
     pub memory_set: MemorySet,
     // 虚拟内存地址映射空间
     pub mmap_area: MmapArea,
-    
+
     // 文件
     /// 文件描述符表
     pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
@@ -206,7 +207,7 @@ impl TaskControlBlock {
                 )
             })
             .collect();
-            
+
         // 参数字符串
         *argv[args.len()] = 0;  // 标记参数尾
         for i in 0..args.len() {
@@ -240,7 +241,7 @@ impl TaskControlBlock {
         trap_cx.x[10] = args.len(); // a0 表示命令行参数的个数
         trap_cx.x[11] = argv_base;  // a1 则表示 参数字符串首地址数组 的起始地址
     }
-    
+
     /// 用来实现 fork 系统调用，即当前进程 fork 出来一个与之几乎相同的子进程
     pub fn fork(self: &Arc<TaskControlBlock>) -> Arc<TaskControlBlock> {
         let mut parent_inner = self.inner_exclusive_access();
@@ -313,7 +314,7 @@ impl TaskControlBlock {
         let mmap_start = inner.mmap_area.mmap_start;
         let mmap_end = inner.mmap_area.mmap_top;
         drop(inner);
-        
+
         if va >= mmap_start && va < mmap_end {
             //println!("lazy mmap");
             let res = self.lazy_mmap(va.0, is_load);
@@ -321,9 +322,9 @@ impl TaskControlBlock {
             
 
             res
-        } 
+        }
         else { -1 }
-        
+
         // else if va.0 >= heap_base && va.0 <= heap_pt {
         //     inner.lazy_alloc_heap(vpn);
         //     return 0;
@@ -363,7 +364,7 @@ impl TaskControlBlock {
         }
         return lazy_result;
     }
-    
+
     /// ### 在进程虚拟地址空间中分配创建一片虚拟内存地址映射
     /// - 参数
     ///     - `start`, `len`：映射空间起始地址及长度，起始地址必须4k对齐
@@ -399,9 +400,9 @@ impl TaskControlBlock {
         // "prot<<1" is equal to meaning of "MapPermission"
         // "1<<4" means user
         let map_flags = (((prot & 0b111)<<1) + (1<<4))  as u8;
-    
+
         let mut startvpn = start/PAGE_SIZE;
-        
+
         if start != 0 { // "Start" va Already mapped
             while startvpn < (start + len) / PAGE_SIZE {
                 if inner.memory_set.set_pte_flags(startvpn.into(), map_flags as usize) == -1{
@@ -424,7 +425,7 @@ impl TaskControlBlock {
         inner.memory_set.remove_area_with_start_vpn(VirtAddr::from(start).into());
         inner.mmap_area.remove(start, len)
     }
-    
+
     pub fn getpid(&self) -> usize {
         self.pid.0
     }
