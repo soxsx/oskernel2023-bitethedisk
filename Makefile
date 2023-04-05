@@ -23,11 +23,11 @@ sbi-qemu:
 KERNEL_ELF = os/target/riscv64imac-unknown-none-elf/release/os
 kernel-qemu:
 	@echo Build kernel-qemu...
-	@cd os/ && make all
+	@cd os/ && make build
 	@cp $(KERNEL_ELF) kernel-qemu
 
 .PHONY: all
-all: clean sbi-qemu kernel-qemu
+all: sbi-qemu kernel-qemu
 	@echo Build all...
 
 QEMU = qemu-system-riscv64
@@ -35,9 +35,9 @@ GDB = riscv64-unknown-elf-gdb
 
 .PHONY: debug-server
 debug-server: all
-	@${QEMU} \
+	@$(QEMU) \
 	 	-machine virt \
-		-kernel kernel-qemu
+		-kernel kernel-qemu \
 		-serial mon:stdio \
 		-nographic \
 		-bios sbi-qemu \
@@ -46,8 +46,8 @@ debug-server: all
 		-s -S
 
 .PHONY: debug
-debug: all
-	@${GDB} \
+debug:
+	@$(GDB) \
 		-ex 'file $(KERNEL_ELF)' \
 		-ex 'set arch riscv:rv64' \
 		-ex 'target remote localhost:1234'
