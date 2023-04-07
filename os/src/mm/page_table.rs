@@ -147,7 +147,7 @@ impl PageTable {
         let idxs = vpn.indexes();
         // 当前节点的物理页号，最开始指向多级页表的根节点
         let mut ppn = self.root_ppn;
-        let mut result: Option<&mut PageTableEntry> = None;
+        let mut result = None;
         for (i, idx) in idxs.iter().enumerate() {
             // 通过 get_pte_array 将取出当前节点的页表项数组，并根据当前级页索引找到对应的页表项
             let pte = &mut ppn.as_pte_slice()[*idx];
@@ -168,6 +168,7 @@ impl PageTable {
             // 切换到下一级页表（物理页帧）
             ppn = pte.ppn();
         }
+
         result
     }
 

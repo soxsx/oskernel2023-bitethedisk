@@ -39,6 +39,7 @@ pub struct TaskControlBlock {
     /// 应用内核栈
     pub kernel_stack: KernelStack,
 
+    // inner 应该为需要用锁来保护的字段
     inner: UPSafeCell<TaskControlBlockInner>,
 }
 
@@ -128,8 +129,8 @@ impl TaskControlBlockInner {
 
 impl TaskControlBlock {
     #[inline(always)]
-    pub fn pid(&self) -> PidHandle {
-        self.pid.clone()
+    pub fn pid(&self) -> usize {
+        self.pid.0
     }
 
     pub fn inner_exclusive_access(&self) -> RefMut<'_, TaskControlBlockInner> {
@@ -153,29 +154,27 @@ impl TaskControlBlock {
         let task_control_block = Self {
             pid: pid_handle,
             kernel_stack,
-            inner: unsafe {
-                UPSafeCell::new(TaskControlBlockInner {
-                    trap_ctx_ppn: trap_cx_ppn,
-                    base_size: user_sp,
-                    task_cx: TaskContext::goto_trap_return(kernel_stack_top),
-                    task_status: TaskStatus::Ready,
-                    memory_set,
-                    parent: None,
-                    children: Vec::new(),
-                    exit_code: 0,
-                    fd_table: vec![
-                        // 0 -> stdin
-                        Some(Arc::new(Stdin)),
-                        // 1 -> stdout
-                        Some(Arc::new(Stdout)),
-                        // 2 -> stderr
-                        Some(Arc::new(Stdout)),
-                    ],
-                    signals: SignalFlags::empty(),
-                    current_path: String::from("/"),
-                    mmap_area: MmapArea::new(VirtAddr::from(MMAP_BASE), VirtAddr::from(MMAP_BASE)),
-                })
-            },
+            inner: UPSafeCell::new(TaskControlBlockInner {
+                trap_ctx_ppn: trap_cx_ppn,
+                base_size: user_sp,
+                task_cx: TaskContext::goto_trap_return(kernel_stack_top),
+                task_status: TaskStatus::Ready,
+                memory_set,
+                parent: None,
+                children: Vec::new(),
+                exit_code: 0,
+                fd_table: vec![
+                    // 0 -> stdin
+                    Some(Arc::new(Stdin)),
+                    // 1 -> stdout
+                    Some(Arc::new(Stdout)),
+                    // 2 -> stderr
+                    Some(Arc::new(Stdout)),
+                ],
+                signals: SignalFlags::empty(),
+                current_path: String::from("/"),
+                mmap_area: MmapArea::new(VirtAddr::from(MMAP_BASE), VirtAddr::from(MMAP_BASE)),
+            }),
         };
         // 初始化位于该进程应用地址空间中的 Trap 上下文，使得第一次进入用户态的时候时候能正
         // 确跳转到应用入口点并设置好用户栈，同时也保证在 Trap 的时候用户态能正确进入内核态

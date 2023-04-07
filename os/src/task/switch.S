@@ -25,7 +25,6 @@ __switch:
         sd s11, 104(a0)
 
         # Load the next task context and be ready to run.
-        # sp + pc(偏移)?
         ld ra, 0(a1)
         ld sp, 8(a1)
         ld s0, 16(a1)

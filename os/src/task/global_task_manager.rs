@@ -1,6 +1,11 @@
+//! 全局任务管理器
+//! 
+//! 维护一个全局的 rq
+//! CPU 可以从这里获取就绪的进程以便执行
+//! 
 use core::arch::global_asm;
 
-use super::{PidHandle, TaskContext, TaskControlBlock};
+use super::{TaskContext, TaskControlBlock};
 use alloc::collections::{BTreeMap, VecDeque};
 use alloc::sync::Arc;
 use lazy_static::*;
@@ -44,7 +49,7 @@ lazy_static! {
 
     /// 这是一个通过 PID 找 task 的哈希表
     /// 本质上是一个 BTreeMap，这里保留 UPSafeCell，因为单核情况下不太可能产生重入的情况。
-    pub static ref PID_MAP: Mutex<BTreeMap<PidHandle, Arc<TaskControlBlock>>> =
+    pub static ref PID_MAP: Mutex<BTreeMap<usize, Arc<TaskControlBlock>>> =
         Mutex::new(BTreeMap::new());
 }
 
@@ -61,11 +66,11 @@ pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
 
 /// 通过PID获取对应的进程控制块
 #[inline]
-pub fn get_task_by_pid(pid: PidHandle) -> Option<Arc<TaskControlBlock>> {
+pub fn get_task_by_pid(pid: usize) -> Option<Arc<TaskControlBlock>> {
     PID_MAP.lock().get(&pid).map(Arc::clone)
 }
 
-pub fn remove_task_with_pid(pid: PidHandle) {
+pub fn remove_task_with_pid(pid: usize) {
     let mut map = PID_MAP.lock();
     if map.remove(&pid).is_none() {
         panic!("cannot find pid {:?} in pid2task!", pid);
@@ -80,5 +85,13 @@ extern "C" {
     ///
     /// * current_task_cx_ptr 当前任务上下文指针
     /// * next_task_cx_ptr    即将被切换到的任务上下文指针
-    pub fn __switch(current_task_cx_ptr: *mut TaskContext, next_task_cx_ptr: *const TaskContext);
+    fn __switch(current_task_cx_ptr: *mut TaskContext, next_task_cx_ptr: *const TaskContext);
+}
+
+/// Wrapper of C function in asm `__switch`.
+#[inline(always)]
+pub fn switch_task_context(current: *mut TaskContext, next: *const TaskContext) {
+    unsafe {
+        __switch(current, next);
+    }
 }

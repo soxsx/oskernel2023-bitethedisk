@@ -86,7 +86,7 @@ impl From<PidHandle> for usize {
 // 为 PidHandle 实现 Drop Trait 来允许编译器进行自动的资源回收
 impl Drop for PidHandle {
     fn drop(&mut self) {
-        // 这里可能导致在从 pid map 里面清除对应 pcb 的时候多次释放，被 assert panic 了
+        // TODO 这里可能导致在从 pid map 里面清除对应 pcb 的时候多次释放，被 assert panic 了
         PID_ALLOCATOR.lock().dealloc(self.0);
     }
 }
@@ -98,7 +98,7 @@ pub fn pid_alloc() -> PidHandle {
 }
 
 /// Return (bottom, top) of a kernel stack in kernel space.
-#[inline]
+#[inline(always)]
 pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
     let top = TRAMPOLINE - app_id * (KERNEL_STACK_SIZE + PAGE_SIZE);
     let bottom = top - KERNEL_STACK_SIZE;

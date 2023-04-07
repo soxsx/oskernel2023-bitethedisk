@@ -40,6 +40,7 @@ lazy_static! {
         Arc::new(Mutex::new(MemorySet::new_kernel()));
 }
 
+#[inline(always)]
 pub fn kernel_token() -> usize {
     KERNEL_SPACE.lock().token()
 }

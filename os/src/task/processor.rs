@@ -12,7 +12,7 @@
 //! pub fn schedule(switched_task_cx_ptr: *mut TaskContext)
 //! ```
 //!
-use super::global_task_manager::__switch;
+use super::global_task_manager::switch_task_context;
 use super::{fetch_task, TaskStatus};
 use super::{TaskContext, TaskControlBlock};
 use crate::trap::TrapContext;
@@ -81,9 +81,8 @@ pub fn run_tasks() {
             processor.current = Some(task);
             // release processor manually
             drop(processor);
-            unsafe {
-                __switch(idle_task_cx_ptr, next_task_cx_ptr);
-            }
+
+            switch_task_context(idle_task_cx_ptr, next_task_cx_ptr);
         }
     }
 }
@@ -117,7 +116,6 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     let mut processor = PROCESSOR.lock();
     let idle_task_cx_ptr = processor.idle_task_ctx_ptr();
     drop(processor);
-    unsafe {
-        __switch(switched_task_cx_ptr, idle_task_cx_ptr);
-    }
+
+    switch_task_context(switched_task_cx_ptr, idle_task_cx_ptr);
 }

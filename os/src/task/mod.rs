@@ -1,20 +1,13 @@
 //! # 任务管理模块
 //! `os/src/task/mod.rs`
-//! ## 实现功能
-//! ```
-//! pub fn suspend_current_and_run_next()
-//! pub fn exit_current_and_run_next()
-//! pub fn add_initproc()
-//! pub fn check_signals_of_current()
-//! pub fn current_add_signal()
-//! ```
+//!
 mod context; // 任务上下文模块
-mod global_task_manager; // 进程管理器
+mod global_task_manager;
 mod info;
 mod pid; // 进程标识符模块
 mod processor; // 处理器管理模块
 mod signal; // 进程状态标志
-mod task;
+mod task; // PCB
 
 // use crate::fs::{open, OpenFlags};
 use alloc::sync::Arc;

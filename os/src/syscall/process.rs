@@ -83,7 +83,7 @@ pub fn sys_times(buf: *const u8) -> isize {
 
 /// 获取当前正在运行程序的 PID
 pub fn sys_getpid() -> isize {
-    current_task().unwrap().pid().0 as isize
+    current_task().unwrap().pid() as isize
 }
 
 //  long clone(unsigned long flags, void *child_stack, int *ptid, int *ctid, unsigned long newtls);
@@ -137,7 +137,7 @@ pub fn sys_fork(
         asm!("sfence.vma");
         asm!("fence.i");
     }
-    new_pid.0 as isize // 对于父进程，返回值是子进程的 PID
+    new_pid as isize // 对于父进程，返回值是子进程的 PID
 }
 
 /// ### 将当前进程的地址空间清空并加载一个特定的可执行文件，返回用户态后开始它的执行。
@@ -199,7 +199,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
     if !inner
         .children
         .iter()
-        .any(|p| pid == -1 || pid as usize == p.pid().0)
+        .any(|p| pid == -1 || pid as usize == p.pid())
     {
         return -1;
         // ---- release current PCB
@@ -210,7 +210,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
         // 查找所有符合PID要求的处于僵尸状态的进程，如果有的话还需要同时找出它在当前进程控制块子进程向量中的下标
         let pair = inner.children.iter().enumerate().find(|(_, p)| {
             // ++++ temporarily access child PCB lock exclusively
-            p.inner_exclusive_access().is_zombie() && (pid == -1 || pid as usize == p.pid().0)
+            p.inner_exclusive_access().is_zombie() && (pid == -1 || pid as usize == p.pid())
             // ++++ release child PCB
         });
         if let Some((idx, _)) = pair {
@@ -230,7 +230,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
             if exit_code_ptr as usize != 0 {
                 *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code << 8;
             }
-            return found_pid.0 as isize;
+            return found_pid as isize;
         } else {
             // 如果找不到的话则放权等待
             drop(inner); // 手动释放 TaskControlBlock 全局可变部分
