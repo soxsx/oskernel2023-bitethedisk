@@ -1,13 +1,12 @@
-/// # 地址空间模块
-/// `os/src/mm/memory_set.rs`
-/// ## 实现功能
-/// ```
-/// pub static ref KERNEL_SPACE: Arc<UPSafeCell<MemorySet>>
-/// pub struct MemorySet
-/// pub struct MapArea
-/// ```
-//
-
+//! # 地址空间模块
+//! `os/src/mm/memory_set.rs`
+//! ## 实现功能
+//! ```
+//! pub static ref KERNEL_SPACE: Arc<UPSafeCell<MemorySet>>
+//! pub struct MemorySet
+//! pub struct MapArea
+//! ```
+//!
 use super::{frame_alloc, FrameTracker};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
@@ -19,7 +18,9 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
 use lazy_static::*;
+use riscv::asm;
 use riscv::register::satp;
+use spin::Mutex;
 
 extern "C" {
     fn stext();
@@ -28,19 +29,19 @@ extern "C" {
     fn erodata();
     fn sdata();
     fn edata();
-    fn sbss_with_stack();
+    fn sbss();
     fn ebss();
     fn ekernel();
     fn strampoline();
 }
 
 lazy_static! {
-    pub static ref KERNEL_SPACE: Arc<UPSafeCell<MemorySet>> =
-        Arc::new(unsafe { UPSafeCell::new(MemorySet::new_kernel()) });
+    pub static ref KERNEL_SPACE: Arc<Mutex<MemorySet>> =
+        Arc::new(Mutex::new(MemorySet::new_kernel()));
 }
 
 pub fn kernel_token() -> usize {
-    KERNEL_SPACE.exclusive_access().token()
+    KERNEL_SPACE.lock().token()
 }
 
 /// ### 地址空间
@@ -64,7 +65,6 @@ pub struct MemorySet {
     /// 挂着对应逻辑段中的数据所在的物理页帧
     areas: Vec<MapArea>,
     chunks: ChunkArea,
-    stack_chunks: ChunkArea,
     mmap_chunks: Vec<ChunkArea>,
 }
 
@@ -73,12 +73,12 @@ impl MemorySet {
     pub fn new_bare() -> Self {
         Self {
             page_table: PageTable::new(),
-            areas: Vec::new(),
-            chunks: ChunkArea::new(MapType::Framed,
-                                MapPermission::R | MapPermission::W | MapPermission::U),
-            mmap_chunks: Vec::new(),
-            stack_chunks: ChunkArea::new(MapType::Framed,
-                                MapPermission::R | MapPermission::W | MapPermission::U),
+            areas: vec![],
+            chunks: ChunkArea::new(
+                MapType::Framed,
+                MapPermission::R | MapPermission::W | MapPermission::U,
+            ),
+            mmap_chunks: vec![],
         }
     }
 
@@ -120,7 +120,7 @@ impl MemorySet {
             // 写入初始化数据，如果数据存在
             map_area.copy_data(&mut self.page_table, data);
         }
-        self.areas.push(map_area);  // 将生成的数据段压入 areas 使其生命周期由areas控制
+        self.areas.push(map_area); // 将生成的数据段压入 areas 使其生命周期由areas控制
     }
     /// 在ChunkArea中为vpn分配一页
     fn push_chunk(&mut self, vpn: VirtPageNum) {
@@ -143,17 +143,10 @@ impl MemorySet {
     /// - 采用恒等映射
     pub fn new_kernel() -> Self {
         let mut memory_set = Self::new_bare();
-        // map trampoline
+
         memory_set.map_trampoline();
+
         // map kernel sections
-        println!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
-        println!(".rodata [{:#x}, {:#x})", srodata as usize, erodata as usize);
-        println!(".data [{:#x}, {:#x})", sdata as usize, edata as usize);
-        println!(
-            ".bss [{:#x}, {:#x})",
-            sbss_with_stack as usize, ebss as usize
-        );
-        println!("mapping .text section");
         // 总体思路：通过Linker.ld中的标签划分内核空间为不同的区块，为每个区块采用恒等映射的方式生成逻辑段，压入地址空间
         memory_set.push(
             MapArea::new(
@@ -164,7 +157,7 @@ impl MemorySet {
             ),
             None,
         );
-        println!("mapping .rodata section");
+
         memory_set.push(
             MapArea::new(
                 (srodata as usize).into(),
@@ -174,7 +167,6 @@ impl MemorySet {
             ),
             None,
         );
-        println!("mapping .data section");
         memory_set.push(
             MapArea::new(
                 (sdata as usize).into(),
@@ -184,17 +176,15 @@ impl MemorySet {
             ),
             None,
         );
-        println!("mapping .bss section");
         memory_set.push(
             MapArea::new(
-                (sbss_with_stack as usize).into(),
+                (sbss as usize).into(),
                 (ebss as usize).into(),
                 MapType::Identical,
                 MapPermission::R | MapPermission::W,
             ),
             None,
         );
-        println!("mapping physical memory");
         memory_set.push(
             MapArea::new(
                 (ekernel as usize).into(),
@@ -204,7 +194,8 @@ impl MemorySet {
             ),
             None,
         );
-        println!("mapping memory-mapped registers");
+        println!("pivote");
+
         for pair in MMIO {
             // 恒等映射 内存映射 I/O (MMIO, Memory-Mapped I/O) 地址到内核地址空间
             memory_set.push(
@@ -259,7 +250,8 @@ impl MemorySet {
                 }
                 let map_area = MapArea::new(start_va, end_va, MapType::Framed, map_perm);
                 max_end_vpn = map_area.vpn_range.get_end();
-                memory_set.push(    // 将生成的逻辑段加入到程序地址空间
+                memory_set.push(
+                    // 将生成的逻辑段加入到程序地址空间
                     map_area,
                     Some(&elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize]),
                 );
@@ -312,8 +304,8 @@ impl MemorySet {
                 let src_ppn = user_space.translate(vpn).unwrap().ppn();
                 let dst_ppn = memory_set.translate(vpn).unwrap().ppn();
                 dst_ppn
-                    .get_bytes_array()
-                    .copy_from_slice(src_ppn.get_bytes_array());
+                    .as_bytes_mut()
+                    .copy_from_slice(src_ppn.as_bytes_mut());
             }
         }
         memory_set
@@ -338,9 +330,11 @@ impl MemorySet {
     /// 将多级页表的token（格式化后的root_ppn）写入satp
     pub fn activate(&self) {
         let satp = self.page_table.token();
+        satp::write(satp);
+
         unsafe {
-            satp::write(satp);
-            asm!("sfence.vma"); // 将快表清空
+            // 刷新 TLB
+            asm!("sfence.vma");
         }
     }
 
@@ -574,7 +568,7 @@ impl MapArea {
                 .translate(current_vpn)
                 .unwrap()
                 .ppn()
-                .get_bytes_array()[..src.len()];
+                .as_bytes_mut()[..src.len()];
             dst.copy_from_slice(src);
             start += PAGE_SIZE;
             if start >= len {

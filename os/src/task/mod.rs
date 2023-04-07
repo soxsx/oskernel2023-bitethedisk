@@ -1,36 +1,31 @@
-/// # 任务管理模块
-/// `os/src/task/mod.rs`
-/// ## 实现功能
-/// ```
-/// pub fn suspend_current_and_run_next()
-/// pub fn exit_current_and_run_next()
-/// pub fn add_initproc()
-/// pub fn check_signals_of_current()
-/// pub fn current_add_signal()
-/// ```
-//
-
-mod context;// 任务上下文模块
-mod manager;// 进程管理器
-mod pid;    // 进程标识符模块
-mod processor;  // 处理器管理模块
+//! # 任务管理模块
+//! `os/src/task/mod.rs`
+//! ## 实现功能
+//! ```
+//! pub fn suspend_current_and_run_next()
+//! pub fn exit_current_and_run_next()
+//! pub fn add_initproc()
+//! pub fn check_signals_of_current()
+//! pub fn current_add_signal()
+//! ```
+mod context; // 任务上下文模块
+mod global_task_manager; // 进程管理器
+mod info;
+mod pid; // 进程标识符模块
+mod processor; // 处理器管理模块
 mod signal; // 进程状态标志
-mod switch; // 任务上下文切换模块
-#[allow(clippy::module_inception)]
-mod task;   // 进程控制块
-mod info;   // 系统信息模块
+mod task;
 
 // use crate::fs::{open, OpenFlags};
 use alloc::sync::Arc;
+use global_task_manager::fetch_task;
+use global_task_manager::remove_task_with_pid;
 use lazy_static::*;
-use manager::fetch_task;
-use manager::remove_from_pid2task;
-use switch::__switch;
 use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
-pub use info::{Utsname, UTSNAME, CloneFlags};
-pub use manager::{add_task, pid2task};
+pub use global_task_manager::{add_task, get_task_by_pid};
+pub use info::{CloneFlags, Utsname, UTSNAME};
 pub use pid::{pid_alloc, KernelStack, PidHandle};
 pub use processor::{
     current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
@@ -56,18 +51,19 @@ pub fn suspend_current_and_run_next() {
 pub fn exit_current_and_run_next(exit_code: i32) {
     // 获取访问权限，修改进程状态
     let task = take_current_task().unwrap();
-    remove_from_pid2task(task.getpid());
+    remove_task_with_pid(task.pid());
     let mut inner = task.inner_exclusive_access();
     inner.task_status = TaskStatus::Zombie; // 后续才能被父进程在 waitpid 系统调用的时候回收
                                             // 记录退出码，后续父进程在 waitpid 的时候可以收集
     inner.exit_code = exit_code;
     // do not move to its parent but under initproc
 
-    {   // 将这个进程的子进程转移到 initproc 进程的子进程中
+    {
+        // 将这个进程的子进程转移到 initproc 进程的子进程中
         let mut initproc_inner = INITPROC.inner_exclusive_access();
         for child in inner.children.iter() {
             child.inner_exclusive_access().parent = Some(Arc::downgrade(&INITPROC));
-            initproc_inner.children.push(child.clone());    // 引用计数 -1
+            initproc_inner.children.push(child.clone()); // 引用计数 -1
         }
     }
 
@@ -77,7 +73,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     drop(inner);
     drop(task);
     // 使用全0的上下文填充换出上下文，开启新一轮进程调度
-    let mut _unused = TaskContext::zero_init();
+    let mut _unused = TaskContext::empty();
     schedule(&mut _unused as *mut _);
 }
 

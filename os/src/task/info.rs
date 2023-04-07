@@ -1,4 +1,3 @@
-use crate::sync::UPSafeCell;
 /// # 系统信息模块
 /// `os/src/task/info.rs`
 /// ```
@@ -7,8 +6,9 @@ use crate::sync::UPSafeCell;
 /// ```
 //
 //use alloc::sync::Arc;
-
 use lazy_static::*;
+
+use crate::sync::UPSafeCell;
 
 pub struct Utsname {
     pub sysname: [u8; 65],
@@ -20,7 +20,7 @@ pub struct Utsname {
 }
 
 lazy_static! {
-    pub static ref UTSNAME: UPSafeCell<Utsname> = unsafe {UPSafeCell::new(Utsname::new())};
+    pub static ref UTSNAME: UPSafeCell<Utsname> =  UPSafeCell::new(Utsname::new()) ;
 }
 
 impl Utsname {
@@ -39,14 +39,14 @@ impl Utsname {
         let mut arr: [u8; 65] = [0; 65];
         let cstr = str.as_bytes();
         let len = str.len();
-        for i in 0..len{
+        for i in 0..len {
             arr[i] = cstr[i];
         }
         arr
     }
 }
 
-bitflags!{
+bitflags! {
     pub struct CloneFlags: usize{
         const SIGCHLD = 17;
         const CLONE_CHILD_CLEARTID  = 0x0020_0000;

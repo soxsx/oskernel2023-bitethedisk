@@ -66,10 +66,12 @@ impl PageTableEntry {
             bits: ppn.0 << 10 | flags.bits() as usize,
         }
     }
-    /// 将页表项清零
-    pub fn empty() -> Self {
-        PageTableEntry { bits: 0 }
+
+    /// 获取一个值为零的页表项
+    pub const fn empty() -> Self {
+        Self { bits: 0 }
     }
+
     /// 从页表项读取物理页号
     pub fn ppn(&self) -> PhysPageNum {
         (self.bits >> 10 & ((1usize << 44) - 1)).into()
@@ -95,7 +97,7 @@ impl PageTableEntry {
     }
     // only X+W+R can be set
     pub fn set_pte_flags(&mut self, flags: usize) {
-        self.bits = (self.bits & !(0b1110 as usize)) | ( flags & (0b1110 as usize));
+        self.bits = (self.bits & !(0b1110 as usize)) | (flags & (0b1110 as usize));
     }
 }
 
@@ -136,7 +138,7 @@ impl PageTable {
             // 取satp的前44位作为物理页号
             root_ppn: PhysPageNum::from(satp & ((1usize << 44) - 1)),
             // 不需要重新生成节点，节点已经在原始多级页表中存在，同时存在在内存中
-            frames: Vec::new(),
+            frames: vec![],
         }
     }
 
@@ -148,7 +150,7 @@ impl PageTable {
         let mut result: Option<&mut PageTableEntry> = None;
         for (i, idx) in idxs.iter().enumerate() {
             // 通过 get_pte_array 将取出当前节点的页表项数组，并根据当前级页索引找到对应的页表项
-            let pte = &mut ppn.get_pte_array()[*idx];
+            let pte = &mut ppn.as_pte_slice()[*idx];
             if i == 2 {
                 // 找到第三级页表，这个页表项的可变引用
                 result = Some(pte);
@@ -175,7 +177,7 @@ impl PageTable {
         let mut ppn = self.root_ppn;
         let mut result: Option<&mut PageTableEntry> = None;
         for (i, idx) in idxs.iter().enumerate() {
-            let pte = &mut ppn.get_pte_array()[*idx];
+            let pte = &mut ppn.as_pte_slice()[*idx];
             if i == 2 {
                 result = Some(pte);
                 break;
@@ -190,7 +192,6 @@ impl PageTable {
 
     /// ### 建立一个虚拟页号到物理页号的映射
     /// 根据VPN找到第三级页表中的对应项，将 `PPN` 和 `flags` 写入到页表项
-    #[allow(unused)]
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
         let pte = self.find_pte_create(vpn).unwrap();
         // 断言，保证新获取到的PTE是无效的（不是已分配的）
@@ -200,7 +201,6 @@ impl PageTable {
 
     /// ### 删除一个虚拟页号到物理页号的映射
     /// 只需根据虚拟页号找到页表项，然后修改或者直接清空其内容即可
-    #[allow(unused)]
     pub fn unmap(&mut self, vpn: VirtPageNum) {
         let pte = self.find_pte(vpn).unwrap();
         assert!(pte.is_valid(), "vpn {:?} is invalid before unmapping", vpn);
@@ -226,23 +226,24 @@ impl PageTable {
     }
 
     /// 按照 satp CSR 格式要求 构造一个无符号 64 位无符号整数，使得其分页模式为 SV39 ，且将当前多级页表的根节点所在的物理页号填充进去
-    pub fn token(&self) -> usize {
+    #[inline(always)]
+    pub const fn token(&self) -> usize {
         8usize << 60 | self.root_ppn.0
     }
 
     // only X+W+R can be set
     // return -1 if find no such pte
-    pub fn set_pte_flags(&mut self, vpn: VirtPageNum, flags: usize) -> isize{
+    pub fn set_pte_flags(&mut self, vpn: VirtPageNum, flags: usize) -> isize {
         let idxs = vpn.indexes();
         let mut ppn = self.root_ppn;
         for i in 0..3 {
-            let pte = &mut ppn.get_pte_array()[idxs[i]];
+            let pte = &mut ppn.as_pte_slice()[idxs[i]];
             if i == 2 {
                 // if pte == None{
                 //     panic!("set_pte_flags: no such pte");
                 // }
                 // else{
-                    pte.set_pte_flags(flags);
+                pte.set_pte_flags(flags);
                 // }
                 break;
             }
@@ -269,14 +270,12 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
     while start < end {
         let start_va = VirtAddr::from(start);
         let mut vpn = start_va.floor();
-        
+
         match page_table.translate(vpn) {
             None => {
                 println!("[kernel] mm: 0x{:x} not mapped", start);
             }
-            _ => {
-                
-            }
+            _ => {}
         }
 
         let ppn = page_table.translate(vpn).unwrap().ppn();
@@ -284,9 +283,9 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
         let mut end_va: VirtAddr = vpn.into();
         end_va = end_va.min(VirtAddr::from(end));
         if end_va.page_offset() == 0 {
-            v.push(&mut ppn.get_bytes_array()[start_va.page_offset()..]);
+            v.push(&mut ppn.as_bytes_mut()[start_va.page_offset()..]);
         } else {
-            v.push(&mut ppn.get_bytes_array()[start_va.page_offset()..end_va.page_offset()]);
+            v.push(&mut ppn.as_bytes_mut()[start_va.page_offset()..end_va.page_offset()]);
         }
         start = end_va.into();
     }
@@ -294,13 +293,17 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
 }
 
 /// ### 从内核地址空间之外的某个应用的用户态地址空间中拿到一个字符串
+///
 /// 针对应用的字符串中字符的用户态虚拟地址，查页表，找到对应的内核虚拟地址，逐字节地构造字符串，直到发现一个 \0 为止
 pub fn translated_str(token: usize, ptr: *const u8) -> String {
     let page_table = PageTable::from_token(token);
     let mut string = String::new();
     let mut va = ptr as usize;
     loop {
-        let ch: u8 = *(page_table.translate_va(VirtAddr::from(va)).unwrap().get_mut());
+        let ch: u8 = *(page_table
+            .translate_va(VirtAddr::from(va))
+            .unwrap()
+            .get_mut());
         if ch == 0 {
             break;
         } else {
@@ -314,7 +317,10 @@ pub fn translated_str(token: usize, ptr: *const u8) -> String {
 /// 根据 多级页表token (satp) 和 虚拟地址 获取大小为 T 的空间的不可变切片
 pub fn translated_ref<T>(token: usize, ptr: *const T) -> &'static T {
     let page_table = PageTable::from_token(token);
-    page_table.translate_va(VirtAddr::from(ptr as usize)).unwrap().get_ref()
+    page_table
+        .translate_va(VirtAddr::from(ptr as usize))
+        .unwrap()
+        .get_ref()
 }
 
 /// 根据 多级页表token (satp) 和 虚拟地址 获取大小为 T 的空间的切片
@@ -322,11 +328,15 @@ pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
     //println!("into translated_refmut!");
     let page_table = PageTable::from_token(token);
     let va = ptr as usize;
-    page_table.translate_va(VirtAddr::from(va)).unwrap().get_mut()
+    page_table
+        .translate_va(VirtAddr::from(va))
+        .unwrap()
+        .get_mut()
 }
 
 /// ### 应用地址空间中的一段缓冲区（即内存）的抽象
-/// - `buffers`：位于应用地址空间中，内核无法直接通过用户地址空间的虚拟地址来访问，因此需要进行封装
+///
+/// * `buffers`：位于应用地址空间中，内核无法直接通过用户地址空间的虚拟地址来访问，因此需要进行封装
 pub struct UserBuffer {
     pub buffers: Vec<&'static mut [u8]>,
 }
@@ -361,14 +371,14 @@ impl UserBuffer {
         return len;
     }
 
-    pub fn write_at(&mut self, offset:usize, buff: &[u8])->isize{
+    pub fn write_at(&mut self, offset: usize, buff: &[u8]) -> isize {
         let len = buff.len();
         if offset + len > self.len() {
-            return -1
+            return -1;
         }
         let mut head = 0; // offset of slice in UBuffer
         let mut current = 0; // current offset of buff
-    
+
         for sub_buff in self.buffers.iter_mut() {
             let sblen = (*sub_buff).len();
             if head + sblen < offset {
@@ -381,7 +391,8 @@ impl UserBuffer {
                         return len as isize;
                     }
                 }
-            } else {  //head + sblen > offset and head > offset
+            } else {
+                //head + sblen > offset and head > offset
                 for j in 0..sblen {
                     (*sub_buff)[j] = buff[current];
                     current += 1;

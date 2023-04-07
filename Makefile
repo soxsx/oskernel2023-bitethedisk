@@ -30,28 +30,6 @@ kernel-qemu:
 all: sbi-qemu kernel-qemu
 	@echo Build all...
 
-QEMU = qemu-system-riscv64
-GDB = riscv64-unknown-elf-gdb
-
-.PHONY: debug-server
-debug-server: all
-	@$(QEMU) \
-	 	-machine virt \
-		-kernel kernel-qemu \
-		-serial mon:stdio \
-		-nographic \
-		-bios sbi-qemu \
-		-m 128M \
-		-smp 2 \
-		-s -S
-
-.PHONY: debug
-debug:
-	@$(GDB) \
-		-ex 'file $(KERNEL_ELF)' \
-		-ex 'set arch riscv:rv64' \
-		-ex 'target remote localhost:1234'
-
 .PHONY: clean
 clean:
 	@echo Clean all previous build...

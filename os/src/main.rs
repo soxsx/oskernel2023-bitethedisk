@@ -7,9 +7,10 @@
 #![feature(alloc_error_handler)] // 用于处理动态内存分配失败的情形
 
 // Suppress warning.
-#![allow(unused)]
-#![allow(dead_code)]
+// #![allow(unused)]
+// #![allow(dead_code)]
 
+#[macro_use]
 extern crate alloc;
 
 // 如果 extern crate 出现在 crate 的根模块中，那么此 crate名称也会被添加到外部预导入包中，
@@ -22,15 +23,10 @@ extern crate lazy_static;
 #[macro_use]
 mod macros;
 
-#[cfg(feature = "board_k210")]
-#[path = "boards/k210.rs"]
-mod board; // 与硬件板相关的参数
-#[cfg(not(any(feature = "board_k210")))]
 #[path = "boards/qemu.rs"]
 mod board; // 与虚拟机相关的参数
-#[macro_use]
-mod console; // 控制台模块
 mod config; // 参数库
+mod console; // 控制台模块
 mod drivers; // 设备驱动层
 mod fs; // 内核文件系统接口
 mod mm; // 内存空间模块
@@ -42,16 +38,16 @@ mod timer; // 时间片模块
 mod trap; // 提供 Trap 管理
 
 use core::arch::global_asm;
-global_asm!(include_str!("entry.asm")); // 代码的第一条语句，执行指定的汇编文件，汇编程序再调用Rust实现的内核
+
+global_asm!(include_str!("entry.S")); // 代码的第一条语句，执行指定的汇编文件，汇编程序再调用Rust实现的内核
 global_asm!(include_str!("buildin_app.S")); // 将 c_usertests 程序放入内核区内存空间
 
-// 通过宏将 rust_main 标记为 #[no_mangle] 以避免编译器对它的名字进行混淆，不然在链接的时候，
-// entry.asm 将找不到 main.rs 提供的外部符号 rust_main 从而导致链接失败
 #[no_mangle]
-pub fn rust_main() -> ! {
+pub fn meow() -> ! {
     clear_bss();
-    println!("[kernel] Hello, world!");
     lang_items::setup();
+    println!("[kernel] Hello, world!");
+    check_kernel_segment();
     mm::init();
     trap::init();
     trap::enable_timer_interrupt();
@@ -71,7 +67,11 @@ fn clear_bss() {
 }
 
 pub use lang_items::*;
+
 pub mod lang_items {
+
+    use buddy_system_allocator::LockedHeap;
+
     use crate::sbi::shutdown;
     use core::panic::PanicInfo;
 
@@ -95,29 +95,43 @@ pub mod lang_items {
     }
 
     use crate::config::KERNEL_HEAP_SIZE;
-    use buddy_system_allocator::LockedHeap;
 
-    // 将 buddy_system_allocator 中提供的 LockedHeap 实例化成一个全局变量
-    // 并使用 alloc 要求的 #[global_allocator] 语义项进行标记
+    /// 通过 `global_allocator` 注解将 HEAP_ALLOCATOR 标记为 Rust 的内存分配器
+    /// Rust 的相关数据结构，如 Vec, BTreeMap 等，依赖于该分配器
     #[global_allocator]
-    static HEAP_ALLOCATOR: LockedHeap = LockedHeap::empty();
+    static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::empty();
 
     /// 用于处理动态内存分配失败的情形,直接panic
     #[alloc_error_handler]
     pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
         panic!("Heap allocation error, layout = {:?}", layout);
     }
+
     /// 给全局分配器用于分配的一块内存，位于内核的 .bss 段中
     static mut HEAP_SPACE: [u8; KERNEL_HEAP_SIZE] = [0; KERNEL_HEAP_SIZE];
 
-    /// 在使用任何 alloc 中提供的堆数据结构之前，我们需要先调用 init_heap 函数来给我们的全局分配器一块内存用于分配。
+    /// 初始化内核堆内存，以便使用 Rust 提供的数据结构
+    #[inline(always)]
     fn init_heap() {
         unsafe {
             HEAP_ALLOCATOR
-                .lock() // LockedHeap 也是一个被互斥锁 Mutex<T> 保护的类型，
-                // 在对它任何进行任何操作之前都要先获取锁以避免其他线程同时对它进行操作导致数据竞争
+                .lock()
                 .init(HEAP_SPACE.as_ptr() as usize, KERNEL_HEAP_SIZE);
-            // 调用 init 方法告知它能够用来分配的空间的起始地址和大小即可
         }
     }
+}
+
+fn check_kernel_segment() {
+    println!("{:X} (stext)", stext!());
+    println!("{:X} (strampoline)", strampoline!());
+    println!("{:X} (etext)", etext!());
+    println!("{:X} (srodata)", srodata!());
+    println!("{:X} (erodata)", erodata!());
+    println!("{:X} (sdata)", sdata!());
+    println!("{:X} (edata)", edata!());
+    println!("{:X} (sstack)", skstack!());
+    println!("{:X} (estack)", ekstack!());
+    println!("{:X} (sbss)", sbss!());
+    println!("{:X} (ebss)", ebss!());
+    println!("{:X} (ekernel)", ekernel!());
 }

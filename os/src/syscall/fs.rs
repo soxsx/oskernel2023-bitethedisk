@@ -1,18 +1,18 @@
-/// # 文件读写模块
-/// `os/src/syscall/fs.rs`
-/// ## 实现功能
-/// ```
-/// pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize
-/// pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize
-/// pub fn sys_open(path: *const u8, flags: u32) -> isize
-/// pub fn sys_close(fd: usize) -> isize
-/// ```
-//
-use core::mem::size_of;
+//! # 文件读写模块
+//! `os/src/syscall/fs.rs`
+//! ## 实现功能
+//! ```
+//! pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize
+//! pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize
+//! pub fn sys_open(path: *const u8, flags: u32) -> isize
+//! pub fn sys_close(fd: usize) -> isize
+//! ```
+//!
 use crate::fs::{chdir, make_pipe, open, Dirent, Kstat, OpenFlags, MNT_TABLE};
 use crate::mm::{translated_byte_buffer, translated_refmut, translated_str, UserBuffer};
 use crate::task::{current_task, current_user_token};
 use alloc::sync::Arc;
+use core::mem::size_of;
 
 const AT_FDCWD: isize = -100;
 pub const FD_LIMIT: usize = 128;
@@ -84,7 +84,7 @@ pub fn sys_openat(dirfd: isize, path: *const u8, flags: u32, mode: u32) -> isize
 
     if dirfd == AT_FDCWD {
         // 如果是当前工作目录
-        if let Some(inode) = open(inner.get_work_path().as_str(), path.as_str(), oflags) {
+        if let Some(inode) = open(inner.work_path().as_str(), path.as_str(), oflags) {
             let fd = inner.alloc_fd();
             inner.fd_table[fd] = Some(inode);
             fd as isize
@@ -187,11 +187,11 @@ pub fn sys_dup(fd: usize) -> isize {
 ///         - 传入的 old_fd 不存在
 ///         - 传入的 new_fd 超出描述符数量限制 (典型值：128)
 /// - syscall ID：24
-pub fn sys_dup3( old_fd: usize, new_fd: usize )->isize{
+pub fn sys_dup3(old_fd: usize, new_fd: usize) -> isize {
     let task = current_task().unwrap();
     let mut inner = task.inner_exclusive_access();
 
-    if  old_fd >= inner.fd_table.len() || new_fd > FD_LIMIT {
+    if old_fd >= inner.fd_table.len() || new_fd > FD_LIMIT {
         return -1;
     }
     if inner.fd_table[old_fd].is_none() {
@@ -222,7 +222,11 @@ pub fn sys_mkdirat(dirfd: isize, path: *const u8, mode: u32) -> isize {
     _ = mode;
 
     if dirfd == AT_FDCWD {
-        if let Some(_) = open(inner.get_work_path().as_str(), path.as_str(), OpenFlags::O_DIRECTROY) {
+        if let Some(_) = open(
+            inner.work_path().as_str(),
+            path.as_str(),
+            OpenFlags::O_DIRECTROY,
+        ) {
             0
         } else {
             -1
@@ -233,7 +237,11 @@ pub fn sys_mkdirat(dirfd: isize, path: *const u8, mode: u32) -> isize {
             return -1;
         }
         if let Some(file) = &inner.fd_table[dirfd] {
-            if let Some(_) = open(file.get_name().as_str(), path.as_str(), OpenFlags::O_DIRECTROY) {
+            if let Some(_) = open(
+                file.get_name().as_str(),
+                path.as_str(),
+                OpenFlags::O_DIRECTROY,
+            ) {
                 0
             } else {
                 -1
@@ -262,7 +270,13 @@ pub fn sys_getcwd(buf: *mut u8, len: usize) -> isize {
     }
 }
 
-pub fn sys_mount(special: *const u8, dir: *const u8, fstype: *const u8, flags: usize, data: *const u8) -> isize {
+pub fn sys_mount(
+    special: *const u8,
+    dir: *const u8,
+    fstype: *const u8,
+    flags: usize,
+    data: *const u8,
+) -> isize {
     let token = current_user_token();
     let special = translated_str(token, special);
     let dir = translated_str(token, dir);
@@ -289,7 +303,11 @@ pub fn sys_unlinkat(fd: isize, path: *const u8, flags: u32) -> isize {
 
     let path = translated_str(token, path);
     if fd == AT_FDCWD {
-        if let Some(file) = open(inner.get_work_path().as_str(), path.as_str(), OpenFlags::from_bits(0).unwrap()) {
+        if let Some(file) = open(
+            inner.work_path().as_str(),
+            path.as_str(),
+            OpenFlags::from_bits(0).unwrap(),
+        ) {
             file.delete();
             0
         } else {
@@ -306,13 +324,12 @@ pub fn sys_chdir(path: *const u8) -> isize {
     let mut inner = task.inner_exclusive_access();
 
     let path = translated_str(token, path);
-    if let Some(new_cwd) = chdir(inner.current_path.as_str(),&path){
+    if let Some(new_cwd) = chdir(inner.current_path.as_str(), &path) {
         inner.current_path = new_cwd;
         0
     } else {
         -1
     }
-    
 }
 
 pub fn sys_fstat(fd: isize, buf: *mut u8) -> isize {

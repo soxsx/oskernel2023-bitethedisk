@@ -1,9 +1,8 @@
-/// # 进程状态标志
-/// `os/src/task/signal.rs`
-/// ```
-/// pub struct SignalFlags
-/// ```
-//
+//! # 进程状态标志
+//! `os/src/task/signal.rs`
+//! ```
+//! pub struct SignalFlags
+//! ```
 
 bitflags! {
     /// 进程状态标志

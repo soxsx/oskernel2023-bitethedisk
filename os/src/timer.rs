@@ -1,14 +1,14 @@
-/// # 时间模块
-/// `os/src/timer.rs`
-/// ## 实现功能
-/// ```
-/// pub struct  TimeVal
-/// pub fn get_time() -> usize
-/// pub fn get_time_ms() -> usize
-/// pub fn get_TimeVal() -> TimeVal
-/// pub fn set_next_trigger()
-/// ```
-//
+//! # 时间模块
+//! `os/src/timer.rs`
+//! ## 实现功能
+//! ```
+//! pub struct  TimeVal
+//! pub fn get_time() -> usize
+//! pub fn get_time_ms() -> usize
+//! pub fn get_TimeVal() -> TimeVal
+//! pub fn set_next_trigger()
+//! ```
+//!
 use crate::config::CLOCK_FREQ;
 use crate::sbi::set_timer;
 use riscv::register::time;
@@ -56,8 +56,7 @@ pub fn get_time_ms() -> usize {
 }
 
 /// 获取 `TimeVal` 格式的时间信息
-#[allow(non_snake_case)]
-pub fn get_TimeVal() -> TimeVal {
+pub fn current_time_val() -> TimeVal {
     let time_ms = get_time_ms();
     TimeVal {
         sec: time_ms / 1000,

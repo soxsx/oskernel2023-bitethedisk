@@ -1,31 +1,28 @@
-/// # 进程控制模块
-/// `os/src/syscall/process.rs`
-/// ## 实现功能
-/// ```
-/// pub fn sys_exit(exit_code: i32) -> !
-/// pub fn sys_yield() -> isize
-/// pub fn sys_get_time() -> isize
-/// pub fn sys_getpid() -> isize
-/// pub fn sys_fork() -> isize
-/// pub fn sys_exec(path: *const u8) -> isize
-/// pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize
-/// ```
-//
-
+//! # 进程控制模块
+//! `os/src/syscall/process.rs`
+//! ## 实现功能
+//! ```
+//! pub fn sys_exit(exit_code: i32) -> !
+//! pub fn sys_yield() -> isize
+//! pub fn sys_get_time() -> isize
+//! pub fn sys_getpid() -> isize
+//! pub fn sys_fork() -> isize
+//! pub fn sys_exec(path: *const u8) -> isize
+//! pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize
+//! ```
 use crate::fs::{open, OpenFlags};
 use crate::mm::{translated_ref, translated_refmut, translated_str};
 use crate::task::{
-    add_task, current_task, current_user_token, exit_current_and_run_next, pid2task,
-    suspend_current_and_run_next, SignalFlags
+    add_task, current_task, current_user_token, exit_current_and_run_next, get_task_by_pid,
+    suspend_current_and_run_next, SignalFlags,
 };
-use crate::timer::{TimeVal, tms, get_TimeVal, get_time_ms};
+use crate::timer::{current_time_val, get_time_ms, tms, TimeVal};
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
-use crate::config::PAGE_SIZE;
 
-pub use crate::task::{Utsname, UTSNAME, CloneFlags};
+pub use crate::task::{CloneFlags, Utsname, UTSNAME};
 
 /// 结束进程运行然后运行下一程序
 pub fn sys_exit(exit_code: i32) -> ! {
@@ -55,7 +52,7 @@ pub fn sys_nanosleep(buf: *const u8) -> isize {
         if toc - tic >= len {
             break;
         }
-    };
+    }
     0
 }
 
@@ -68,7 +65,7 @@ pub fn sys_nanosleep(buf: *const u8) -> isize {
 /// - 返回值：正确执行返回 0，出现错误返回 -1。
 pub fn sys_get_time(buf: *const u8) -> isize {
     let token = current_user_token();
-    *translated_refmut(token, buf as *mut TimeVal) = get_TimeVal();
+    *translated_refmut(token, buf as *mut TimeVal) = current_time_val();
     0
 }
 
@@ -76,17 +73,17 @@ pub fn sys_times(buf: *const u8) -> isize {
     let sec = get_time_ms() as isize * 1000;
     let token = current_user_token();
     *translated_refmut(token, buf as *mut tms) = tms {
-        tms_stime:sec,
-        tms_utime:sec,
-        tms_cstime:sec,
-        tms_cutime:sec,
+        tms_stime: sec,
+        tms_utime: sec,
+        tms_cstime: sec,
+        tms_cutime: sec,
     };
     0
 }
 
 /// 获取当前正在运行程序的 PID
 pub fn sys_getpid() -> isize {
-    current_task().unwrap().pid.0 as isize
+    current_task().unwrap().pid().0 as isize
 }
 
 //  long clone(unsigned long flags, void *child_stack, int *ptid, int *ctid, unsigned long newtls);
@@ -100,38 +97,47 @@ pub fn sys_getpid() -> isize {
 ///     - `newtls`
 /// - 返回值：对于子进程返回 0，对于当前进程则返回子进程的 PID 。
 /// - syscall ID：220
-pub fn sys_fork(flags: usize, stack_ptr: usize, _ptid: usize, _ctid: usize, _newtls: usize) -> isize {
+pub fn sys_fork(
+    flags: usize,
+    stack_ptr: usize,
+    _ptid: usize,
+    _ctid: usize,
+    _newtls: usize,
+) -> isize {
     let current_task = current_task().unwrap();
     let new_task = current_task.fork();
     // let tid = new_task.getpid();
 
     let flags = CloneFlags::from_bits(flags).unwrap();
     // if flags.contains(CloneFlags::CLONE_CHILD_SETTID) && ctid != 0{
-    //     new_task.inner_exclusive_access().address.set_child_tid = ctid; 
+    //     new_task.inner_exclusive_access().address.set_child_tid = ctid;
     //     *translated_refmut(new_task.inner_exclusive_access().get_user_token(), ctid as *mut i32) = tid  as i32;
     // }
     // if flags.contains(CloneFlags::CLONE_CHILD_CLEARTID) && ctid != 0{
     //     new_task.inner_exclusive_access().address.clear_child_tid = ctid;
     // }
-    if !flags.contains(CloneFlags::SIGCHLD){
+    if !flags.contains(CloneFlags::SIGCHLD) {
         panic!("sys_fork: FLAG not supported!");
     }
 
-    if stack_ptr != 0{
-        let trap_cx = new_task.inner_exclusive_access().get_trap_cx();
+    if stack_ptr != 0 {
+        let trap_cx = new_task.inner_exclusive_access().trap_context();
         trap_cx.set_sp(stack_ptr);
     }
-    let new_pid = new_task.pid.0;
+    let new_pid = new_task.pid();
     // modify trap context of new_task, because it returns immediately after switching
-    let trap_cx = new_task.inner_exclusive_access().get_trap_cx();
+    let trap_cx = new_task.inner_exclusive_access().trap_context();
     // we do not have to move to next instruction since we have done it before
     // trap_handler 已经将当前进程 Trap 上下文中的 sepc 向后移动了 4 字节，
     // 使得它回到用户态之后，会从发出系统调用的 ecall 指令的下一条指令开始执行
 
-    trap_cx.x[10] = 0;      // 对于子进程，返回值是0
-    add_task(new_task);     // 将 fork 到的进程加入任务调度器
-    unsafe { asm!("sfence.vma"); asm!("fence.i"); }
-    new_pid as isize        // 对于父进程，返回值是子进程的 PID
+    trap_cx.x[10] = 0; // 对于子进程，返回值是0
+    add_task(new_task); // 将 fork 到的进程加入任务调度器
+    unsafe {
+        asm!("sfence.vma");
+        asm!("fence.i");
+    }
+    new_pid.0 as isize // 对于父进程，返回值是子进程的 PID
 }
 
 /// ### 将当前进程的地址空间清空并加载一个特定的可执行文件，返回用户态后开始它的执行。
@@ -147,9 +153,10 @@ pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
     let mut args_vec: Vec<String> = Vec::new();
     loop {
         let arg_str_ptr = *translated_ref(token, args);
-        if arg_str_ptr == 0 {   // 读到下一参数地址为0表示参数结束
+        if arg_str_ptr == 0 {
+            // 读到下一参数地址为0表示参数结束
             break;
-        }                       // 否则从用户空间取出参数，压入向量
+        } // 否则从用户空间取出参数，压入向量
         args_vec.push(translated_str(token, arg_str_ptr as *const u8));
         unsafe {
             args = args.add(1);
@@ -158,7 +165,11 @@ pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
     let task = current_task().unwrap();
     let inner = task.inner_exclusive_access();
 
-    if let Some(app_inode) = open(inner.current_path.as_str(),path.as_str(), OpenFlags::O_RDONLY) {
+    if let Some(app_inode) = open(
+        inner.current_path.as_str(),
+        path.as_str(),
+        OpenFlags::O_RDONLY,
+    ) {
         let all_data = app_inode.read_all();
         drop(inner);
         let argc = args_vec.len();
@@ -188,18 +199,18 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
     if !inner
         .children
         .iter()
-        .any(|p| pid == -1 || pid as usize == p.getpid())
+        .any(|p| pid == -1 || pid as usize == p.pid().0)
     {
         return -1;
         // ---- release current PCB
     }
     drop(inner);
-    loop{
+    loop {
         let mut inner = task.inner_exclusive_access();
         // 查找所有符合PID要求的处于僵尸状态的进程，如果有的话还需要同时找出它在当前进程控制块子进程向量中的下标
         let pair = inner.children.iter().enumerate().find(|(_, p)| {
             // ++++ temporarily access child PCB lock exclusively
-            p.inner_exclusive_access().is_zombie() && (pid == -1 || pid as usize == p.getpid())
+            p.inner_exclusive_access().is_zombie() && (pid == -1 || pid as usize == p.pid().0)
             // ++++ release child PCB
         });
         if let Some((idx, _)) = pair {
@@ -211,7 +222,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
             // 包括：内核栈和它的 PID 还有它的应用地址空间存放页表的那些物理页帧等等
             assert_eq!(Arc::strong_count(&child), 1);
             // 收集的子进程信息返回
-            let found_pid = child.getpid();
+            let found_pid = child.pid();
             // ++++ temporarily access child TCB exclusively
             let exit_code = child.inner_exclusive_access().exit_code;
             // ++++ release child PCB
@@ -219,10 +230,10 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
             if exit_code_ptr as usize != 0 {
                 *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code << 8;
             }
-            return found_pid as isize;
+            return found_pid.0 as isize;
         } else {
             // 如果找不到的话则放权等待
-            drop(inner);        // 手动释放 TaskControlBlock 全局可变部分
+            drop(inner); // 手动释放 TaskControlBlock 全局可变部分
             suspend_current_and_run_next();
         }
         // ---- release current PCB lock automatically
@@ -230,7 +241,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 }
 
 pub fn sys_kill(pid: usize, signal: u32) -> isize {
-    if let Some(task) = pid2task(pid) {
+    if let Some(task) = get_task_by_pid(pid.into()) {
         if let Some(flag) = SignalFlags::from_bits(signal) {
             task.inner_exclusive_access().signals |= flag;
             0
@@ -252,8 +263,8 @@ pub fn sys_uname(buf: *const u8) -> isize {
     let token = current_user_token();
     let uname = UTSNAME.exclusive_access();
     *translated_refmut(token, buf as *mut Utsname) = Utsname {
-        sysname:uname.sysname,
-        nodename:uname.nodename,
+        sysname: uname.sysname,
+        nodename: uname.nodename,
         release: uname.release,
         version: uname.version,
         machine: uname.machine,
@@ -286,9 +297,18 @@ pub fn sys_uname(buf: *const u8) -> isize {
 ///     - `off`: 偏移量
 /// - 返回值：从文件的哪个位置开始映射
 /// - syscall_id:222
-pub fn sys_mmap(start: usize, len: usize, prot: usize, flags: usize, fd: isize, off: usize) -> isize {
+pub fn sys_mmap(
+    start: usize,
+    len: usize,
+    prot: usize,
+    flags: usize,
+    fd: isize,
+    off: usize,
+) -> isize {
     let task = current_task().unwrap();
-    if len == 0 {panic!("mmap:len == 0");}
+    if len == 0 {
+        panic!("mmap:len == 0");
+    }
     let result_addr = task.mmap(start, len, prot, flags, fd, off);
     return result_addr as isize;
 }

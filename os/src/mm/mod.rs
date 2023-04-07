@@ -24,7 +24,6 @@ pub use vma::*;
 
 /// 内存管理子系统的初始化
 pub fn init() {
-    frame_allocator::init_frame_allocator();
-    // 从这一刻开始 SV39 分页模式就被启用了
-    KERNEL_SPACE.exclusive_access().activate();
+    frame_allocator::init();
+    KERNEL_SPACE.lock().activate();
 }

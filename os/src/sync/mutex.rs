@@ -1,4 +1,5 @@
 use core::{
+    arch::asm,
     borrow::{Borrow, BorrowMut},
     cell::UnsafeCell,
     marker::PhantomData,
@@ -36,6 +37,7 @@ impl<T> SpinMutex<T> {
     /// 获得锁之前会一直自旋
     pub fn lock(&self) -> MutexGuard<T> {
         while self.locked.load(Ordering::SeqCst) {}
+        unsafe { asm!("fence") }
 
         MutexGuard { lock: self }
     }

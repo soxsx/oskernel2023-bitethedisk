@@ -73,7 +73,6 @@ pub fn trap_handler() -> ! {
     let scause = scause::read(); // 用于描述 Trap 的原因
     let stval = stval::read(); // 给出 Trap 附加信息
     match scause.cause() {
-        // 触发 Trap 的原因是来自 U 特权级的 Environment Call，也就是系统调用
         Trap::Exception(Exception::UserEnvCall) => {
             // 由于应用的 Trap 上下文不在内核地址空间，因此我们调用 current_trap_cx 来获取当前应用的 Trap 上下文的可变引用
             let mut cx = current_trap_cx();
@@ -136,22 +135,22 @@ pub fn trap_handler() -> ! {
         | Trap::Exception(Exception::InstructionPageFault) => {
             let task = current_task().unwrap();
             println!(
-                "[kernel] {:?} in application {}, bad addr = {:#x}, bad instruction = {:#x}.",
+                "[kernel] {:?} in application {:?}, bad addr = {:#x}, bad instruction = {:#x}.",
                 scause.cause(),
-                task.pid.0,
+                task.pid(),
                 stval,
                 current_trap_cx().sepc,
             );
             current_add_signal(SignalFlags::SIGSEGV);
         }
 
-        // 处理应用程序出现非法指令错误
         Trap::Exception(Exception::IllegalInstruction) => {
             // println!("[kernel] IllegalInstruction in application, kernel killed it.");
             // // illegal instruction exit code
             // exit_current_and_run_next(-3);
             current_add_signal(SignalFlags::SIGILL);
         }
+
         // 时间片到中断
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             set_next_trigger();
@@ -170,6 +169,7 @@ pub fn trap_handler() -> ! {
         println!("[kernel] {}", msg);
         exit_current_and_run_next(errno);
     }
+
     trap_return();
 }
 

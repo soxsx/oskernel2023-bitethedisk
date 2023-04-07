@@ -1,26 +1,25 @@
-/// # 物理页帧管理器
-/// `os/src/mm/frame_allocator.rs`
-/// ## 实现功能
-/// ```
-/// pub struct FrameTracker
-/// FrameTracker::new(ppn: PhysPageNum) -> Self
-///
-/// pub struct StackFrameAllocator
-/// type FrameAllocatorImpl = StackFrameAllocator
-/// // 全局物理页帧管理器
-/// pub static ref FRAME_ALLOCATOR: Mutex<FrameAllocatorImpl>
-///
-/// pub fn init_frame_allocator()
-/// pub fn frame_alloc() -> Option<FrameTracker>
-/// // 回收工作在FrameTracker生命周期结束时由编译器发起，故为私有
-/// fn frame_dealloc(ppn: PhysPageNum)
-/// ```
-//
+//! # 物理页帧管理器
+//! `os/src/mm/frame_allocator.rs`
+//! ## 实现功能
+//! ```
+//! pub struct FrameTracker
+//! FrameTracker::new(ppn: PhysPageNum) -> Self
+//!
+//! pub struct StackFrameAllocator
+//! type FrameAllocatorImpl = StackFrameAllocator
+//! // 全局物理页帧管理器
+//! pub static ref FRAME_ALLOCATOR: Mutex<FrameAllocatorImpl>
+//!
+//! pub fn init_frame_allocator()
+//! pub fn frame_alloc() -> Option<FrameTracker>
+//! // 回收工作在FrameTracker生命周期结束时由编译器发起，故为私有
+//! fn frame_dealloc(ppn: PhysPageNum)
+//! ```
+//!
 use super::{PhysAddr, PhysPageNum};
 use crate::config::MEMORY_END;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug, Formatter};
-use lazy_static::*;
 use spin::Mutex;
 
 /// ### 物理页帧
@@ -33,7 +32,7 @@ impl FrameTracker {
     /// 通过物理页号创建一个物理页帧的结构体，创建时初始化内存空间
     pub fn new(ppn: PhysPageNum) -> Self {
         // 物理页清零
-        let bytes_array = ppn.get_bytes_array();
+        let bytes_array = ppn.as_bytes_mut();
         for i in bytes_array {
             *i = 0;
         }
@@ -49,7 +48,7 @@ impl Debug for FrameTracker {
 
 // 当变量生命周期结束被编译器回收的时候执行 drop()
 impl Drop for FrameTracker {
-    /// 当一个 FrameTracker 生命周期结束被编译器回收的时候，我们需要将它控制的物理页帧回收掉
+    // 当一个 FrameTracker 生命周期结束被编译器回收的时候，我们需要将它控制的物理页帧回收掉
     fn drop(&mut self) {
         frame_dealloc(self.ppn);
     }
@@ -96,9 +95,10 @@ impl FrameAllocator for StackFrameAllocator {
         Self {
             current: 0,
             end: 0,
-            recycled: Vec::new(),
+            recycled: vec![],
         }
     }
+
     fn alloc(&mut self) -> Option<PhysPageNum> {
         // 首先检查栈 recycled 内有没有之前回收的物理页号，如果有的话直接弹出栈顶并返回
         if let Some(ppn) = self.recycled.pop() {
@@ -139,12 +139,9 @@ lazy_static! {
 /// - 物理页帧范围
 ///     - 对 `ekernel` 物理地址上取整获得起始物理页号
 ///     - 对 `MEMORY_END` 物理地址下取整获得结束物理页号
-pub fn init_frame_allocator() {
-    extern "C" {
-        fn ekernel();
-    }
+pub fn init() {
     FRAME_ALLOCATOR.lock().init(
-        PhysAddr::from(ekernel as usize).ceil(),
+        PhysAddr::from(ekernel!()).ceil(),
         PhysAddr::from(MEMORY_END).floor(),
     );
 }
@@ -157,23 +154,4 @@ pub fn frame_alloc() -> Option<FrameTracker> {
 /// 回收物理页帧
 pub fn frame_dealloc(ppn: PhysPageNum) {
     FRAME_ALLOCATOR.lock().dealloc(ppn);
-}
-
-#[allow(unused)]
-pub fn frame_allocator_test() {
-    let mut v: Vec<FrameTracker> = Vec::new();
-    for i in 0..5 {
-        let frame = frame_alloc().unwrap();
-        println!("{:?}", frame);
-        v.push(frame); // 将分配到的 FrameTracker move到一个向量中，
-                       // 他的生命周期被延长，否则在循环结束后循环作用域中的临时变量的生命周期就结束了
-    }
-    v.clear(); // 被清空时里面的内容也会被释放
-    for i in 0..5 {
-        let frame = frame_alloc().unwrap();
-        println!("{:?}", frame);
-        v.push(frame);
-    }
-    drop(v);
-    println!("frame_allocator_test passed!");
 }
