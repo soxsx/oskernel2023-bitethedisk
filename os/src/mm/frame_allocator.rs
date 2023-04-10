@@ -17,7 +17,7 @@
 //! ```
 //!
 use super::{PhysAddr, PhysPageNum};
-use crate::config::MEMORY_END;
+use crate::config::PHYS_END;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug, Formatter};
 use spin::Mutex;
@@ -140,9 +140,12 @@ lazy_static! {
 ///     - 对 `ekernel` 物理地址上取整获得起始物理页号
 ///     - 对 `MEMORY_END` 物理地址下取整获得结束物理页号
 pub fn init() {
+    extern "C" {
+        fn ekernel();
+    }
     FRAME_ALLOCATOR.lock().init(
-        PhysAddr::from(ekernel!()).ceil(),
-        PhysAddr::from(MEMORY_END).floor(),
+        PhysAddr::from(ekernel as usize).ceil(),
+        PhysAddr::from(PHYS_END).floor(),
     );
 }
 

@@ -1,23 +1,20 @@
-/// # 块设备驱动层
-/// `os/src/drivers/block/mod.rs`
-/// ```
-/// pub static ref BLOCK_DEVICE
-/// ```
-//
+//! # 块设备驱动层
+//! `os/src/drivers/block/mod.rs`
+//! ```
+//! pub static ref BLOCK_DEVICE
+//! ```
+//!
 
-mod sdcard;
 mod virtio_blk;
 
 pub use virtio_blk::VirtIOBlock;
-pub use sdcard::SDCardWrapper;
 
 use alloc::sync::Arc;
 use fat32::BlockDevice;
 use lazy_static::*;
-use crate::board::BlockDeviceImpl;
 
 lazy_static! {
-    pub static ref BLOCK_DEVICE: Arc<dyn BlockDevice> = Arc::new(BlockDeviceImpl::new());
+    pub static ref BLOCK_DEVICE: Arc<dyn BlockDevice> = Arc::new(VirtIOBlock::new());
 }
 
 #[allow(unused)]

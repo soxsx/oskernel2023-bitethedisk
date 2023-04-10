@@ -8,7 +8,7 @@
 //! pub struct VirtPageNum(pub usize);  // 虚拟页号 27bit
 //! ```
 use super::PageTableEntry;
-use crate::config::{PAGE_SIZE, PAGE_SIZE_BITS};
+use crate::config::{IN_PAGE_OFFSET, PAGE_SIZE};
 use core::fmt::{self, Debug, Formatter};
 
 /// 物理地址宽度：56bit
@@ -16,9 +16,9 @@ const PA_WIDTH_SV39: usize = 56;
 /// 虚拟地址宽度：39bit
 const VA_WIDTH_SV39: usize = 39;
 /// 物理页号宽度：44bit
-const PPN_WIDTH_SV39: usize = PA_WIDTH_SV39 - PAGE_SIZE_BITS;
+const PPN_WIDTH_SV39: usize = PA_WIDTH_SV39 - IN_PAGE_OFFSET;
 /// 虚拟页号宽度：27bit
-const VPN_WIDTH_SV39: usize = VA_WIDTH_SV39 - PAGE_SIZE_BITS;
+const VPN_WIDTH_SV39: usize = VA_WIDTH_SV39 - IN_PAGE_OFFSET;
 
 /// ### 物理地址 56bit
 /// ```
@@ -153,7 +153,7 @@ impl From<VirtAddr> for VirtPageNum {
 }
 impl From<VirtPageNum> for VirtAddr {
     fn from(v: VirtPageNum) -> Self {
-        Self(v.0 << PAGE_SIZE_BITS)
+        Self(v.0 << IN_PAGE_OFFSET)
     }
 }
 impl PhysAddr {
@@ -193,7 +193,7 @@ impl From<PhysAddr> for PhysPageNum {
 // 从物理页号转换到物理地址只需左移 PAGE_SIZE_BITS 大小
 impl From<PhysPageNum> for PhysAddr {
     fn from(v: PhysPageNum) -> Self {
-        Self(v.0 << PAGE_SIZE_BITS)
+        Self(v.0 << IN_PAGE_OFFSET)
     }
 }
 
@@ -230,7 +230,7 @@ impl PhysPageNum {
     }
 
     /// 获取一个恰好放在一个物理页帧开头的类型为 T 的数据的可变引用
-    /// 
+    ///
     /// - 这个很浪费内存啊
     pub fn as_mut<T>(&self) -> &'static mut T {
         let pa: PhysAddr = (*self).into();

@@ -1,12 +1,6 @@
-#![allow(unused)]
-
-macro_rules! export_macro_mods { ($($mod:ident)*) => { $( #[macro_use] pub mod $mod;)* }; }
-
-export_macro_mods! {
-    kernel_segment
-    console
-    hsm
-    // mm
-    on_boot
-    // proc
-}
+#[macro_use]
+mod on_boot;
+#[macro_use]
+mod hsm;
+#[macro_use]
+mod console;

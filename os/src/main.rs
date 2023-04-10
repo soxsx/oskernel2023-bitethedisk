@@ -1,10 +1,10 @@
-// os/src/main.rs
-
-#![no_std]
 // 告诉 Rust 编译器不使用 Rust 标准库 std 转而使用核心库 core（core库不需要操作系统的支持）
-#![no_main] // 不使用main函数，而使用汇编代码指定的入口
-#![feature(panic_info_message)] // 让panic函数能通过 PanicInfo::message 获取报错信息
-#![feature(alloc_error_handler)] // 用于处理动态内存分配失败的情形
+#![no_std]
+// 不使用main函数，而使用汇编代码指定的入口
+#![no_main]
+// features
+#![feature(panic_info_message)]
+#![feature(alloc_error_handler)]
 
 // Suppress warning.
 // #![allow(unused)]
@@ -23,24 +23,39 @@ extern crate lazy_static;
 #[macro_use]
 mod macros;
 
-#[path = "boards/qemu.rs"]
-mod board; // 与虚拟机相关的参数
 mod config; // 参数库
 mod console; // 控制台模块
-mod drivers; // 设备驱动层
-mod fs; // 内核文件系统接口
-mod mm; // 内存空间模块
+// mod drivers; // 设备驱动层
+// mod fs; // 内核文件系统接口
+// mod mm; // 内存空间模块
 mod sbi; // 实现了 RustSBI 通信的相关功能
-mod sync; // 允许在单核处理器上将引用做全局变量使用
-mod syscall; // 系统调用模块
-mod task; // 任务管理模块
-mod timer; // 时间片模块
-mod trap; // 提供 Trap 管理
+// mod sync; // 允许在单核处理器上将引用做全局变量使用
+// mod syscall; // 系统调用模块
+// mod task; // 任务管理模块
+// mod timer; // 时间片模块
+// mod trap; // 提供 Trap 管理
 
 use core::arch::global_asm;
 
 global_asm!(include_str!("entry.S")); // 代码的第一条语句，执行指定的汇编文件，汇编程序再调用Rust实现的内核
-global_asm!(include_str!("buildin_app.S")); // 将 c_usertests 程序放入内核区内存空间
+// global_asm!(include_str!("buildin_app.S")); // 将 c_usertests 程序放入内核区内存空间
+
+extern "C" {
+    fn stext();
+    fn strampoline();
+    fn etext();
+
+    fn srodata();
+    fn erodata();
+    fn sdata();
+    fn edata();
+    fn sbss();
+    fn skstack();
+    fn ekstack();
+    fn ebss();
+
+    fn ekernel();
+}
 
 #[no_mangle]
 pub fn meow() -> ! {
@@ -48,21 +63,22 @@ pub fn meow() -> ! {
     lang_items::setup();
     println!("[kernel] Hello, world!");
     check_kernel_segment();
-    mm::init();
-    trap::init();
-    trap::enable_timer_interrupt();
-    timer::set_next_trigger();
-    fs::list_apps();
-    task::add_initproc();
-    println!("[kernel] add initproc!");
-    task::run_tasks();
-    panic!("Unreachable in rust_main!");
+    // mm::init();
+    // trap::init();
+    // trap::enable_timer_interrupt();
+    // timer::set_next_trigger();
+    // fs::list_apps();
+    // task::add_initproc();
+    // println!("[kernel] add initproc!");
+    // task::run_tasks();
+    unreachable!("you should not be here");
 }
 
 /// 初始化内存.bss区域
 fn clear_bss() {
     unsafe {
-        core::slice::from_raw_parts_mut(sbss!() as *mut u8, ebss!() - sbss!()).fill(0);
+        core::slice::from_raw_parts_mut(sbss as usize as *mut u8, ebss as usize - sbss as usize)
+            .fill(0);
     }
 }
 
@@ -79,7 +95,7 @@ pub mod lang_items {
         init_heap();
     }
 
-    #[panic_handler] //通知编译器用panic函数来对接 panic! 宏
+    #[panic_handler]
     fn _panic(info: &PanicInfo) -> ! {
         if let Some(location) = info.location() {
             println!(
@@ -96,42 +112,41 @@ pub mod lang_items {
 
     use crate::config::KERNEL_HEAP_SIZE;
 
-    /// 通过 `global_allocator` 注解将 HEAP_ALLOCATOR 标记为 Rust 的内存分配器
-    /// Rust 的相关数据结构，如 Vec, BTreeMap 等，依赖于该分配器
+    // 通过 `global_allocator` 注解将 HEAP_ALLOCATOR 标记为 Rust 的内存分配器
+    // Rust 的相关数据结构，如 Vec, BTreeMap 等，依赖于该分配器
     #[global_allocator]
     static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::empty();
 
-    /// 用于处理动态内存分配失败的情形,直接panic
+    // 用于处理动态内存分配失败的情形，直接 panic
     #[alloc_error_handler]
     pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
         panic!("Heap allocation error, layout = {:?}", layout);
     }
 
-    /// 给全局分配器用于分配的一块内存，位于内核的 .bss 段中
-    static mut HEAP_SPACE: [u8; KERNEL_HEAP_SIZE] = [0; KERNEL_HEAP_SIZE];
+    // 给全局分配器用于分配的一块内存，位于内核的 .bss 段中
+    static mut KERNEL_HEAP: [u8; KERNEL_HEAP_SIZE] = [0; KERNEL_HEAP_SIZE];
 
-    /// 初始化内核堆内存，以便使用 Rust 提供的数据结构
     #[inline(always)]
     fn init_heap() {
         unsafe {
             HEAP_ALLOCATOR
                 .lock()
-                .init(HEAP_SPACE.as_ptr() as usize, KERNEL_HEAP_SIZE);
+                .init(KERNEL_HEAP.as_ptr() as usize, KERNEL_HEAP_SIZE);
         }
     }
 }
 
 fn check_kernel_segment() {
-    println!("{:X} (stext)", stext!());
-    println!("{:X} (strampoline)", strampoline!());
-    println!("{:X} (etext)", etext!());
-    println!("{:X} (srodata)", srodata!());
-    println!("{:X} (erodata)", erodata!());
-    println!("{:X} (sdata)", sdata!());
-    println!("{:X} (edata)", edata!());
-    println!("{:X} (sstack)", skstack!());
-    println!("{:X} (estack)", ekstack!());
-    println!("{:X} (sbss)", sbss!());
-    println!("{:X} (ebss)", ebss!());
-    println!("{:X} (ekernel)", ekernel!());
+    println!("{:X} (stext)", stext as usize);
+    println!("{:X} (strampoline)", strampoline as usize);
+    println!("{:X} (etext)", etext as usize);
+    println!("{:X} (srodata)", srodata as usize);
+    println!("{:X} (erodata)", erodata as usize);
+    println!("{:X} (sdata)", sdata as usize);
+    println!("{:X} (edata)", edata as usize);
+    println!("{:X} (sstack)", skstack as usize);
+    println!("{:X} (estack)", ekstack as usize);
+    println!("{:X} (sbss)", sbss as usize);
+    println!("{:X} (ebss)", ebss as usize);
+    println!("{:X} (ekernel)", ekernel as usize);
 }

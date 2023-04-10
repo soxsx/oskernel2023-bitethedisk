@@ -1,21 +1,19 @@
-/// # 页表
-/// `os/src/mm/page_table.rs`
-/// ## 实现功能
-/// ```
-/// pub struct PTEFlags: u8
-/// pub struct PageTableEntry
-/// pub struct PageTable
-///
-/// pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&'static mut [u8]>
-/// ```
-//
+//! # 页表
+//! `os/src/mm/page_table.rs`
+//! ## 实现功能
+//! ```
+//! pub struct PTEFlags: u8
+//! pub struct PageTableEntry
+//! pub struct PageTable
+//!
+//! pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&'static mut [u8]>
+//! ```
 use super::{frame_alloc, FrameTracker, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
 
-// 可以将一个 u8 封装成一个标志位的集合类型，支持一些常见的集合运算
 bitflags! {
     /// ### 页表项标志位
     /// |标志位|描述|

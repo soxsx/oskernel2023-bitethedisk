@@ -1,60 +1,65 @@
-TARGET := riscv64imac-unknown-none-elf
+##################################################################
+#                         Configuration                          #
+##################################################################
+TARGET := riscv64gc-unknown-none-elf
+BOOTLOADER = ./bootloader/rustsbi-qemu
 
 KERNEL_ELF := target/$(TARGET)/release/os
-KERNEL_BIN := $(KERNEL_ELF).bin
-
 KERNEL_ELF_DBG := target/$(TARGET)/debug/os
-
-BOARD ?= qemu
-
-env:
-	rustup target add $(TARGET)
-	rustup component add llvm-tools-preview
-
-initproc:
-	@cd ../misc/user_c && make build
-
-build:
-	@cp src/linker-$(BOARD).ld src/linker.ld
-	@cargo clean && cargo build --release --features "board_$(BOARD)"
-	@rm src/linker.ld
-
-build-debug:
-	@cp src/linker-$(BOARD).ld src/linker.ld
-	@cargo clean && cargo build --features "board_$(BOARD)"
-	@rm src/linker.ld
-
-run: build copy_to_fs
-	@qemu-system-riscv64 \
-		-machine virt \
-		-nographic \
-		-smp 1 \
-		-bios ../bootloader/rustsbi-qemu \
-		-kernel $(KERNEL_ELF) \
-		-drive file=../workspace/fat32.img,if=none,format=raw,id=x0 \
-        -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
-
-copy_to_fs: 
-	cd ../workspace && sudo mount fat32.img fs/ && sudo cp -r ../misc/user_c/bin/* fs/ && sudo umount fs/
-
-NCPU = 1
 
 QEMU = qemu-system-riscv64
 GDB = riscv64-unknown-elf-gdb
 
-.PHONY: debug-server
-debug-server: build-debug
+FAT32_IMAGE = ../workspace/fat32.img
+NCPU = 2
+
+##################################################################
+#                        Run straightly                          #
+##################################################################
+kernel:
+	@cargo clean
+	@cargo build --release
+
+fat32img:
+	@echo Build all syscall tests...
+	@cd ../misc && make tests 
+
+	@echo Move all tests to workspace...
+	cd ../misc && cp -r ./user/build/riscv64 ../workspace/tests
+
+	@echo Build a fat32 image sized 300MiB...
+	@cd ../workspace && make image
+
+run: kernel fat32img
+	@$(QEMU) \
+	 	-machine virt \
+		-kernel $(KERNEL_ELF) \
+		-m 128M \
+		-nographic \
+		-smp $(NCPU) \
+		-bios $(BOOTLOADER) \
+		-drive file=$(FAT32_IMAGE),if=none,format=raw,id=x0 \
+		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+
+##################################################################
+#                      Debug build & run.                        #
+##################################################################
+kernel-debug:
+	@cargo clean
+	@cargo build
+
+debug-server: kernel-debug fat32img
 	@$(QEMU) \
 	 	-machine virt \
 		-kernel $(KERNEL_ELF_DBG) \
-		-serial mon:stdio \
-		-nographic \
-		-bios ../bootloader/rustsbi-qemu \
 		-m 128M \
+		-nographic \
 		-smp $(NCPU) \
+		-bios $(BOOTLOADER) \
+		-drive file=$(FAT32_IMAGE),if=none,format=raw,id=x0 \
+		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
 		-s -S
 
-.PHONY: debug
 debug:
 	@$(GDB) \
 		-ex 'file $(KERNEL_ELF_DBG)' \
