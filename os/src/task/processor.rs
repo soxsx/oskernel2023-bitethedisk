@@ -12,7 +12,7 @@
 //! pub fn schedule(switched_task_cx_ptr: *mut TaskContext)
 //! ```
 //!
-use super::global_task_manager::switch_task_context;
+use super::manager::__switch;
 use super::{fetch_task, TaskStatus};
 use super::{TaskContext, TaskControlBlock};
 use crate::trap::TrapContext;
@@ -82,7 +82,7 @@ pub fn run_tasks() {
             // release processor manually
             drop(processor);
 
-            switch_task_context(idle_task_cx_ptr, next_task_cx_ptr);
+            unsafe { __switch(idle_task_cx_ptr, next_task_cx_ptr) }
         }
     }
 }
@@ -98,13 +98,13 @@ pub fn current_task() -> Option<Arc<TaskControlBlock>> {
 }
 
 /// 从全局变量 `PROCESSOR` 中取出当前正在执行任务的用户地址空间 token
-pub fn current_user_token() -> usize {
+pub fn current_task_token() -> usize {
     let task = current_task().unwrap();
     let token = task.inner_exclusive_access().user_token();
     token
 }
 
-pub fn current_trap_cx() -> &'static mut TrapContext {
+pub fn current_trap_context() -> &'static mut TrapContext {
     current_task()
         .unwrap()
         .inner_exclusive_access()
@@ -117,5 +117,5 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     let idle_task_cx_ptr = processor.idle_task_ctx_ptr();
     drop(processor);
 
-    switch_task_context(switched_task_cx_ptr, idle_task_cx_ptr);
+    unsafe { __switch(switched_task_cx_ptr, idle_task_cx_ptr) }
 }

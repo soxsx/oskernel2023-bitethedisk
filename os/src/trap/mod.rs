@@ -15,8 +15,8 @@ use crate::config::{TRAMPOLINE, TRAP_CONTEXT};
 use crate::mm::{VirtAddr, VirtPageNum};
 use crate::syscall::syscall;
 use crate::task::{
-    check_signals_of_current, current_add_signal, current_task, current_trap_cx,
-    current_user_token, exit_current_and_run_next, suspend_current_and_run_next, SignalFlags,
+    check_signals_of_current, current_add_signal, current_task, current_task_token,
+    current_trap_context, exit_current_and_run_next, suspend_current_and_run_next, SignalFlags,
 };
 use crate::timer::set_next_trigger;
 use core::arch::{asm, global_asm};
@@ -75,7 +75,7 @@ pub fn trap_handler() -> ! {
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
             // 由于应用的 Trap 上下文不在内核地址空间，因此我们调用 current_trap_cx 来获取当前应用的 Trap 上下文的可变引用
-            let mut cx = current_trap_cx();
+            let mut cx = current_trap_context();
             cx.sepc += 4; // 我们希望trap返回后应用程序从下一条指令开始执行
                           // 从 Trap 上下文取出作为 syscall ID 的 a7 和系统调用的三个参数 a0~a2 传给 syscall 函数并获取返回值 放到 a0
             let result = syscall(
@@ -83,7 +83,7 @@ pub fn trap_handler() -> ! {
                 [cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]],
             );
             // cx is changed during sys_exec, so we have to call it again
-            cx = current_trap_cx();
+            cx = current_trap_context();
             cx.x[10] = result as usize;
         }
         // 处理应用程序出现访存错误，判断能否CoW
@@ -139,7 +139,7 @@ pub fn trap_handler() -> ! {
                 scause.cause(),
                 task.pid(),
                 stval,
-                current_trap_cx().sepc,
+                current_trap_context().sepc,
             );
             current_add_signal(SignalFlags::SIGSEGV);
         }
@@ -178,7 +178,7 @@ pub fn trap_handler() -> ! {
 pub fn trap_return() -> ! {
     set_user_trap_entry();
     let trap_cx_ptr = TRAP_CONTEXT;
-    let user_satp = current_user_token();
+    let user_satp = current_task_token();
     extern "C" {
         fn __alltraps();
         fn __restore();

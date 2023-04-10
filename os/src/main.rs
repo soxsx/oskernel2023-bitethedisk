@@ -24,21 +24,22 @@ extern crate lazy_static;
 mod macros;
 
 mod config; // 参数库
-mod console; // 控制台模块
-// mod drivers; // 设备驱动层
-// mod fs; // 内核文件系统接口
-// mod mm; // 内存空间模块
+mod console;
+#[macro_use]
+mod mm;
+mod drivers;
+mod fs;
 mod sbi; // 实现了 RustSBI 通信的相关功能
-// mod sync; // 允许在单核处理器上将引用做全局变量使用
-// mod syscall; // 系统调用模块
-// mod task; // 任务管理模块
-// mod timer; // 时间片模块
-// mod trap; // 提供 Trap 管理
+mod sync; // 允许在单核处理器上将引用做全局变量使用
+mod syscall; // 系统调用模块
+mod task; // 任务管理模块
+mod timer; // 时间片模块
+mod trap;
 
 use core::arch::global_asm;
 
 global_asm!(include_str!("entry.S")); // 代码的第一条语句，执行指定的汇编文件，汇编程序再调用Rust实现的内核
-// global_asm!(include_str!("buildin_app.S")); // 将 c_usertests 程序放入内核区内存空间
+global_asm!(include_str!("buildin_app.S")); // 将 c_usertests 程序放入内核区内存空间
 
 extern "C" {
     fn stext();
@@ -59,22 +60,26 @@ extern "C" {
 
 #[no_mangle]
 pub fn meow() -> ! {
+    if hartid!() != 0 {
+        loop {}
+    }
+
     clear_bss();
     lang_items::setup();
     println!("[kernel] Hello, world!");
     check_kernel_segment();
-    // mm::init();
-    // trap::init();
-    // trap::enable_timer_interrupt();
-    // timer::set_next_trigger();
-    // fs::list_apps();
-    // task::add_initproc();
-    // println!("[kernel] add initproc!");
-    // task::run_tasks();
+    mm::init();
+    trap::init();
+    trap::enable_timer_interrupt();
+    timer::set_next_trigger();
+    fs::list_apps();
+    task::add_initproc();
+    println!("[kernel] add initproc!");
+    task::run_tasks();
+
     unreachable!("you should not be here");
 }
 
-/// 初始化内存.bss区域
 fn clear_bss() {
     unsafe {
         core::slice::from_raw_parts_mut(sbss as usize as *mut u8, ebss as usize - sbss as usize)
@@ -83,7 +88,6 @@ fn clear_bss() {
 }
 
 pub use lang_items::*;
-
 pub mod lang_items {
 
     use buddy_system_allocator::LockedHeap;
@@ -99,13 +103,13 @@ pub mod lang_items {
     fn _panic(info: &PanicInfo) -> ! {
         if let Some(location) = info.location() {
             println!(
-                "[kernel] Panicked at {}:{} {}",
+                "[kernel] panicked at {}:{} {}",
                 location.file(),
                 location.line(),
                 info.message().unwrap()
             );
         } else {
-            println!("[kernel] Panicked: {}", info.message().unwrap());
+            println!("[kernel] panicked: {}", info.message().unwrap());
         }
         shutdown()
     }

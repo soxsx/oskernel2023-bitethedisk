@@ -1,8 +1,8 @@
 //! 全局任务管理器
-//! 
+//!
 //! 维护一个全局的 rq
 //! CPU 可以从这里获取就绪的进程以便执行
-//! 
+//!
 use core::arch::global_asm;
 
 use super::{TaskContext, TaskControlBlock};
@@ -85,13 +85,5 @@ extern "C" {
     ///
     /// * current_task_cx_ptr 当前任务上下文指针
     /// * next_task_cx_ptr    即将被切换到的任务上下文指针
-    fn __switch(current_task_cx_ptr: *mut TaskContext, next_task_cx_ptr: *const TaskContext);
-}
-
-/// Wrapper of C function in asm `__switch`.
-#[inline(always)]
-pub fn switch_task_context(current: *mut TaskContext, next: *const TaskContext) {
-    unsafe {
-        __switch(current, next);
-    }
+    pub fn __switch(current_task_cx_ptr: *mut TaskContext, next_task_cx_ptr: *const TaskContext);
 }

@@ -2,8 +2,9 @@
 //! `os/src/task/mod.rs`
 //!
 mod context; // 任务上下文模块
-mod global_task_manager;
+mod manager;
 mod info;
+mod kernel_stack;
 mod pid; // 进程标识符模块
 mod processor; // 处理器管理模块
 mod signal; // 进程状态标志
@@ -11,17 +12,17 @@ mod task; // PCB
 
 // use crate::fs::{open, OpenFlags};
 use alloc::sync::Arc;
-use global_task_manager::fetch_task;
-use global_task_manager::remove_task_with_pid;
+use manager::fetch_task;
+use manager::remove_task_with_pid;
 use lazy_static::*;
 use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
-pub use global_task_manager::{add_task, get_task_by_pid};
+pub use manager::{add_task, get_task_by_pid};
 pub use info::{CloneFlags, Utsname, UTSNAME};
-pub use pid::{pid_alloc, KernelStack, PidHandle};
+pub use pid::{pid_alloc, PidHandle};
 pub use processor::{
-    current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
+    current_task, current_task_token, current_trap_context, run_tasks, schedule, take_current_task,
 };
 pub use signal::SignalFlags;
 

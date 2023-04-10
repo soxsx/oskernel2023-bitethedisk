@@ -5,13 +5,13 @@
 //! pub struct TaskControlBlockInner
 //! pub enum TaskStatus
 //! ```
+use super::kernel_stack::KernelStack;
 use super::TaskContext;
-use super::{pid_alloc, KernelStack, PidHandle, SignalFlags};
+use super::{pid_alloc, PidHandle, SignalFlags};
 use crate::config::{MMAP_BASE, PAGE_SIZE, TRAP_CONTEXT};
 use crate::fs::{File, Stdin, Stdout};
-use crate::mm::{
-    translated_refmut, MapPermission, MemorySet, MmapArea, PhysPageNum, VirtAddr, KERNEL_SPACE,
-};
+use crate::mm::kernel_vmm::KERNEL_VMM;
+use crate::mm::{translated_refmut, MapPermission, MemorySet, MmapArea, PhysPageNum, VirtAddr};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::string::String;
@@ -182,7 +182,7 @@ impl TaskControlBlock {
         *trap_cx = TrapContext::new(
             entry_point,
             user_sp,
-            KERNEL_SPACE.lock().token(),
+            KERNEL_VMM.lock().token(),
             kernel_stack_top,
             trap_handler as usize,
         );
@@ -237,7 +237,7 @@ impl TaskControlBlock {
         *trap_cx = TrapContext::new(
             entry_point,
             user_sp,
-            KERNEL_SPACE.lock().token(),
+            KERNEL_VMM.lock().token(),
             self.kernel_stack.top(),
             trap_handler as usize,
         );

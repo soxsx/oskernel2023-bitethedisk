@@ -13,7 +13,7 @@
 use crate::fs::{open, OpenFlags};
 use crate::mm::{translated_ref, translated_refmut, translated_str};
 use crate::task::{
-    add_task, current_task, current_user_token, exit_current_and_run_next, get_task_by_pid,
+    add_task, current_task, current_task_token, exit_current_and_run_next, get_task_by_pid,
     suspend_current_and_run_next, SignalFlags,
 };
 use crate::timer::{current_time_val, get_time_ms, tms, TimeVal};
@@ -44,7 +44,7 @@ pub fn sys_yield() -> isize {
 pub fn sys_nanosleep(buf: *const u8) -> isize {
     let tic = get_time_ms();
 
-    let token = current_user_token();
+    let token = current_task_token();
     let len_timeval = translated_ref(token, buf as *const TimeVal);
     let len = len_timeval.sec * 1000 + len_timeval.usec / 1000;
     loop {
@@ -64,14 +64,14 @@ pub fn sys_nanosleep(buf: *const u8) -> isize {
 /// - 功能：内核根据时钟周期数和时钟频率换算系统运行时间，并写入到用户地址空间
 /// - 返回值：正确执行返回 0，出现错误返回 -1。
 pub fn sys_get_time(buf: *const u8) -> isize {
-    let token = current_user_token();
+    let token = current_task_token();
     *translated_refmut(token, buf as *mut TimeVal) = current_time_val();
     0
 }
 
 pub fn sys_times(buf: *const u8) -> isize {
     let sec = get_time_ms() as isize * 1000;
-    let token = current_user_token();
+    let token = current_task_token();
     *translated_refmut(token, buf as *mut tms) = tms {
         tms_stime: sec,
         tms_utime: sec,
@@ -147,7 +147,7 @@ pub fn sys_fork(
 /// - 返回值：如果出错的话（如找不到名字相符的可执行文件）则返回 -1，否则返回参数个数 `argc`。
 /// - syscall ID：221
 pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
-    let token = current_user_token();
+    let token = current_task_token();
     // 读取到用户空间的应用程序名称（路径）
     let path = translated_str(token, path);
     let mut args_vec: Vec<String> = Vec::new();
@@ -260,7 +260,7 @@ pub fn sys_kill(pid: usize, signal: u32) -> isize {
 ///     - 0表示正常
 /// - syscall_ID: 160
 pub fn sys_uname(buf: *const u8) -> isize {
-    let token = current_user_token();
+    let token = current_task_token();
     let uname = UTSNAME.exclusive_access();
     *translated_refmut(token, buf as *mut Utsname) = Utsname {
         sysname: uname.sysname,

@@ -1,26 +1,13 @@
-//! # 地址空间模块
-//! `os/src/mm/memory_set.rs`
-//! ## 实现功能
-//! ```
-//! pub static ref KERNEL_SPACE: Arc<UPSafeCell<MemorySet>>
-//! pub struct MemorySet
-//! pub struct MapArea
-//! ```
+//!
+//! 地址空间的实现 `MemorySet`
 //!
 use super::{frame_alloc, FrameTracker};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
-use crate::config::{MMIO, PAGE_SIZE, PHYS_END, TRAMPOLINE, TRAP_CONTEXT, USER_STACK_SIZE};
-use crate::sync::UPSafeCell;
+use crate::config::{PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_STACK_SIZE};
 use alloc::collections::BTreeMap;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::arch::asm;
-use lazy_static::*;
-use riscv::asm;
-use riscv::register::satp;
-use spin::Mutex;
 
 extern "C" {
     fn stext();
@@ -33,16 +20,6 @@ extern "C" {
     fn ebss();
     fn ekernel();
     fn strampoline();
-}
-
-lazy_static! {
-    pub static ref KERNEL_SPACE: Arc<Mutex<MemorySet>> =
-        Arc::new(Mutex::new(MemorySet::new_kernel()));
-}
-
-#[inline(always)]
-pub fn kernel_token() -> usize {
-    KERNEL_SPACE.lock().token()
 }
 
 /// ### 地址空间
@@ -70,8 +47,7 @@ pub struct MemorySet {
 }
 
 impl MemorySet {
-    /// 新建一个空的地址空间
-    pub fn new_bare() -> Self {
+    pub fn new() -> Self {
         Self {
             page_table: PageTable::new(),
             areas: vec![],
@@ -84,7 +60,7 @@ impl MemorySet {
     }
 
     /// 获取当前页表的 token (符合 satp CSR 格式要求的多级页表的根节点所在的物理页号)
-    pub fn token(&self) -> usize {
+    pub const fn token(&self) -> usize {
         self.page_table.token()
     }
 
@@ -100,6 +76,7 @@ impl MemorySet {
             None,
         );
     }
+
     pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
         if let Some((idx, area)) = self
             .areas
@@ -115,7 +92,7 @@ impl MemorySet {
     /// ### 在当前地址空间插入一个新的逻辑段
     /// 如果是以 Framed 方式映射到物理内存,
     /// 还可以可选地在那些被映射到的物理页帧上写入一些初始化数据
-    fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
+    pub(super) fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
         if let Some(data) = data {
             // 写入初始化数据，如果数据存在
@@ -131,85 +108,12 @@ impl MemorySet {
     }
 
     /// 映射跳板的虚拟页号和物理物理页号
-    fn map_trampoline(&mut self) {
+    pub(super) fn map_trampoline(&mut self) {
         self.page_table.map(
             VirtAddr::from(TRAMPOLINE).into(),
             PhysAddr::from(strampoline as usize).into(),
             PTEFlags::R | PTEFlags::X,
         );
-    }
-
-    /// ### 生成内核的地址空间
-    /// - Without kernel stacks.
-    /// - 采用恒等映射
-    pub fn new_kernel() -> Self {
-        let mut memory_set = Self::new_bare();
-
-        memory_set.map_trampoline();
-
-        // map kernel sections
-        // 总体思路：通过Linker.ld中的标签划分内核空间为不同的区块，为每个区块采用恒等映射的方式生成逻辑段，压入地址空间
-        memory_set.push(
-            MapArea::new(
-                (stext as usize).into(),
-                (etext as usize).into(),
-                MapType::Identical,
-                MapPermission::R | MapPermission::X,
-            ),
-            None,
-        );
-
-        memory_set.push(
-            MapArea::new(
-                (srodata as usize).into(),
-                (erodata as usize).into(),
-                MapType::Identical,
-                MapPermission::R,
-            ),
-            None,
-        );
-        memory_set.push(
-            MapArea::new(
-                (sdata as usize).into(),
-                (edata as usize).into(),
-                MapType::Identical,
-                MapPermission::R | MapPermission::W,
-            ),
-            None,
-        );
-        memory_set.push(
-            MapArea::new(
-                (sbss as usize).into(),
-                (ebss as usize).into(),
-                MapType::Identical,
-                MapPermission::R | MapPermission::W,
-            ),
-            None,
-        );
-        memory_set.push(
-            MapArea::new(
-                (ekernel as usize).into(),
-                PHYS_END.into(),
-                MapType::Identical,
-                MapPermission::R | MapPermission::W,
-            ),
-            None,
-        );
-        println!("pivote");
-
-        for pair in MMIO {
-            // 恒等映射 内存映射 I/O (MMIO, Memory-Mapped I/O) 地址到内核地址空间
-            memory_set.push(
-                MapArea::new(
-                    (*pair).0.into(),
-                    ((*pair).0 + (*pair).1).into(),
-                    MapType::Identical,
-                    MapPermission::R | MapPermission::W,
-                ),
-                None,
-            );
-        }
-        memory_set
     }
 
     /// ### 从 ELF 格式可执行文件解析出各数据段并对应生成应用的地址空间
@@ -218,7 +122,7 @@ impl MemorySet {
     ///     - 用户栈顶地址
     ///     - 程序入口地址
     pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize) {
-        let mut memory_set = Self::new_bare();
+        let mut memory_set = Self::new();
         // 将跳板插入到应用地址空间
         memory_set.map_trampoline();
         // map program headers of elf, with U flag
@@ -293,7 +197,7 @@ impl MemorySet {
 
     /// 复制一个完全相同的地址空间
     pub fn from_existed_user(user_space: &MemorySet) -> MemorySet {
-        let mut memory_set = Self::new_bare();
+        let mut memory_set = Self::new();
         // 映射跳板
         memory_set.map_trampoline();
         // 循环拷贝每一个逻辑段到新的地址空间
@@ -325,18 +229,6 @@ impl MemorySet {
             }
         }
         0
-    }
-
-    /// ### 激活当前虚拟地址空间
-    /// 将多级页表的token（格式化后的root_ppn）写入satp
-    pub fn activate(&self) {
-        let satp = self.page_table.token();
-        satp::write(satp);
-
-        unsafe {
-            // 刷新 TLB
-            asm!("sfence.vma");
-        }
     }
 
     /// 根据多级页表和 vpn 查找页表项

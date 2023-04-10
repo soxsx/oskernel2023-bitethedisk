@@ -33,11 +33,11 @@ SECTIONS
     . = ALIGN(0x1000);
     edata = .;
 
+    sbss = .;
     .bss : {
         skstack = .;
         *(.bss.stack) /* 这里本身就是 8KiB 已经对齐了，所以不需要再手动对齐 */
         ekstack = .;
-        sbss = .;
         *(.bss .bss.*)
         *(.sbss .sbss.*)
     }

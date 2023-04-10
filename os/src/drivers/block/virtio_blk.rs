@@ -1,17 +1,19 @@
-/// # VirtIO 总线架构下的块设备
-/// `os/src/drivers/block/virtio_blk.rs`
-/// ```
-/// pub struct VirtIOBlock
-/// pub fn virtio_dma_alloc ()
-/// pub fn virtio_dma_dealloc ()
-/// pub fn virtio_phys_to_virt ()
-/// pub fn virtio_virt_to_phys ()
-/// ```
-//
+//! # VirtIO 总线架构下的块设备
+//! `os/src/drivers/block/virtio_blk.rs`
+//! ```
+//! pub struct VirtIOBlock
+//! pub fn virtio_dma_alloc ()
+//! pub fn virtio_dma_dealloc ()
+//! pub fn virtio_phys_to_virt ()
+//! pub fn virtio_virt_to_phys ()
+//! ```
 use super::BlockDevice;
-use crate::mm::{
-    frame_alloc, frame_dealloc, kernel_token, FrameTracker, PageTable, PhysAddr, PhysPageNum,
-    StepByOne, VirtAddr,
+use crate::{
+    kernel_token,
+    mm::{
+        frame_alloc, frame_dealloc, FrameTracker, PageTable, PhysAddr, PhysPageNum, StepByOne,
+        VirtAddr,
+    },
 };
 use alloc::vec::Vec;
 use lazy_static::*;
@@ -22,7 +24,7 @@ use virtio_drivers::{VirtIOBlk, VirtIOHeader};
 const VIRTIO0: usize = 0x10001000;
 
 lazy_static! {
-    static ref QUEUE_FRAMES: Mutex<Vec<FrameTracker>> = unsafe { Mutex::new(Vec::new()) };
+    static ref QUEUE_FRAMES: Mutex<Vec<FrameTracker>> = Mutex::new(Vec::new());
 }
 
 /// ### VirtIO 总线架构下的块设备
@@ -96,7 +98,7 @@ pub extern "C" fn virtio_phys_to_virt(paddr: PhysAddr) -> VirtAddr {
 
 #[no_mangle]
 pub extern "C" fn virtio_virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
-    PageTable::from_token(kernel_token())
+    PageTable::from_token(kernel_token!())
         .translate_va(vaddr)
         .unwrap()
 }

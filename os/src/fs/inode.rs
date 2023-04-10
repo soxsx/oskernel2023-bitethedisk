@@ -1,12 +1,12 @@
 use super::{Dirent, File, Kstat};
 use crate::drivers::BLOCK_DEVICE;
 use crate::mm::UserBuffer;
-use core::str::FromStr;
 use alloc::vec::Vec;
 use alloc::{string::String, sync::Arc};
 use bitflags::*;
-use lazy_static::*;
+use core::str::FromStr;
 use fat32::{FAT32Manager, VFile, ATTR_ARCHIVE, ATTR_DIRECTORY};
+use lazy_static::*;
 use spin::Mutex;
 
 /// 表示进程中一个被打开的常规文件或目录
@@ -216,8 +216,8 @@ impl File for OSInode {
         let inner = self.inner.lock();
         let vfile = inner.inode.clone();
         // todo
-        let (st_size,st_blksize,st_blocks) = vfile.stat();
-        kstat.init(st_size,st_blksize,st_blocks);
+        let (st_size, st_blksize, st_blocks) = vfile.stat();
+        kstat.init(st_size, st_blksize, st_blocks);
     }
 
     fn get_dirent(&self, dirent: &mut Dirent) -> isize {
@@ -240,7 +240,7 @@ impl File for OSInode {
         self.name()
     }
 
-    fn set_offset(&self, offset: usize){
+    fn set_offset(&self, offset: usize) {
         let mut inner = self.inner.lock();
         inner.offset = offset;
     }

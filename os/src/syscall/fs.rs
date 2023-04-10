@@ -10,7 +10,7 @@
 //!
 use crate::fs::{chdir, make_pipe, open, Dirent, Kstat, OpenFlags, MNT_TABLE};
 use crate::mm::{translated_byte_buffer, translated_refmut, translated_str, UserBuffer};
-use crate::task::{current_task, current_user_token};
+use crate::task::{current_task, current_task_token};
 use alloc::sync::Arc;
 use core::mem::size_of;
 
@@ -23,7 +23,7 @@ pub const FD_LIMIT: usize = 128;
 /// - `len` 表示内存中缓冲区的长度。
 /// - 返回值：成功写入的长度。
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
-    let token = current_user_token();
+    let token = current_task_token();
     let task = current_task().unwrap();
     let inner = task.inner_exclusive_access();
     // 文件描述符不合法
@@ -50,7 +50,7 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
 /// - `len` 表示读取字符个数。
 /// - 返回值：读出的字符。
 pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
-    let token = current_user_token();
+    let token = current_task_token();
     let task = current_task().unwrap();
     let inner = task.inner_exclusive_access();
     // 文件描述符不合法
@@ -73,7 +73,7 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
 
 pub fn sys_openat(dirfd: isize, path: *const u8, flags: u32, mode: u32) -> isize {
     let task = current_task().unwrap();
-    let token = current_user_token();
+    let token = current_task_token();
     let mut inner = task.inner_exclusive_access();
 
     let path = translated_str(token, path);
@@ -138,7 +138,7 @@ pub fn sys_close(fd: usize) -> isize {
 /// - syscall ID：59
 pub fn sys_pipe(pipe: *mut u32, flag: usize) -> isize {
     let task = current_task().unwrap();
-    let token = current_user_token();
+    let token = current_task_token();
     let mut inner = task.inner_exclusive_access();
 
     // todo
@@ -213,7 +213,7 @@ pub fn sys_dup3(old_fd: usize, new_fd: usize) -> isize {
 }
 
 pub fn sys_mkdirat(dirfd: isize, path: *const u8, mode: u32) -> isize {
-    let token = current_user_token();
+    let token = current_task_token();
     let task = current_task().unwrap();
     let inner = task.inner_exclusive_access();
     let path = translated_str(token, path);
@@ -255,7 +255,7 @@ pub fn sys_mkdirat(dirfd: isize, path: *const u8, mode: u32) -> isize {
 
 /// buf：用于保存当前工作目录的字符串。当 buf 设为 NULL，由系统来分配缓存区
 pub fn sys_getcwd(buf: *mut u8, len: usize) -> isize {
-    let token = current_user_token();
+    let token = current_task_token();
     let task = current_task().unwrap();
     let inner = task.inner_exclusive_access();
 
@@ -277,7 +277,7 @@ pub fn sys_mount(
     flags: usize,
     data: *const u8,
 ) -> isize {
-    let token = current_user_token();
+    let token = current_task_token();
     let special = translated_str(token, special);
     let dir = translated_str(token, dir);
     let fstype = translated_str(token, fstype);
@@ -288,14 +288,14 @@ pub fn sys_mount(
 }
 
 pub fn sys_umount(p_special: *const u8, flags: usize) -> isize {
-    let token = current_user_token();
+    let token = current_task_token();
     let special = translated_str(token, p_special);
     MNT_TABLE.lock().umount(special, flags as u32)
 }
 
 pub fn sys_unlinkat(fd: isize, path: *const u8, flags: u32) -> isize {
     let task = current_task().unwrap();
-    let token = current_user_token();
+    let token = current_task_token();
     let inner = task.inner_exclusive_access();
 
     // todo
@@ -319,7 +319,7 @@ pub fn sys_unlinkat(fd: isize, path: *const u8, flags: u32) -> isize {
 }
 
 pub fn sys_chdir(path: *const u8) -> isize {
-    let token = current_user_token();
+    let token = current_task_token();
     let task = current_task().unwrap();
     let mut inner = task.inner_exclusive_access();
 
@@ -333,7 +333,7 @@ pub fn sys_chdir(path: *const u8) -> isize {
 }
 
 pub fn sys_fstat(fd: isize, buf: *mut u8) -> isize {
-    let token = current_user_token();
+    let token = current_task_token();
     let task = current_task().unwrap();
     let buf_vec = translated_byte_buffer(token, buf, size_of::<Kstat>());
     let inner = task.inner_exclusive_access();
@@ -355,7 +355,7 @@ pub fn sys_fstat(fd: isize, buf: *mut u8) -> isize {
 }
 
 pub fn sys_getdents64(fd: isize, buf: *mut u8, len: usize) -> isize {
-    let token = current_user_token();
+    let token = current_task_token();
     let task = current_task().unwrap();
     let inner = task.inner_exclusive_access();
 
