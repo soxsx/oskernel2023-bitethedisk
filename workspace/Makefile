@@ -6,7 +6,7 @@ image:
 	chmod 777 fat32.img
 	mkdir -p fs/
 	sudo mount fat32.img fs/
-	sudo cp -r tests/ fs/
+	sudo cp -r tests/* fs/
 	sudo umount fs/
 
 clean:

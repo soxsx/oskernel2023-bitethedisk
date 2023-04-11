@@ -21,4 +21,17 @@ clean:
 	cd os/ && cargo clean
 	cd workspace/ && make clean
 	cd fat32/ && cargo clean
+	cd misc/user && make clean
 	@echo Done.
+
+fat32img:
+	cd os/ && make fat32img
+
+run:
+	cd os/ && make run
+
+debug-server:
+	cd os/ && make debug-server
+
+debug:
+	cd os/ && make debug

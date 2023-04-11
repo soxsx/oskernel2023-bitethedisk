@@ -2,4 +2,4 @@ clean:
 	cd ./user && make clean
 
 tests:
-	cd ./user && sudo bash ./build-oscomp.sh
+	find ./user/build/riscv64 || (cd ./user && sudo bash ./build-oscomp.sh)
