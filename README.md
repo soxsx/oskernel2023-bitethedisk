@@ -30,8 +30,10 @@ qemu-system-riscv64 \
 ```shell
 sbi-qemu:
     将 ./os/bootloader/ 中的 SBI 改名复制到根目录
+
 kernel-qemu:
     按照 release 编译内核后将其改名放到根目录
+
 all: sbi-qemu kernel-qemu
 
 clean:
@@ -50,15 +52,16 @@ fat32img:
     还原到项目最干净的状态）
 
 run:
-	将内核按 release 编译后，使用本地构建的 fat32 镜像（见上面 fat32img），挂载到 qemu 运行
+    将内核按 release 编译后，使用本地构建的 fat32 镜像（见上面 fat32img），挂载到 qemu 运行
 
 debug-server:
     将内核按照 debug 编译，搭载 fat32 （见上面 fat32img），挂在 qemu 启动 debug server
 
 debug:
-	连接上面 `debug-server` 启动的服务，用 gdb 开始调试
+    连接上面 `debug-server` 启动的服务，用 gdb 开始调试
 
 ```
 
 debug 建议开启两个 shell，一个 make debug-server，另一个等前一个 shell 进入等待后 make debug
+
 debug 相关文档：[docs/debug.md](docs/debug.md)
