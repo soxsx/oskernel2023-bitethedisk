@@ -1,14 +1,16 @@
-//! # 地址数据类型
-//! `os/src/mm/address.rs`
-//! ## 实现功能
-//! ```
-//! pub struct PhysAddr(pub usize);     // 物理地址 56bit
-//! pub struct PhysPageNum(pub usize);  // 物理页号 44bit
-//! pub struct VirtAddr(pub usize);     // 虚拟地址 39bit
-//! pub struct VirtPageNum(pub usize);  // 虚拟页号 27bit
-//! ```
+/// # 地址数据类型
+/// `os/src/mm/address.rs`
+/// ## 实现功能
+/// ```
+/// pub struct PhysAddr(pub usize);     // 物理地址 56bit
+/// pub struct PhysPageNum(pub usize);  // 物理页号 44bit
+/// pub struct VirtAddr(pub usize);     // 虚拟地址 39bit
+/// pub struct VirtPageNum(pub usize);  // 虚拟页号 27bit
+/// ```
+//
+
 use super::PageTableEntry;
-use crate::config::{IN_PAGE_OFFSET, PAGE_SIZE};
+use crate::config::{PAGE_SIZE, PAGE_SIZE_BITS};
 use core::fmt::{self, Debug, Formatter};
 
 /// 物理地址宽度：56bit
@@ -16,9 +18,9 @@ const PA_WIDTH_SV39: usize = 56;
 /// 虚拟地址宽度：39bit
 const VA_WIDTH_SV39: usize = 39;
 /// 物理页号宽度：44bit
-const PPN_WIDTH_SV39: usize = PA_WIDTH_SV39 - IN_PAGE_OFFSET;
+const PPN_WIDTH_SV39: usize = PA_WIDTH_SV39 - PAGE_SIZE_BITS;
 /// 虚拟页号宽度：27bit
-const VPN_WIDTH_SV39: usize = VA_WIDTH_SV39 - IN_PAGE_OFFSET;
+const VPN_WIDTH_SV39: usize = VA_WIDTH_SV39 - PAGE_SIZE_BITS;
 
 /// ### 物理地址 56bit
 /// ```
@@ -81,6 +83,12 @@ impl Debug for PhysPageNum {
         f.write_fmt(format_args!("PPN:{:#x}", self.0))
     }
 }
+
+/// T: {PhysAddr, VirtAddr, PhysPageNum, VirtPageNum}
+/// T -> usize: T.0
+/// usize -> T: usize.into()
+/// 当我们为类型 U 实现了 From<T> Trait 之后，可以使用 U::from(_: T) 来从一个 T 类型的实例来构造一个 U 类型的实例
+/// 当我们为类型 U 实现了 Into<T> Trait 之后，对于一个 U 类型的实例 u ，可以使用 u.into() 来将其转化为一个类型为 T 的实例
 
 impl From<usize> for PhysAddr {
     /// 取 `usize` 的低56位作为物理地址
@@ -153,7 +161,7 @@ impl From<VirtAddr> for VirtPageNum {
 }
 impl From<VirtPageNum> for VirtAddr {
     fn from(v: VirtPageNum) -> Self {
-        Self(v.0 << IN_PAGE_OFFSET)
+        Self(v.0 << PAGE_SIZE_BITS)
     }
 }
 impl PhysAddr {
@@ -193,7 +201,7 @@ impl From<PhysAddr> for PhysPageNum {
 // 从物理页号转换到物理地址只需左移 PAGE_SIZE_BITS 大小
 impl From<PhysPageNum> for PhysAddr {
     fn from(v: PhysPageNum) -> Self {
-        Self(v.0 << IN_PAGE_OFFSET)
+        Self(v.0 << PAGE_SIZE_BITS)
     }
 }
 
@@ -217,22 +225,17 @@ impl VirtPageNum {
 // 但与裸指针不同的是，无需通过 unsafe 的解引用访问它指向的数据，而是可以像一个正常的可变引用一样直接访问
 impl PhysPageNum {
     /// 根据自己的PPN取出当前节点的页表项数组
-    pub fn as_pte_slice(&self) -> &'static mut [PageTableEntry] {
+    pub fn get_pte_array(&self) -> &'static mut [PageTableEntry] {
         let pa: PhysAddr = (*self).into();
         unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut PageTableEntry, 512) }
     }
-
     /// 返回一个字节数组的可变引用，可以以字节为粒度对物理页帧上的数据进行访问
-    pub fn as_bytes_mut(&self) -> &'static mut [u8] {
+    pub fn get_bytes_array(&self) -> &'static mut [u8] {
         let pa: PhysAddr = (*self).into();
-
         unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut u8, 4096) }
     }
-
     /// 获取一个恰好放在一个物理页帧开头的类型为 T 的数据的可变引用
-    ///
-    /// - 这个很浪费内存啊
-    pub fn as_mut<T>(&self) -> &'static mut T {
+    pub fn get_mut<T>(&self) -> &'static mut T {
         let pa: PhysAddr = (*self).into();
         unsafe { (pa.0 as *mut T).as_mut().unwrap() }
     }
@@ -252,7 +255,7 @@ impl StepByOne for PhysPageNum {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone,Debug)]
 pub struct SimpleRange<T>
 where
     T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
@@ -315,4 +318,5 @@ where
         }
     }
 }
+
 pub type VPNRange = SimpleRange<VirtPageNum>;

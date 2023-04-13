@@ -1,24 +1,25 @@
-//! # 处理器管理模块
-//! `os/src/task/processor.rs`
-//! ```
-//! pub struct Processor
-//! pub static ref PROCESSOR: UPSafeCell<Processor>
-//!
-//! pub fn run_tasks()
-//! pub fn take_current_task() -> Option<Arc<TaskControlBlock>>
-//! pub fn current_task() -> Option<Arc<TaskControlBlock>>
-//! pub fn current_user_token() -> usize
-//! pub fn current_trap_cx() -> &'static mut TrapContext
-//! pub fn schedule(switched_task_cx_ptr: *mut TaskContext)
-//! ```
-//!
-use super::manager::__switch;
+/// # 处理器管理模块
+/// `os/src/task/processor.rs`
+/// ```
+/// pub struct Processor
+/// pub static ref PROCESSOR: UPSafeCell<Processor>
+/// 
+/// pub fn run_tasks()
+/// pub fn take_current_task() -> Option<Arc<TaskControlBlock>>
+/// pub fn current_task() -> Option<Arc<TaskControlBlock>>
+/// pub fn current_user_token() -> usize
+/// pub fn current_trap_cx() -> &'static mut TrapContext
+/// pub fn schedule(switched_task_cx_ptr: *mut TaskContext)
+/// ```
+//
+
+use super::__switch;
 use super::{fetch_task, TaskStatus};
 use super::{TaskContext, TaskControlBlock};
+use spin::Mutex;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
 use lazy_static::*;
-use spin::Mutex;
 
 /// ### 处理器管理
 /// |成员变量|描述|
@@ -30,10 +31,8 @@ use spin::Mutex;
 /// Processor::take_current(&mut self) -> Option<Arc<TaskControlBlock>>
 /// Processor::current(&self) -> Option<Arc<TaskControlBlock>>
 /// ```
-pub struct Processor {
-    /// 当前处理器上正在执行的任务
+pub struct Processor {  /// 当前处理器上正在执行的任务
     current: Option<Arc<TaskControlBlock>>,
-
     /// 当前处理器上的 idle 控制流的任务上下文
     idle_task_cx: TaskContext,
 }
@@ -42,11 +41,10 @@ impl Processor {
     pub fn new() -> Self {
         Self {
             current: None,
-            idle_task_cx: TaskContext::empty(),
+            idle_task_cx: TaskContext::zero_init(),
         }
     }
-
-    fn idle_task_ctx_ptr(&mut self) -> *mut TaskContext {
+    fn get_idle_task_cx_ptr(&mut self) -> *mut TaskContext {
         &mut self.idle_task_cx as *mut _
     }
     /// 取出当前正在执行的任务
@@ -70,8 +68,9 @@ lazy_static! {
 pub fn run_tasks() {
     loop {
         let mut processor = PROCESSOR.lock();
+        // TASK_MANAGER.exclusive_access().list_alltask();
         if let Some(task) = fetch_task() {
-            let idle_task_cx_ptr = processor.idle_task_ctx_ptr();
+            let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
             // access coming task TCB exclusively
             let mut task_inner = task.inner_exclusive_access();
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
@@ -81,8 +80,9 @@ pub fn run_tasks() {
             processor.current = Some(task);
             // release processor manually
             drop(processor);
-
-            unsafe { __switch(idle_task_cx_ptr, next_task_cx_ptr) }
+            unsafe {
+                __switch(idle_task_cx_ptr, next_task_cx_ptr);
+            }
         }
     }
 }
@@ -98,24 +98,25 @@ pub fn current_task() -> Option<Arc<TaskControlBlock>> {
 }
 
 /// 从全局变量 `PROCESSOR` 中取出当前正在执行任务的用户地址空间 token
-pub fn current_task_token() -> usize {
+pub fn current_user_token() -> usize {
     let task = current_task().unwrap();
-    let token = task.inner_exclusive_access().user_token();
+    let token = task.inner_exclusive_access().get_user_token();
     token
 }
 
-pub fn current_trap_context() -> &'static mut TrapContext {
+pub fn current_trap_cx() -> &'static mut TrapContext {
     current_task()
         .unwrap()
         .inner_exclusive_access()
-        .trap_context()
+        .get_trap_cx()
 }
 
 /// 换到 idle 控制流并开启新一轮的任务调度
 pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     let mut processor = PROCESSOR.lock();
-    let idle_task_cx_ptr = processor.idle_task_ctx_ptr();
+    let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
     drop(processor);
-
-    unsafe { __switch(switched_task_cx_ptr, idle_task_cx_ptr) }
+    unsafe {
+        __switch(switched_task_cx_ptr, idle_task_cx_ptr);
+    }
 }

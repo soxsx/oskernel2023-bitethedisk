@@ -1,23 +1,22 @@
-//! # VirtIO 总线架构下的块设备
-//! `os/src/drivers/block/virtio_blk.rs`
-//! ```
-//! pub struct VirtIOBlock
-//! pub fn virtio_dma_alloc ()
-//! pub fn virtio_dma_dealloc ()
-//! pub fn virtio_phys_to_virt ()
-//! pub fn virtio_virt_to_phys ()
-//! ```
+/// # VirtIO 总线架构下的块设备
+/// `os/src/drivers/block/virtio_blk.rs`
+/// ```
+/// pub struct VirtIOBlock
+/// pub fn virtio_dma_alloc ()
+/// pub fn virtio_dma_dealloc ()
+/// pub fn virtio_phys_to_virt ()
+/// pub fn virtio_virt_to_phys ()
+/// ```
+//
+
 use super::BlockDevice;
-use crate::{
-    kernel_token,
-    mm::{
-        frame_alloc, frame_dealloc, FrameTracker, PageTable, PhysAddr, PhysPageNum, StepByOne,
-        VirtAddr,
-    },
+use crate::mm::{
+    frame_alloc, frame_dealloc, kernel_token, FrameTracker, PageTable, PhysAddr, PhysPageNum,
+    StepByOne, VirtAddr,
 };
+use spin::Mutex;
 use alloc::vec::Vec;
 use lazy_static::*;
-use spin::Mutex;
 use virtio_drivers::{VirtIOBlk, VirtIOHeader};
 
 #[allow(unused)]
@@ -39,6 +38,7 @@ pub struct VirtIOBlock(Mutex<VirtIOBlk<'static>>);
 
 impl BlockDevice for VirtIOBlock {
     fn read_block(&self, block_id: usize, buf: &mut [u8]) {
+        // println!("block_id:{}",block_id);
         self.0
             .lock()
             .read_block(block_id, buf)
@@ -50,9 +50,7 @@ impl BlockDevice for VirtIOBlock {
             .write_block(block_id, buf)
             .expect("Error when writing VirtIOBlk");
     }
-    fn handle_irq(&self) {
-        todo!()
-    }
+    fn handle_irq(&self) { todo!() }
 }
 
 impl VirtIOBlock {
@@ -98,7 +96,7 @@ pub extern "C" fn virtio_phys_to_virt(paddr: PhysAddr) -> VirtAddr {
 
 #[no_mangle]
 pub extern "C" fn virtio_virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
-    PageTable::from_token(kernel_token!())
+    PageTable::from_token(kernel_token())
         .translate_va(vaddr)
         .unwrap()
 }

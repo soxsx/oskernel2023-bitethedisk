@@ -4,15 +4,15 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::RwLock;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct VFile {
-    name: String,
-    short_sector: usize,               // 文件短目录项所在扇区
-    short_offset: usize,               // 文件短目录项所在扇区的偏移
-    long_pos_vec: Vec<(usize, usize)>, // 长目录项的位置<sector, offset>
-    attribute: u8,
-    fs: Arc<RwLock<FAT32Manager>>,
-    block_device: Arc<dyn BlockDevice>,
+    name: String,                       // 文件名
+    short_sector: usize,                // 文件短目录项所在扇区
+    short_offset: usize,                // 文件短目录项所在扇区的偏移
+    long_pos_vec: Vec<(usize, usize)>,  // 长目录项的位置<sector, offset>
+    attribute: u8,                      // 文件属性
+    fs: Arc<RwLock<FAT32Manager>>,      // 文件系统引用
+    block_device: Arc<dyn BlockDevice>, // 块设备引用
 }
 
 impl VFile {
@@ -60,7 +60,6 @@ impl VFile {
         }
     }
 
-
     fn read_short_dirent<V>(&self, f: impl FnOnce(&ShortDirEntry) -> V) -> V {
         if self.short_sector == 0 {
             // 根目录项
@@ -81,7 +80,6 @@ impl VFile {
 
     fn modify_short_dirent<V>(&self, f: impl FnOnce(&mut ShortDirEntry) -> V) -> V {
         if self.short_sector == 0 {
-            //println!("[fs]: modify vroot dent");
             let root_dirent = self.fs.read().get_root_dirent();
             let mut rw = root_dirent.write();
             f(&mut rw)
@@ -100,19 +98,24 @@ impl VFile {
         (section, offset)
     }
 
-    fn first_cluster(&self) -> u32 {
+    pub fn set_first_cluster(&self, clu: u32) {
+        self.modify_short_dirent(|se: &mut ShortDirEntry| {
+            se.set_first_cluster(clu);
+        })
+    }
+    pub fn first_cluster(&self) -> u32 {
         self.read_short_dirent(|se: &ShortDirEntry| se.first_cluster())
     }
 
     fn find_long_name(&self, name: &str, dir_ent: &ShortDirEntry) -> Option<VFile> {
         // 拆分长文件名
-        let mut name_vec = long_name_split(name);
+        let name_vec = long_name_split(name);
         let long_ent_num = name_vec.len();
         let mut offset: usize = 0;
         let mut long_entry = LongDirEntry::new();
 
         let mut long_pos_vec: Vec<(usize, usize)> = Vec::new();
-        let name_last = name_vec.pop().unwrap();
+        let name_last = name_vec[long_ent_num - 1].clone();
 
         loop {
             long_pos_vec.clear();
@@ -128,7 +131,7 @@ impl VFile {
                 return None;
             }
             // 先匹配最后一个长文件名目录项，即长文件名的最后一块
-            if long_entry.get_name_raw() == name_last && long_entry.attr() == ATTR_LONG_NAME {
+            if long_entry.attr() == ATTR_LONG_NAME && long_entry.get_name_raw() == name_last{
                 // 如果名称一致，则获取 order进行下一步校验
                 let mut order = long_entry.order();
                 // 校验 order的合法性，不合法则跳过继续搜索
@@ -193,6 +196,8 @@ impl VFile {
                             self.fs.clone(),
                             self.block_device.clone(),
                         ));
+                    } else {
+                        panic!("Simple-Fat32: short_entry is not valid or checksum wrong")
                     }
                 }
             }
@@ -217,6 +222,7 @@ impl VFile {
                 return None;
             } else {
                 // 判断名字是否一样
+                // println!("name_upper:{}, entry name:{}",name_upper,short_entry.get_name_uppercase());
                 if short_entry.is_valid() && name_upper == short_entry.get_name_uppercase() {
                     let (short_sector, short_offset) = self.get_pos(offset);
                     let long_pos_vec: Vec<(usize, usize)> = Vec::new();
@@ -238,11 +244,10 @@ impl VFile {
     }
 
     /// 根据名称搜索当前目录下的文件
-    pub fn find_vfile_byname(&self, name: &str) -> Option<VFile> {
+    fn find_vfile_byname(&self, name: &str) -> Option<VFile> {
         // 不是目录则退出
         assert!(self.is_dir());
         let (name_, ext_) = split_name_ext(name);
-        // FAT32目录没有大小，只能搜，read_at已经做了完善的适配
         self.read_short_dirent(|short_entry: &ShortDirEntry| {
             if name_.len() > 8 || ext_.len() > 3 {
                 //长文件名
@@ -301,6 +306,7 @@ impl VFile {
                 // 从未分配过簇的情况（例如新文件？）
                 drop(manager_writer);
                 self.modify_short_dirent(|short_entry: &mut ShortDirEntry| {
+                    // 貌似失败了
                     short_entry.set_first_cluster(cluster);
                 });
             } else {
@@ -319,7 +325,7 @@ impl VFile {
                 short_entry.set_file_size(new_size);
             });
         } else {
-            panic!("increase size failed!");
+            panic!("[DEBUG] Simple-FAT32: increase size failed! Out of cluster!");
         }
     }
 
@@ -327,7 +333,6 @@ impl VFile {
     pub fn create(&self, name: &str, attribute: u8) -> Option<Arc<VFile>> {
         // 检测同名文件
         assert!(self.is_dir());
-        let manager_reader = self.fs.read();
         let (name_, ext_) = split_name_ext(name);
         // 搜索空处
         let mut dirent_offset: usize;
@@ -347,11 +352,7 @@ impl VFile {
 
             // 长文件名拆分
             let mut v_long_name = long_name_split(name);
-            drop(manager_reader);
             let long_ent_num = v_long_name.len(); // 需要创建的长文件名目录项个数
-
-            // 计算校验和
-            let check_sum = tmp_short_ent.checksum();
 
             // 定义一个空的长文件名目录项用于写入
             let mut tmp_long_ent = LongDirEntry::new();
@@ -364,7 +365,7 @@ impl VFile {
                     order |= 0x40;
                 }
                 // 初始化长文件名目录项
-                tmp_long_ent.initialize(v_long_name.pop().unwrap().as_bytes(), order, check_sum);
+                tmp_long_ent.initialize(v_long_name.pop().unwrap().as_bytes(), order, tmp_short_ent.checksum());
                 // 写入长文件名目录项
                 assert_eq!(self.write_at(dirent_offset, tmp_long_ent.as_bytes_mut()), DIRENT_SZ);
                 // 更新写入位置
@@ -372,9 +373,10 @@ impl VFile {
             }
         } else {
             // 短文件名
+            // todo: 短文件名也会生成一个长文件名目录项，用于存储大小写
             let (_name, _ext) = short_name_format(name);
             tmp_short_ent.initialize(&_name, &_ext, attribute);
-            drop(manager_reader);
+            tmp_short_ent.set_case(0x8); // 全部小写
         }
         // 写短目录项（长文件名也是有短文件名目录项的）
         assert_eq!(self.write_at(dirent_offset, tmp_short_ent.as_bytes_mut()), DIRENT_SZ);
@@ -382,17 +384,18 @@ impl VFile {
         if let Some(vfile) = self.find_vfile_byname(name) {
             // 如果是目录类型，需要创建.和..
             if attribute & ATTR_DIRECTORY != 0 {
-                let (_name, _ext) = short_name_format(".");
-                let mut self_dir = ShortDirEntry::new();
-                self_dir.initialize(&_name, &_ext, ATTR_DIRECTORY);
-                self_dir.set_first_cluster(self.first_cluster());
-                vfile.write_at(0, self_dir.as_bytes_mut());
-
+                // 先写入 .. 使得目录获取第一个簇
                 let (_name, _ext) = short_name_format("..");
                 let mut par_dir = ShortDirEntry::new();
                 par_dir.initialize(&_name, &_ext, ATTR_DIRECTORY);
                 par_dir.set_first_cluster(self.first_cluster());
                 vfile.write_at(DIRENT_SZ, par_dir.as_bytes_mut());
+
+                let (_name, _ext) = short_name_format(".");
+                let mut self_dir = ShortDirEntry::new();
+                self_dir.initialize(&_name, &_ext, ATTR_DIRECTORY);
+                self_dir.set_first_cluster(vfile.first_cluster());
+                vfile.write_at(0, self_dir.as_bytes_mut());
             }
             return Some(Arc::new(vfile));
         } else {
@@ -407,8 +410,6 @@ impl VFile {
             return None;
         }
         let mut list: Vec<(String, u8)> = Vec::new();
-        // （待修改）这里先默认为长文件名，由于 addr 字段在两种目录项中的偏移量相同，所以下面可以进行正确判断
-        // 应该要做结构体映射，然后先根据固定偏移量判断长还是短再做处理
         let mut file_entry = LongDirEntry::new();
         let mut offset = 0;
         loop {
@@ -430,6 +431,7 @@ impl VFile {
                 offset += DIRENT_SZ;
                 continue;
             }
+            // 注意：Linux中文件创建都会创建一个长文件名目录项，用于处理文件大小写问题
             if file_entry.attr() != ATTR_LONG_NAME {
                 // 短文件名
                 let (_, se_array, _) = unsafe { file_entry.as_bytes_mut().align_to_mut::<ShortDirEntry>() };
@@ -549,12 +551,12 @@ impl VFile {
         return all_clusters.len();
     }
 
-    /// 返回：(st_size, st_blksize, st_blocks)
+    /// 返回：(st_size, st_blksize, st_blocks, is_dir, time)
     /// todo：时间等
-    pub fn stat(&self) -> (i64, i64, u64) {
+    pub fn stat(&self) -> (i64, i64, u64, bool, u64) {
         self.read_short_dirent(|short_entry: &ShortDirEntry| {
             let first_cluster = short_entry.first_cluster();
-            let mut file_size = short_entry.size();
+            let mut file_size = short_entry.file_size();
             let fs_reader = self.fs.read();
             let fat = fs_reader.get_fat();
             let fat_reader = fat.read();
@@ -564,19 +566,28 @@ impl VFile {
                 // 目录文件的 dir_file_size 字段为 0
                 file_size = cluster_num * fs_reader.bytes_per_cluster();
             }
-            (file_size as i64, 512 as i64, blocks as u64)
+            (file_size as i64, 512 as i64, blocks as u64, self.is_dir(), short_entry.time())
+        })
+    }
+
+    pub fn set_time(&self, tv_sec: u64, tv_nsec: u64) {
+        self.modify_short_dirent(|short_entry: &mut ShortDirEntry| {
+            short_entry.set_time(tv_sec, tv_nsec);
         })
     }
 
     // 目前返回：(d_name, d_off, d_type)
-    pub fn dirent_info(&self, offset: usize) -> Option<(String, u32, u8)> {
+    pub fn dirent_info(&self, offset: usize) -> Option<(String, u32, u32, u8)> {
         if !self.is_dir() {
             return None;
         }
         let mut file_entry = LongDirEntry::new();
         let mut offset = offset;
+        let mut name = String::new();
+        let mut is_long = false;
+        //let mut order:u8 = 0;
         loop {
-            let read_size = self.read_short_dirent(|curr_ent: &ShortDirEntry| {
+            let read_sz = self.read_short_dirent(|curr_ent: &ShortDirEntry| {
                 curr_ent.read_at(
                     offset,
                     file_entry.as_bytes_mut(),
@@ -585,43 +596,49 @@ impl VFile {
                     &self.block_device,
                 )
             });
-            // 读取完了
-            if read_size != DIRENT_SZ || file_entry.is_empty() {
+            if read_sz != DIRENT_SZ || file_entry.is_empty() {
                 return None;
             }
-            // 文件被标记删除则跳过
             if file_entry.is_deleted() {
+                //if meet delete ent, search should be restart
                 offset += DIRENT_SZ;
+                name.clear();
+                is_long = false;
                 continue;
             }
+            // 名称拼接
             if file_entry.attr() != ATTR_LONG_NAME {
-                // 短文件名
                 let (_, se_array, _) = unsafe { file_entry.as_bytes_mut().align_to_mut::<ShortDirEntry>() };
-                let short_entry = se_array[0];
-                return Some((short_entry.get_name_lowercase(), offset as u32, short_entry.attr()));
-            } else {
-                // 长文件名
-                // 如果是长文件名目录项，则必是长文件名最后的那一段
-                let mut name = String::new();
-                let order = file_entry.order() ^ 0x40;
-                for _ in 0..order {
-                    name.insert_str(0, file_entry.get_name_format().as_str());
-                    offset += DIRENT_SZ;
-                    let read_size = self.read_short_dirent(|curr_ent: &ShortDirEntry| {
-                        curr_ent.read_at(
-                            offset,
-                            file_entry.as_bytes_mut(),
-                            &self.fs,
-                            &self.fs.read().get_fat(),
-                            &self.block_device,
-                        )
-                    });
-                    if read_size != DIRENT_SZ || file_entry.is_empty() {
-                        panic!("dirent_info read long name entry error!");
-                    }
+                let short_ent = se_array[0];
+                if !is_long {
+                    name = short_ent.get_name_lowercase();
                 }
-                return Some((name.clone(), offset as u32, file_entry.attr()));
+                //println!("---{}", short_ent.get_name_lowercase());
+                let attribute = short_ent.attr();
+                let first_cluster = short_ent.first_cluster();
+                offset += DIRENT_SZ;
+                return Some((name, offset as u32, first_cluster, attribute));
+            } else {
+                is_long = true;
+                //order += 1;
+                name.insert_str(0, file_entry.get_name_format().as_str());
+                //println!("--{}", long_ent.get_name_format().as_str());
             }
+            offset += DIRENT_SZ;
         }
     }
+}
+
+/// 创建根目录的虚拟文件
+pub fn create_root_vfile(fs_manager: &Arc<RwLock<FAT32Manager>>) -> VFile {
+    let long_pos_vec: Vec<(usize, usize)> = Vec::new();
+    VFile::new(
+        String::from("/"),
+        0,
+        0,
+        long_pos_vec,
+        ATTR_DIRECTORY,
+        Arc::clone(fs_manager),
+        fs_manager.read().block_device(),
+    )
 }

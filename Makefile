@@ -21,7 +21,7 @@ clean:
 	cd os/ && cargo clean
 	cd workspace/ && make clean
 	cd fat32/ && cargo clean
-	cd misc/user && make clean
+	cd misc/ && make clean
 	@echo Done.
 
 fat32img:

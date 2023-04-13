@@ -16,7 +16,11 @@ NCPU = 2
 ##################################################################
 #                        Run straightly                          #
 ##################################################################
-kernel:
+initproc:
+	@echo Build initproc...
+	@cd ../misc && make initproc 
+
+kernel: initproc
 	@cargo clean
 	@cargo build --release
 
@@ -25,8 +29,8 @@ fat32img:
 	@cd ../misc && make tests 
 
 	@echo Move all tests to workspace...
-	cd ../workspace && mkdir -p tests/
-	cd ../misc && cp -r ./user/build/riscv64/* ../workspace/tests
+	@cd ../workspace && mkdir -p tests/
+	@cd ../misc && cp -r ./user/build/riscv64/* ../workspace/tests
 
 	@echo Build a fat32 image sized 300MiB...
 	@cd ../workspace && make image

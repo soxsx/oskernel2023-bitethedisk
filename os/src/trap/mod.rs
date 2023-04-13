@@ -12,11 +12,13 @@
 mod context;
 
 use crate::config::{TRAMPOLINE, TRAP_CONTEXT};
-use crate::mm::{VirtAddr, VirtPageNum};
-use crate::syscall::syscall;
+use crate::mm::VirtAddr;
+#[allow(unused)]
+use crate::mm::{frame_usage, heap_usage};
+use crate::syscall::{syscall, SYSCALL_NAME};
 use crate::task::{
-    check_signals_of_current, current_add_signal, current_task, current_task_token,
-    current_trap_context, exit_current_and_run_next, suspend_current_and_run_next, SignalFlags,
+    check_signals_of_current, current_add_signal, current_task, current_trap_cx, current_user_token, exit_current_and_run_next,
+    suspend_current_and_run_next, SignalFlags,
 };
 use crate::timer::set_next_trigger;
 use core::arch::{asm, global_asm};
@@ -74,111 +76,105 @@ pub fn trap_handler() -> ! {
     let stval = stval::read(); // 给出 Trap 附加信息
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
-            // 由于应用的 Trap 上下文不在内核地址空间，因此我们调用 current_trap_cx 来获取当前应用的 Trap 上下文的可变引用
-            let mut cx = current_trap_context();
-            cx.sepc += 4; // 我们希望trap返回后应用程序从下一条指令开始执行
-                          // 从 Trap 上下文取出作为 syscall ID 的 a7 和系统调用的三个参数 a0~a2 传给 syscall 函数并获取返回值 放到 a0
-            let result = syscall(
-                cx.x[17],
-                [cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]],
-            );
+            let mut cx = current_trap_cx();
+            // frame_usage();
+            // heap_usage();
+            if cfg!(feature = "debug_1") {
+                debug!(
+                    "[DEBUG] pid:{}, syscall_name: {}",
+                    current_task().unwrap().getpid(),
+                    SYSCALL_NAME.get(&cx.x[17]).expect("syscall id convert to name error")
+                );
+            }
+            // println!("fd_table:{:?}",current_task().unwrap().inner_exclusive_access().fd_table);
+            cx.sepc += 4;
+            let result = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]]);
             // cx is changed during sys_exec, so we have to call it again
-            cx = current_trap_context();
+            cx = current_trap_cx();
             cx.x[10] = result as usize;
         }
-        // 处理应用程序出现访存错误，判断能否CoW
         Trap::Exception(Exception::StoreFault)
         | Trap::Exception(Exception::StorePageFault)
         | Trap::Exception(Exception::LoadFault)
         | Trap::Exception(Exception::LoadPageFault) => {
-            // println!(
-            //     "[kernel] {:?} in application, bad addr = {:#x}, bad instruction = {:#x}.",
-            //     scause.cause(),
-            //     stval,
-            //     current_trap_cx().sepc,
-            // );
-
+            // println!("[Kernel trap] pid:{}, Mem Fault trapped, {:?}, {:?}", current_task().unwrap().getpid(), VirtAddr::from(stval as usize), VirtAddr::from(stval as usize).floor());
             let is_load: bool;
-            if scause.cause() == Trap::Exception(Exception::LoadFault)
-                || scause.cause() == Trap::Exception(Exception::LoadPageFault)
-            {
+            if scause.cause() == Trap::Exception(Exception::LoadFault) || scause.cause() == Trap::Exception(Exception::LoadPageFault) {
                 is_load = true;
             } else {
                 is_load = false;
             }
             let va: VirtAddr = (stval as usize).into();
-            // The boundary decision
             if va > TRAMPOLINE.into() {
-                //panic!("VirtAddr out of range!");
+                println!("[kernel trap] VirtAddr out of range!");
                 current_add_signal(SignalFlags::SIGSEGV);
             }
-            let lazy = current_task().unwrap().check_lazy(va, is_load);
+            let task = current_task().unwrap();
+            let lazy = task.check_lazy(va, is_load);
+
             if lazy != 0 {
                 current_add_signal(SignalFlags::SIGSEGV);
+                // current_task().unwrap().inner_exclusive_access().memory_set.debug_show_layout();
+                // current_task().unwrap().inner_exclusive_access().memory_set.debug_show_data(0x0060000000usize.into());
+                // panic!("lazy != 0: va:0x{:x}",va.0);
             }
-            // let token = current_user_token();
-            // let buf = translated_byte_buffer(token, 0x60000000 as *const u8, 5);
-            // println!("{}",buf[0][0]);
-            let current_task = current_task().unwrap();
-            let inner = current_task.inner_exclusive_access();
-            let vpn: VirtPageNum = va.floor();
-            let pte = inner.memory_set.translate(vpn);
-            let valid = pte.unwrap().is_valid();
-            drop(inner);
-            println!(
-                "[kernel] lazy mmap finished {:?}->{:?} is valid {}",
-                va, vpn, valid
-            );
+
+            // current_task().unwrap().inner_exclusive_access().task_cx.debug_show();
+            // current_task().unwrap().inner_exclusive_access().memory_set.debug_show_data(TRAP_CONTEXT.into());
         }
 
-        Trap::Exception(Exception::InstructionFault)
-        | Trap::Exception(Exception::InstructionPageFault) => {
+        Trap::Exception(Exception::InstructionFault) | Trap::Exception(Exception::InstructionPageFault) => {
             let task = current_task().unwrap();
             println!(
-                "[kernel] {:?} in application {:?}, bad addr = {:#x}, bad instruction = {:#x}.",
+                "[kernel] {:?} in application {}, bad addr = {:#x}, bad instruction = {:#x}.",
                 scause.cause(),
-                task.pid(),
+                task.pid.0,
                 stval,
-                current_trap_context().sepc,
+                current_trap_cx().sepc,
             );
+            drop(task);
+
+            current_trap_cx().debug_show();
+            // current_task().unwrap().inner_exclusive_access().task_cx.debug_show();
+
+            //current_task().unwrap().inner_exclusive_access().memory_set.debug_show_data(TRAP_CONTEXT.into());
+
             current_add_signal(SignalFlags::SIGSEGV);
         }
-
         Trap::Exception(Exception::IllegalInstruction) => {
             // println!("[kernel] IllegalInstruction in application, kernel killed it.");
             // // illegal instruction exit code
             // exit_current_and_run_next(-3);
+            println!("stval:{}", stval);
+            let sepc = riscv::register::sepc::read();
+            println!("sepc:0x{:x}", sepc);
+            // current_task().unwrap().inner_exclusive_access().memory_set.debug_show_data(sepc.into());
             current_add_signal(SignalFlags::SIGILL);
         }
-
-        // 时间片到中断
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             set_next_trigger();
             suspend_current_and_run_next();
         }
         _ => {
-            panic!(
-                "Unsupported trap {:?}, stval = {:#x}!",
-                scause.cause(),
-                stval
-            );
+            panic!("Unsupported trap {:?}, stval = {:#x}!", scause.cause(), stval);
         }
     }
-    // check signals
-    if let Some((errno, msg)) = check_signals_of_current() {
-        println!("[kernel] {}", msg);
-        exit_current_and_run_next(errno);
-    }
-
     trap_return();
 }
 
 /// 通过在Rust语言中加入宏命令调用 `__restore` 汇编函数
 #[no_mangle]
 pub fn trap_return() -> ! {
+    
+    // check signals
+    if let Some((errno, _msg)) = check_signals_of_current() {
+        // println!("[kernel] {}", _msg);
+        exit_current_and_run_next(errno);
+    }
+
     set_user_trap_entry();
     let trap_cx_ptr = TRAP_CONTEXT;
-    let user_satp = current_task_token();
+    let user_satp = current_user_token();
     extern "C" {
         fn __alltraps();
         fn __restore();

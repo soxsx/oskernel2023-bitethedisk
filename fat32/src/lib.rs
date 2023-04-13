@@ -11,14 +11,16 @@ mod layout;
 mod vfs;
 
 
-pub const BLOCK_SZ: usize = 512;
+pub const BLOCK_SIZE: usize = 512;
 pub use block_dev::BlockDevice;
 pub use layout::ShortDirEntry;
-pub use vfs::VFile;
-//pub use layout::NAME_LENGTH_LIMIT;
+pub use vfs::{VFile,create_root_vfile};
 use block_cache::{get_block_cache, set_start_sec, write_to_dev};
 pub use fat32_manager::FAT32Manager;
 pub use layout::*;
+
+#[cfg(feature = "calc_hit_rate")]
+pub use block_cache::{CACHEGET_NUM,CACHEHIT_NUM};
 
 pub fn clone_into_array<A, T>(slice: &[T]) -> A
 where

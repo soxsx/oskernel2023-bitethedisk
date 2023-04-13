@@ -1,48 +1,53 @@
-OUTPUT_ARCH( "riscv" )
-ENTRY( _entry )
+OUTPUT_ARCH(riscv)
+ENTRY(_start)
+BASE_ADDRESS = 0x80200000;
 
 SECTIONS
 {
-    . = 0x80200000;
+    . = BASE_ADDRESS;
+    skernel = .;
 
     stext = .;
     .text : {
         *(.text.entry)
-        . = ALIGN(0x1000); /* 4 KiB 对齐 */
+        . = ALIGN(4K);
         strampoline = .;
         *(.text.trampoline);
-        . = ALIGN(0x1000);
+        . = ALIGN(4K);
         *(.text .text.*)
     }
-    . = ALIGN(0x1000);
-    etext = .;
 
+    . = ALIGN(4K);
+    etext = .;
     srodata = .;
     .rodata : {
         *(.rodata .rodata.*)
         *(.srodata .srodata.*)
     }
-    . = ALIGN(0x1000);
-    erodata = .;
 
+    . = ALIGN(4K);
+    erodata = .;
     sdata = .;
     .data : {
         *(.data .data.*)
         *(.sdata .sdata.*)
     }
-    . = ALIGN(0x1000);
-    edata = .;
 
-    sbss = .;
+    . = ALIGN(4K);
+    edata = .;
+    sbss_with_stack = .;
     .bss : {
-        skstack = .;
-        *(.bss.stack) /* 这里本身就是 8KiB 已经对齐了，所以不需要再手动对齐 */
-        ekstack = .;
+        *(.bss.stack)
+        sbss = .;
         *(.bss .bss.*)
         *(.sbss .sbss.*)
     }
-    . = ALIGN(0x1000);
-    ebss = .;
 
-    ekernel = .;
+    . = ALIGN(4K);
+    ebss = .;
+    ekernel = .;    /*内核空间结束标记，以下空间均作为空闲内存以多级页表的方式管理*/
+
+    /DISCARD/ : {
+        *(.eh_frame)
+    }
 }

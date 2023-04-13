@@ -1,30 +1,13 @@
-/// # 管道模块
-/// `os/src/fs/pipe.rs`
-/// ```
-/// pub struct Pipe
-/// enum RingBufferStatus
-/// pub struct PipeRingBuffer
-///
-/// pub fn make_pipe()
-/// ```
-//
-use super::{Dirent, File, Kstat};
+use super::File;
 use crate::mm::UserBuffer;
 use alloc::{
-    string::String,
     sync::{Arc, Weak},
+    vec::Vec,
 };
 use spin::Mutex;
 
-pub use super::{list_apps, open, OSInode, OpenFlags};
 use crate::task::suspend_current_and_run_next;
 
-/// ### 管道
-/// 由 读 `readable` / 写 `writable` 权限和 缓冲区 `buffer` 组成，用以分别表示管道的写端和读端
-/// ```
-/// pub fn read_end_with_buffer
-/// pub fn write_end_with_buffer
-/// ```
 pub struct Pipe {
     readable: bool,
     writable: bool,
@@ -58,7 +41,7 @@ enum RingBufferStatus {
     Normal,
 }
 
-const RING_BUFFER_SIZE: usize = 32;
+const RING_BUFFER_SIZE: usize = 4096; // 4KB 
 
 /// ### 管道缓冲区(双端队列,向右增长)
 /// |成员变量|描述|
@@ -68,15 +51,6 @@ const RING_BUFFER_SIZE: usize = 32;
 /// |`tail`|队列尾，写|
 /// |`status`|队列状态|
 /// |`write_end`|保存了它的写端的一个弱引用计数，<br>在需要确认该管道所有的写端是否都已经被关闭时，<br>通过这个字段很容易确认这一点|
-/// ```
-/// pub fn new()
-/// pub fn set_write_end()
-/// pub fn write_byte()
-/// pub fn read_byte()
-/// pub fn available_read()
-/// pub fn available_write()
-/// pub fn all_write_ends_closed()
-/// ```
 pub struct PipeRingBuffer {
     arr: [u8; RING_BUFFER_SIZE],
     head: usize,
@@ -143,7 +117,7 @@ impl PipeRingBuffer {
 
 /// 创建一个管道并返回管道的读端和写端 (read_end, write_end)
 pub fn make_pipe() -> (Arc<Pipe>, Arc<Pipe>) {
-    let buffer = Arc::new(unsafe { Mutex::new(PipeRingBuffer::new()) });
+    let buffer = Arc::new(Mutex::new(PipeRingBuffer::new()));
     let read_end = Arc::new(Pipe::read_end_with_buffer(buffer.clone()));
     let write_end = Arc::new(Pipe::write_end_with_buffer(buffer.clone()));
     buffer.lock().set_write_end(&write_end);
@@ -157,8 +131,11 @@ impl File for Pipe {
     fn writable(&self) -> bool {
         self.writable
     }
+    fn available(&self) -> bool {
+        true
+    }
     fn read(&self, buf: UserBuffer) -> usize {
-        assert!(self.readable());
+        assert_eq!(self.readable(), true);
         let mut buf_iter = buf.into_iter();
         let mut read_size = 0usize;
         loop {
@@ -169,7 +146,9 @@ impl File for Pipe {
                     return read_size;
                 }
                 drop(ring_buffer);
-                suspend_current_and_run_next();
+                if suspend_current_and_run_next() < 0 {
+                    return read_size;
+                }
                 continue;
             }
             // read at most loop_read bytes
@@ -183,10 +162,11 @@ impl File for Pipe {
                     return read_size;
                 }
             }
+            return read_size;
         }
     }
     fn write(&self, buf: UserBuffer) -> usize {
-        assert!(self.writable());
+        assert_eq!(self.writable(), true);
         let mut buf_iter = buf.into_iter();
         let mut write_size = 0usize;
         loop {
@@ -194,10 +174,12 @@ impl File for Pipe {
             let loop_write = ring_buffer.available_write();
             if loop_write == 0 {
                 drop(ring_buffer);
-                suspend_current_and_run_next();
+                if suspend_current_and_run_next() < 0 {
+                    return write_size;
+                }
                 continue;
             }
-            // write at most loop_write bytes
+
             for _ in 0..loop_write {
                 if let Some(byte_ref) = buf_iter.next() {
                     ring_buffer.write_byte(unsafe { *byte_ref });
@@ -209,21 +191,78 @@ impl File for Pipe {
         }
     }
 
-    #[allow(unused_variables)]
-    fn get_fstat(&self, kstat: &mut Kstat) {
-        panic!("pipe not implement get_fstat");
+    fn get_name(&self) -> &str {
+        "pipe"
     }
 
-    #[allow(unused_variables)]
-    fn get_dirent(&self, dirent: &mut Dirent) -> isize {
-        panic!("pipe not implement get_dirent");
+    fn get_offset(&self) -> usize {
+        return 0;
     }
 
-    fn get_name(&self) -> String {
-        panic!("pipe not implement get_name");
+    fn set_offset(&self, _offset: usize) {
+        return;
     }
 
-    fn set_offset(&self, offset: usize) {
-        panic!("pipe not implement set_offset");
+    fn read_kernel_space(&self) -> Vec<u8> {
+        assert_eq!(self.readable(), true);
+        let mut buf: Vec<u8> = Vec::new();
+        loop {
+            let mut ring_buffer = self.buffer.lock();
+            let loop_read = ring_buffer.available_read();
+            if loop_read == 0 {
+                if ring_buffer.all_write_ends_closed() {
+                    return buf;
+                }
+                drop(ring_buffer);
+                if suspend_current_and_run_next() < 0 {
+                    return buf;
+                }
+                continue;
+            }
+            for _ in 0..loop_read {
+                buf.push(ring_buffer.read_byte());
+            }
+            return buf;
+        }
+    }
+    fn write_kernel_space(&self, data: Vec<u8>) -> usize {
+        assert_eq!(self.writable(), true);
+        let mut data_iter = data.into_iter();
+        let mut write_size = 0usize;
+        loop {
+            let mut ring_buffer = self.buffer.lock();
+            let loop_write = ring_buffer.available_write();
+            if loop_write == 0 {
+                drop(ring_buffer);
+                if suspend_current_and_run_next() < 0 {
+                    return write_size;
+                }
+                continue;
+            }
+            for _ in 0..loop_write {
+                if let Some(data_ref) = data_iter.next() {
+                    ring_buffer.write_byte(data_ref);
+                    write_size += 1;
+                } else {
+                    return write_size;
+                }
+            }
+        }
+    }
+
+    fn file_size(&self) -> usize {
+        core::usize::MAX
+    }
+
+    fn r_ready(&self) -> bool {
+        let ring_buffer = self.buffer.lock();
+        let loop_read = ring_buffer.available_read();
+        loop_read > 0
+    }
+
+    fn w_ready(&self) -> bool {
+        let ring_buffer = self.buffer.lock();
+        let loop_write = ring_buffer.available_write();
+        loop_write > 0
     }
 }

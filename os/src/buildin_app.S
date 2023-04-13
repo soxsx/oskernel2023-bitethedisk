@@ -1,4 +1,3 @@
-
     .align 3
     .section .data
     .global _num_app
@@ -16,5 +15,5 @@ _app_names:
     .global app_0_end
     .align 3
 app_0_start:
-    .incbin "../misc/usertests"
+    .incbin "../misc/test_booter/bin/usertests"
 app_0_end:

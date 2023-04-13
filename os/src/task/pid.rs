@@ -1,6 +1,10 @@
+/// # 进程标识符和应用内核栈模块
+
+use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE};
+use crate::mm::{MapPermission, VirtAddr, KERNEL_SPACE};
+use spin::Mutex;
 use alloc::vec::Vec;
 use lazy_static::*;
-use spin::Mutex;
 
 /// ### 栈式进程标识符分配器
 /// |成员变量|描述|
@@ -18,13 +22,13 @@ struct PidAllocator {
 }
 
 impl PidAllocator {
-    pub const fn new() -> Self {
+    /// 返回一个初始化好的进程标识符分配器
+    pub fn new() -> Self {
         PidAllocator {
             current: 0,
-            recycled: vec![],
+            recycled: Vec::new(),
         }
     }
-
     /// 分配一个进程标识符
     pub fn alloc(&mut self) -> PidHandle {
         if let Some(pid) = self.recycled.pop() {
@@ -34,11 +38,9 @@ impl PidAllocator {
             PidHandle(self.current - 1)
         }
     }
-
     /// 释放一个进程标识符
     pub fn dealloc(&mut self, pid: usize) {
         assert!(pid < self.current);
-        // HINT: 可以用 HashSet
         assert!(
             !self.recycled.iter().any(|ppid| *ppid == pid),
             "pid {} has been deallocated!",
@@ -49,23 +51,82 @@ impl PidAllocator {
 }
 
 lazy_static! {
-    static ref PID_ALLOCATOR: Mutex<PidAllocator> = Mutex::new(PidAllocator::new());
+    static ref PID_ALLOCATOR: Mutex<PidAllocator> =
+        Mutex::new(PidAllocator::new());
 }
 
 /// 进程标识符
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PidHandle(pub usize);
 
 // 为 PidHandle 实现 Drop Trait 来允许编译器进行自动的资源回收
 impl Drop for PidHandle {
     fn drop(&mut self) {
-        // TODO 这里可能导致在从 pid map 里面清除对应 pcb 的时候多次释放，被 assert panic 了
+        //println!("drop pid {}", self.0);
         PID_ALLOCATOR.lock().dealloc(self.0);
     }
 }
 
 /// 从全局栈式进程标识符分配器 `PID_ALLOCATOR` 分配一个进程标识符
-#[inline]
 pub fn pid_alloc() -> PidHandle {
     PID_ALLOCATOR.lock().alloc()
+}
+
+/// Return (bottom, top) of a kernel stack in kernel space.
+pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
+    let top = TRAMPOLINE - app_id * (KERNEL_STACK_SIZE + PAGE_SIZE);
+    let bottom = top - KERNEL_STACK_SIZE;
+    (bottom, top)
+}
+
+/// ### 应用内核栈
+/// - 成员变量：pid
+/// ```
+/// KernelStack::new(pid_handle: &PidHandle) -> Self
+/// KernelStack::push_on_top<T>(&self, value: T) -> *mut T
+/// KernelStack::get_top(&self) -> usize
+/// ```
+pub struct KernelStack {
+    pid: usize,
+}
+
+impl KernelStack {
+    /// 从一个已分配的进程标识符中对应生成一个内核栈
+    pub fn new(pid_handle: &PidHandle) -> Self {
+        let pid = pid_handle.0;
+        let (kernel_stack_bottom, kernel_stack_top) = kernel_stack_position(pid);
+        KERNEL_SPACE.lock().insert_framed_area(
+            kernel_stack_bottom.into(),
+            kernel_stack_top.into(),
+            MapPermission::R | MapPermission::W,
+        );
+        KernelStack { pid: pid_handle.0 }
+    }
+    /// 将一个类型为 T 的变量压入内核栈顶并返回其裸指针
+    #[allow(unused)]
+    pub fn push_on_top<T>(&self, value: T) -> *mut T
+    where
+        T: Sized,
+    {
+        let kernel_stack_top = self.get_top();
+        let ptr_mut = (kernel_stack_top - core::mem::size_of::<T>()) as *mut T;
+        unsafe {
+            *ptr_mut = value;
+        }
+        ptr_mut
+    }
+    /// 获取当前应用内核栈顶在内核地址空间中的地址(这地址仅与app_id有关)
+    pub fn get_top(&self) -> usize {
+        let (_, kernel_stack_top) = kernel_stack_position(self.pid);
+        kernel_stack_top
+    }
+}
+
+impl Drop for KernelStack {
+    fn drop(&mut self) {
+        let (kernel_stack_bottom, _) = kernel_stack_position(self.pid);
+        let kernel_stack_bottom_va: VirtAddr = kernel_stack_bottom.into();
+        KERNEL_SPACE
+            .lock()
+            .remove_area_with_start_vpn(kernel_stack_bottom_va.into());
+    }
 }
