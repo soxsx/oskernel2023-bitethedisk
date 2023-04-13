@@ -44,7 +44,7 @@ clean:
 	cd os/ && cargo clean
 	cd workspace/ && make clean
 	cd fat32/ && cargo clean
-	cd misc/user && make clean
+	cd misc/ && make clean
 
 fat32img: 
     构建一个 fat32 格式 300 MiB 大小的镜像，并将编译后的测例拷贝进去（测例的编译结果会复用，
