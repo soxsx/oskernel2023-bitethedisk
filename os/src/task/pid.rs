@@ -1,10 +1,9 @@
 /// # 进程标识符和应用内核栈模块
-
-use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE};
-use crate::mm::{MapPermission, VirtAddr, KERNEL_SPACE};
-use spin::Mutex;
+use crate::consts::{KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE};
+use crate::mm::kernel_vmm::KERNEL_VMM;
+use crate::mm::{MapPermission, VirtAddr};
 use alloc::vec::Vec;
-use lazy_static::*;
+use spin::Mutex;
 
 /// ### 栈式进程标识符分配器
 /// |成员变量|描述|
@@ -51,8 +50,7 @@ impl PidAllocator {
 }
 
 lazy_static! {
-    static ref PID_ALLOCATOR: Mutex<PidAllocator> =
-        Mutex::new(PidAllocator::new());
+    static ref PID_ALLOCATOR: Mutex<PidAllocator> = Mutex::new(PidAllocator::new());
 }
 
 /// 进程标识符
@@ -94,7 +92,7 @@ impl KernelStack {
     pub fn new(pid_handle: &PidHandle) -> Self {
         let pid = pid_handle.0;
         let (kernel_stack_bottom, kernel_stack_top) = kernel_stack_position(pid);
-        KERNEL_SPACE.lock().insert_framed_area(
+        KERNEL_VMM.lock().insert_framed_area(
             kernel_stack_bottom.into(),
             kernel_stack_top.into(),
             MapPermission::R | MapPermission::W,
@@ -125,7 +123,7 @@ impl Drop for KernelStack {
     fn drop(&mut self) {
         let (kernel_stack_bottom, _) = kernel_stack_position(self.pid);
         let kernel_stack_bottom_va: VirtAddr = kernel_stack_bottom.into();
-        KERNEL_SPACE
+        KERNEL_VMM
             .lock()
             .remove_area_with_start_vpn(kernel_stack_bottom_va.into());
     }

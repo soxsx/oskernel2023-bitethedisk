@@ -1,5 +1,4 @@
 use alloc::{string::String, sync::Arc, vec::Vec};
-use lazy_static::*;
 use spin::Mutex;
 
 const MNT_MAXLEN: usize = 16;

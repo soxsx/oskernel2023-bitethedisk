@@ -1,13 +1,18 @@
 use crate::mm::{translated_byte_buffer, UserBuffer};
 use crate::task::{current_task, current_user_token, SIG_BLOCK, SIG_SETMASK, SIG_UNBLOCK};
 
-pub fn sys_rt_sigprocmask(how: i32, set: *const usize, oldset: *const usize, _sigsetsize: usize) -> isize {
+pub fn sys_rt_sigprocmask(
+    how: i32,
+    set: *const usize,
+    oldset: *const usize,
+    _sigsetsize: usize,
+) -> isize {
     let token = current_user_token();
     let task = current_task().unwrap();
     // println!("enter sys_rt_sigprocmask!");
     // println!("how:{},set:{:?},oldset:{:?}",how,set,oldset);
     if oldset as usize != 0 {
-        let inner = task.inner_exclusive_access();
+        let inner = task.lock();
         let buf_vec = translated_byte_buffer(token, oldset as *const u8, 128);
         let mut userbuf = UserBuffer::new(buf_vec);
         userbuf.write(inner.sigset.bits.as_slice());
@@ -15,7 +20,7 @@ pub fn sys_rt_sigprocmask(how: i32, set: *const usize, oldset: *const usize, _si
     if set as usize != 0 {
         let mut buf_vec = translated_byte_buffer(token, set as *const u8, 128);
         let buf = buf_vec.pop().unwrap();
-        let mut inner = task.inner_exclusive_access();
+        let mut inner = task.lock();
         for (i, v) in inner.sigset.bits.iter_mut().enumerate() {
             match how {
                 SIG_BLOCK => *v = *v | buf[i],

@@ -1,77 +1,132 @@
-#![no_std] // 告诉 Rust 编译器不使用 Rust 标准库 std 转而使用核心库 core（core库不需要操作系统的支持）
-#![no_main] // 不使用main函数，而使用汇编代码指定的入口
-#![feature(panic_info_message)] // 让panic函数能通过 PanicInfo::message 获取报错信息
-#![feature(alloc_error_handler)] // 用于处理动态内存分配失败的情形
+#![no_std]
+#![no_main]
+// features
+#![feature(panic_info_message)]
+#![feature(alloc_error_handler)]
+#![feature(slice_from_ptr_range)]
 
+#[macro_use]
 extern crate alloc;
 
 #[macro_use]
 extern crate bitflags;
+#[macro_use]
+extern crate lazy_static;
 
-#[cfg(feature = "board_k210")]
-#[path = "boards/k210.rs"]
-mod board; // 与硬件板相关的参数
-#[cfg(not(any(feature = "board_k210")))]
-#[path = "boards/qemu.rs"]
-mod board; // 与虚拟机相关的参数
+#[macro_use]
+mod macros;
 #[macro_use]
 mod console; // 控制台模块
-mod config; // 参数库
-mod drivers; // 设备驱动层
-mod fs; // 内核文件系统接口
-mod lang_items; // Rust语言相关参数
-mod mm; // 内存空间模块
-mod sbi; // 实现了 RustSBI 通信的相关功能
-// mod sync; // 允许在单核处理器上将引用做全局变量使用
-mod syscall; // 系统调用模块
-mod task; // 任务管理模块
-mod timer; // 时间片模块
-mod trap; // 提供 Trap 管理
 
+#[path = "boards/qemu.rs"]
+mod board; // 与虚拟机相关的参数
+
+mod consts;
+mod drivers; // 设备驱动层
+mod fs;
+mod mm;
+mod sbi;
+mod syscall;
+mod task;
+mod timer;
+mod trap;
+
+use core::{arch::global_asm, slice};
 use riscv::register::sstatus::{set_fs, FS};
 
-core::arch::global_asm!(include_str!("entry.asm")); // 代码的第一条语句，执行指定的汇编文件，汇编程序再调用Rust实现的内核
-core::arch::global_asm!(include_str!("buildin_app.S")); // 将 c_usertests 程序放入内核区内存空间
+global_asm!(include_str!("entry.S")); // 代码的第一条语句，执行指定的汇编文件，汇编程序再调用Rust实现的内核
 
-pub fn id() -> u64 {
-    let cpu_id;
-    unsafe {
-        core::arch::asm!("mv {},tp" ,out(reg) cpu_id);
-    }
-    cpu_id
-}
-
-// 通过宏将 rust_main 标记为 #[no_mangle] 以避免编译器对它的名字进行混淆，不然在链接的时候，
-// entry.asm 将找不到 main.rs 提供的外部符号 rust_main 从而导致链接失败
 #[no_mangle]
-pub fn rust_main() -> ! {
-    clear_bss();
-    if id() == 0 {
-        unsafe {
-            set_fs(FS::Dirty);
-        }
-        mm::init();
-        trap::init();
-        trap::enable_timer_interrupt();
-        timer::set_next_trigger();
-        fs::init();
-        task::add_initproc();
-        println!("[kernel] Initialization succeeded");
-        task::run_tasks();
-        panic!("Unreachable in rust_main!");
-    } else {
-        // 目前暂不使用第二个核
+pub fn meow() -> ! {
+    init_bss();
+    if hartid!() != 0 {
         loop {}
     }
+
+    unsafe { set_fs(FS::Dirty) }
+    lang_items::setup();
+    mm::init();
+    trap::init();
+    trap::enable_stimer_interrupt();
+    timer::set_next_trigger();
+    fs::init();
+    task::add_initproc();
+    println!("[kernel] Initialization succeeded");
+    task::run_tasks();
+
+    unreachable!("you should not be here");
 }
 
-// 初始化内存.bbs区域
-fn clear_bss() {
+fn init_bss() {
     extern "C" {
-        fn sbss();
+        fn ekstack0();
         fn ebss();
     }
     unsafe {
-        core::slice::from_raw_parts_mut(sbss as usize as *mut u8, ebss as usize - sbss as usize).fill(0);
+        let sbss = ekstack0 as usize as *mut u8;
+        let ebss = ebss as usize as *mut u8;
+        slice::from_mut_ptr_range(sbss..ebss)
+            .into_iter()
+            .for_each(|byte| (byte as *mut u8).write_volatile(0));
+    }
+}
+
+pub use lang_items::*;
+pub mod lang_items {
+
+    use crate::{consts::KERNEL_HEAP_SIZE, sbi::legacy::shutdown};
+    use core::panic::PanicInfo;
+    use linked_list_allocator::LockedHeap;
+
+    pub fn setup() {
+        init_heap();
+    }
+
+    #[panic_handler]
+    fn _panic(info: &PanicInfo) -> ! {
+        if let Some(location) = info.location() {
+            println!(
+                "[kernel] Panicked at {}:{} {}",
+                location.file(),
+                location.line(),
+                info.message().unwrap()
+            );
+        } else {
+            println!("[kernel] Panicked: {}", info.message().unwrap());
+        }
+        shutdown()
+    }
+
+    // 通过 `global_allocator` 注解将 HEAP_ALLOCATOR 标记为 Rust 的内存分配器
+    // Rust 的相关数据结构，如 Vec, BTreeMap 等，依赖于该分配器
+    #[global_allocator]
+    static HEAP_ALLOCATOR: LockedHeap = LockedHeap::empty();
+
+    // 用于处理动态内存分配失败的情形，直接 panic
+    #[alloc_error_handler]
+    pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
+        heap_usage();
+        panic!("Heap allocation error, layout = {:?}", layout);
+    }
+
+    // 给全局分配器用于分配的一块内存，位于内核的 .bss 段中
+    static mut KERNEL_HEAP: [u8; KERNEL_HEAP_SIZE] = [0; KERNEL_HEAP_SIZE];
+
+    pub fn heap_usage() {
+        let used = HEAP_ALLOCATOR.lock().used();
+        let total_size = HEAP_ALLOCATOR.lock().size();
+        let usage = used as f64 / total_size as f64 * 100.0;
+        println!(
+            "[kernel] heap usage: {:.2}% ({}/{} bytes)",
+            usage, used as usize, total_size
+        );
+    }
+
+    fn init_heap() {
+        unsafe {
+            HEAP_ALLOCATOR
+                .lock()
+                .init(KERNEL_HEAP.as_ptr() as *mut u8, KERNEL_HEAP_SIZE);
+        }
     }
 }

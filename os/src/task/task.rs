@@ -1,15 +1,20 @@
 use super::signal::SigSet;
 use super::{aux, RLimit, TaskContext, AT_RANDOM, RESOURCE_KIND_NUMBER};
 use super::{pid_alloc, KernelStack, PidHandle, SignalFlags};
-use crate::config::*;
-use crate::fs::{File, Stdin, Stdout, OSInode};
-use crate::mm::{translated_refmut, MapPermission, MemorySet, MmapArea, PhysPageNum, VirtAddr, KERNEL_SPACE, VirtPageNum, PageTableEntry, MmapFlags, MmapProts};
-use spin::{Mutex, MutexGuard};
-use crate::trap::{trap_handler, TrapContext};
+use crate::consts::*;
+use crate::fs::{File, OSInode, Stdin, Stdout};
+use crate::mm::kernel_vmm::KERNEL_VMM;
+use crate::mm::{
+    translated_refmut, MapPermission, MemorySet, MmapArea, MmapFlags, MmapProts, PageTableEntry,
+    PhysPageNum, VirtAddr, VirtPageNum,
+};
+use crate::trap::handler::user_trap_handler;
+use crate::trap::TrapContext;
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
+use spin::{Mutex, MutexGuard};
 
 pub const FD_LIMIT: usize = 128;
 
@@ -91,7 +96,7 @@ impl TaskControlBlockInner {
     pub fn get_work_path(&self) -> &str {
         self.current_path.as_str()
     }
-    
+
     pub fn enquire_pte_via_vpn(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.memory_set.translate(vpn)
     }
@@ -109,7 +114,7 @@ impl TaskControlBlockInner {
 }
 
 impl TaskControlBlock {
-    pub fn inner_exclusive_access(&self) -> MutexGuard<TaskControlBlockInner> {
+    pub fn lock(&self) -> MutexGuard<TaskControlBlockInner> {
         self.inner.lock()
     }
 
@@ -120,7 +125,10 @@ impl TaskControlBlock {
         let (memory_set, user_sp, entry_point) = MemorySet::load_elf(initproc.clone(), &mut auxs);
         initproc.delete();
         // 从地址空间 memory_set 中查多级页表找到应用地址空间中的 Trap 上下文实际被放在哪个物理页帧
-        let trap_cx_ppn = memory_set.translate(VirtAddr::from(TRAP_CONTEXT).into()).unwrap().ppn();
+        let trap_cx_ppn = memory_set
+            .translate(VirtAddr::from(TRAP_CONTEXT).into())
+            .unwrap()
+            .ppn();
         // 为进程分配 PID 以及内核栈，并记录下内核栈在内核地址空间的位置
         let pid_handle = pid_alloc();
         let tgid = pid_handle.0;
@@ -131,40 +139,42 @@ impl TaskControlBlock {
             pid: pid_handle,
             tgid,
             kernel_stack,
-            inner:Mutex::new(TaskControlBlockInner {
-                    trap_cx_ppn,
-                    base_size: user_sp,
-                    task_cx: TaskContext::goto_trap_return(kernel_stack_top),
-                    task_status: TaskStatus::Ready,
-                    memory_set,
-                    parent: None,
-                    children: Vec::new(),
-                    exit_code: 0,
-                    fd_table: vec![
-                        // 0 -> stdin
-                        Some(Arc::new(Stdin)),
-                        // 1 -> stdout
-                        Some(Arc::new(Stdout)),
-                        // 2 -> stderr
-                        Some(Arc::new(Stdout)),
-                    ],
-                    signals: SignalFlags::empty(),
-                    current_path: String::from("/"),
-                    mmap_area: MmapArea::new(VirtAddr::from(MMAP_BASE), VirtAddr::from(MMAP_BASE)),
-                    sigset: SigSet::new(),
-                    resource: [RLimit { rlim_cur: 0, rlim_max: 1 }; RESOURCE_KIND_NUMBER],
-                })
-            ,
+            inner: Mutex::new(TaskControlBlockInner {
+                trap_cx_ppn,
+                base_size: user_sp,
+                task_cx: TaskContext::readied_for_switching(kernel_stack_top),
+                task_status: TaskStatus::Ready,
+                memory_set,
+                parent: None,
+                children: Vec::new(),
+                exit_code: 0,
+                fd_table: vec![
+                    // 0 -> stdin
+                    Some(Arc::new(Stdin)),
+                    // 1 -> stdout
+                    Some(Arc::new(Stdout)),
+                    // 2 -> stderr
+                    Some(Arc::new(Stdout)),
+                ],
+                signals: SignalFlags::empty(),
+                current_path: String::from("/"),
+                mmap_area: MmapArea::new(VirtAddr::from(MMAP_BASE), VirtAddr::from(MMAP_BASE)),
+                sigset: SigSet::new(),
+                resource: [RLimit {
+                    rlim_cur: 0,
+                    rlim_max: 1,
+                }; RESOURCE_KIND_NUMBER],
+            }),
         };
         // 初始化位于该进程应用地址空间中的 Trap 上下文，使得第一次进入用户态的时候时候能正
         // 确跳转到应用入口点并设置好用户栈，同时也保证在 Trap 的时候用户态能正确进入内核态
-        let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
+        let trap_cx = task_control_block.lock().get_trap_cx();
         *trap_cx = TrapContext::app_init_context(
             entry_point,
             user_sp,
-            KERNEL_SPACE.lock().token(),
+            KERNEL_VMM.lock().token(),
             kernel_stack_top,
-            trap_handler as usize,
+            user_trap_handler as usize,
         );
         task_control_block
     }
@@ -174,7 +184,10 @@ impl TaskControlBlock {
         let mut auxs = aux::new();
         // 从 ELF 文件生成一个全新的地址空间并直接替换
         let (memory_set, mut user_sp, entry_point) = MemorySet::load_elf(elf_file, &mut auxs);
-        let trap_cx_ppn = memory_set.translate(VirtAddr::from(TRAP_CONTEXT).into()).unwrap().ppn();
+        let trap_cx_ppn = memory_set
+            .translate(VirtAddr::from(TRAP_CONTEXT).into())
+            .unwrap()
+            .ppn();
 
         // 计算对齐位置
         let mut total_len = 0;
@@ -218,8 +231,8 @@ impl TaskControlBlock {
             })
             .collect();
 
-        if argv.len() != 0{
-        auxs.push(aux::AuxEntry(AT_RANDOM, argv[0]));
+        if argv.len() != 0 {
+            auxs.push(aux::AuxEntry(AT_RANDOM, argv[0]));
         }
 
         // 分配 auxs 空间，并写入数据
@@ -236,7 +249,10 @@ impl TaskControlBlock {
         user_sp -= (envs.len()) * core::mem::size_of::<usize>();
         let envp_base = user_sp; // 参数字符串指针起始地址
         for i in 0..envs.len() {
-            *translated_refmut(memory_set.token(), (envp_base + i * core::mem::size_of::<usize>()) as *mut usize) = envv[i];
+            *translated_refmut(
+                memory_set.token(),
+                (envp_base + i * core::mem::size_of::<usize>()) as *mut usize,
+            ) = envv[i];
         }
 
         // argv, 0, 表示结束
@@ -247,13 +263,16 @@ impl TaskControlBlock {
         user_sp -= (args.len()) * core::mem::size_of::<usize>();
         let argv_base = user_sp; // 参数字符串指针起始地址
         for i in 0..args.len() {
-            *translated_refmut(memory_set.token(), (argv_base + i * core::mem::size_of::<usize>()) as *mut usize) = argv[i];
+            *translated_refmut(
+                memory_set.token(),
+                (argv_base + i * core::mem::size_of::<usize>()) as *mut usize,
+            ) = argv[i];
         }
 
         // argc
         user_sp -= core::mem::size_of::<usize>();
         *translated_refmut(memory_set.token(), user_sp as *mut usize) = args.len();
-        let mut inner = self.inner_exclusive_access();
+        let mut inner = self.lock();
 
         inner.memory_set = memory_set; // 这将导致原有的地址空间生命周期结束，里面包含的全部物理页帧都会被回收
         inner.trap_cx_ppn = trap_cx_ppn;
@@ -266,31 +285,35 @@ impl TaskControlBlock {
                 // if fd.is_some(){
                 //     println!("fd name:{}, available:{}",fd.as_ref().unwrap().get_name(),fd.as_ref().unwrap().available());
                 // }
-                fd.is_some() && !fd.as_ref().unwrap().available()})
+                fd.is_some() && !fd.as_ref().unwrap().available()
+            })
             .take();
 
         // 修改新的地址空间中的 Trap 上下文，将解析得到的应用入口点、用户栈位置以及一些内核的信息进行初始化
         *trap_cx = TrapContext::app_init_context(
             entry_point,
             user_sp,
-            KERNEL_SPACE.lock().token(),
+            KERNEL_VMM.lock().token(),
             self.kernel_stack.get_top(),
-            trap_handler as usize,
+            user_trap_handler as usize,
         );
         // 修改 Trap 上下文中的 a0/a1 寄存器
         trap_cx.x[10] = 0; // a0 表示命令行参数的个数
-        // trap_cx.x[11] = argv_base; // a1 则表示 参数字符串首地址数组 的起始地址
+                           // trap_cx.x[11] = argv_base; // a1 则表示 参数字符串首地址数组 的起始地址
     }
 
     /// 用来实现 fork 系统调用，即当前进程 fork 出来一个与之几乎相同的子进程
     pub fn fork(self: &Arc<TaskControlBlock>, is_create_thread: bool) -> Arc<TaskControlBlock> {
-        let mut parent_inner = self.inner_exclusive_access();
+        let mut parent_inner = self.lock();
         // copy mmap_area
         let mmap_area = parent_inner.mmap_area.clone();
         // mmap_area.debug_show();
         // 拷贝用户地址空间
-        let memory_set = MemorySet::from_copy_on_write(&mut parent_inner.memory_set);  // use 4 pages
-        let trap_cx_ppn = memory_set.translate(VirtAddr::from(TRAP_CONTEXT).into()).unwrap().ppn();
+        let memory_set = MemorySet::from_copy_on_write(&mut parent_inner.memory_set); // use 4 pages
+        let trap_cx_ppn = memory_set
+            .translate(VirtAddr::from(TRAP_CONTEXT).into())
+            .unwrap()
+            .ppn();
         // 分配一个 PID
         let pid_handle = pid_alloc();
         let mut tgid = 0;
@@ -301,7 +324,7 @@ impl TaskControlBlock {
             tgid = pid_handle.0;
         }
         // 根据 PID 创建一个应用内核栈
-        let kernel_stack = KernelStack::new(&pid_handle);  // use 2 pages
+        let kernel_stack = KernelStack::new(&pid_handle); // use 2 pages
         let kernel_stack_top = kernel_stack.get_top();
         // copy fd table
         let mut new_fd_table: Vec<Option<Arc<dyn File + Send + Sync>>> = Vec::new();
@@ -317,27 +340,29 @@ impl TaskControlBlock {
             tgid,
             kernel_stack,
             inner: Mutex::new(TaskControlBlockInner {
-                    trap_cx_ppn,
-                    base_size: parent_inner.base_size,
-                    task_cx: TaskContext::goto_trap_return(kernel_stack_top),
-                    task_status: TaskStatus::Ready,
-                    memory_set,
-                    parent: Some(Arc::downgrade(self)),
-                    children: Vec::new(),
-                    exit_code: 0,
-                    fd_table: new_fd_table,
-                    signals: SignalFlags::empty(),
-                    current_path: parent_inner.current_path.clone(),
-                    mmap_area,
-                    sigset: SigSet::new(),
-                    resource: [RLimit { rlim_cur: 0, rlim_max: 1 }; RESOURCE_KIND_NUMBER],
-                })
-            ,
+                trap_cx_ppn,
+                base_size: parent_inner.base_size,
+                task_cx: TaskContext::readied_for_switching(kernel_stack_top),
+                task_status: TaskStatus::Ready,
+                memory_set,
+                parent: Some(Arc::downgrade(self)),
+                children: Vec::new(),
+                exit_code: 0,
+                fd_table: new_fd_table,
+                signals: SignalFlags::empty(),
+                current_path: parent_inner.current_path.clone(),
+                mmap_area,
+                sigset: SigSet::new(),
+                resource: [RLimit {
+                    rlim_cur: 0,
+                    rlim_max: 1,
+                }; RESOURCE_KIND_NUMBER],
+            }),
         });
         // 把新生成的进程加入到子进程向量中
         parent_inner.children.push(task_control_block.clone());
         // 更新子进程 trap 上下文中的栈顶指针
-        let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
+        let trap_cx = task_control_block.lock().get_trap_cx();
         trap_cx.kernel_sp = kernel_stack_top;
 
         task_control_block
@@ -351,7 +376,7 @@ impl TaskControlBlock {
     ///     - `0`：成功加载缺页
     ///     - `-1`：加载缺页失败
     pub fn check_lazy(&self, va: VirtAddr, is_load: bool) -> isize {
-        let inner = self.inner_exclusive_access();
+        let inner = self.lock();
         let mmap_start = inner.mmap_area.mmap_start;
         let mmap_end = inner.mmap_area.mmap_top;
         let heap_start = VirtAddr::from(inner.memory_set.heap_start);
@@ -359,19 +384,19 @@ impl TaskControlBlock {
         drop(inner);
 
         let vpn: VirtPageNum = va.floor();
-        let pte = self.inner_exclusive_access().enquire_pte_via_vpn(vpn);
+        let pte = self.lock().enquire_pte_via_vpn(vpn);
         if pte.is_some() && pte.unwrap().is_cow() {
             let former_ppn = pte.unwrap().ppn();
-            return self.inner_exclusive_access().cow_alloc(vpn, former_ppn);
+            return self.lock().cow_alloc(vpn, former_ppn);
         } else {
             if let Some(pte1) = pte {
                 if pte1.is_valid() {
-                    return -4
+                    return -4;
                 }
             }
         }
         if va >= heap_start && va <= heap_end {
-            self.inner_exclusive_access().lazy_alloc_heap(va.floor())
+            self.lock().lazy_alloc_heap(va.floor())
         } else if va >= mmap_start && va < mmap_end {
             self.lazy_mmap(va, is_load)
         } else {
@@ -381,7 +406,7 @@ impl TaskControlBlock {
             println!("[check_lazy] heap_start: 0x{:x}", heap_start.0);
             println!("[check_lazy] heap_end: 0x{:x}", heap_end.0);
             println!("[check_lazy] current vma layout:");
-            self.inner_exclusive_access().memory_set.debug_show_layout();
+            self.lock().memory_set.debug_show_layout();
             -2
         }
     }
@@ -394,7 +419,7 @@ impl TaskControlBlock {
     ///     - `0`
     ///     - `-1`
     pub fn lazy_mmap(&self, va: VirtAddr, is_load: bool) -> isize {
-        let mut inner = self.inner_exclusive_access();
+        let mut inner = self.lock();
         let fd_table = inner.fd_table.clone();
         let token = inner.get_user_token();
         let lazy_result = inner.memory_set.lazy_mmap(va.into());
@@ -406,13 +431,20 @@ impl TaskControlBlock {
     }
 
     // 在进程虚拟地址空间中分配创建一片虚拟内存地址映射
-    pub fn mmap(&self, addr: usize, length: usize, prot: MmapProts, flags: MmapFlags, fd: isize, offset: usize) -> usize {
-
+    pub fn mmap(
+        &self,
+        addr: usize,
+        length: usize,
+        prot: MmapProts,
+        flags: MmapFlags,
+        fd: isize,
+        offset: usize,
+    ) -> usize {
         if addr % PAGE_SIZE != 0 {
             panic!("mmap: addr not aligned");
         }
 
-        let mut inner = self.inner_exclusive_access();
+        let mut inner = self.lock();
         let fd_table = inner.fd_table.clone();
         let token = inner.get_user_token();
 
@@ -424,35 +456,49 @@ impl TaskControlBlock {
 
         // inner.memory_set.debug_show_layout();
 
-        if addr != 0{
-            if flags.contains(MmapFlags::MAP_FIXED) { // 处理 MAP_FIXED
+        if addr != 0 {
+            if flags.contains(MmapFlags::MAP_FIXED) {
+                // 处理 MAP_FIXED
                 inner.memory_set.reduce_chunk_range(addr, length);
                 inner.mmap_area.reduce_mmap_range(addr, length);
                 start_va = VirtAddr::from(addr);
-                end_va = VirtAddr::from(addr+length);
+                end_va = VirtAddr::from(addr + length);
             }
-        } else{
+        } else {
             start_va = inner.mmap_area.get_mmap_top();
             end_va = VirtAddr::from(start_va.0 + length);
         }
 
-        inner
-            .memory_set
-            .insert_mmap_area(start_va, end_va, MapPermission::from_bits(map_flags).unwrap());
-        
-        inner.mmap_area.push(start_va.0, length, prot.bits(), flags.bits(), fd, offset, fd_table, token);
+        inner.memory_set.insert_mmap_area(
+            start_va,
+            end_va,
+            MapPermission::from_bits(map_flags).unwrap(),
+        );
+
+        inner.mmap_area.push(
+            start_va.0,
+            length,
+            prot.bits(),
+            flags.bits(),
+            fd,
+            offset,
+            fd_table,
+            token,
+        );
         drop(inner);
 
         start_va.0
     }
 
     pub fn munmap(&self, addr: usize, length: usize) -> isize {
-        let mut inner = self.inner_exclusive_access();
+        let mut inner = self.lock();
 
         // println!("[Kernel munmap] start munmap start: 0x{:x} len: 0x{:x};", start, len);
         // inner.memory_set.debug_show_layout();
-        
-        inner.memory_set.remove_area_with_start_vpn(VirtAddr::from(addr).into());
+
+        inner
+            .memory_set
+            .remove_area_with_start_vpn(VirtAddr::from(addr).into());
 
         // println!("[Kernel munmap] after munmap;");
         // inner.memory_set.debug_show_layout();
@@ -460,7 +506,7 @@ impl TaskControlBlock {
         inner.mmap_area.remove(addr, length)
     }
 
-    pub fn getpid(&self) -> usize {
+    pub fn pid(&self) -> usize {
         self.pid.0
     }
 
@@ -494,13 +540,14 @@ impl TaskControlBlock {
     }
 }
 
-/// ### 任务状态枚举
+/// 任务状态枚举
+///
 /// |状态|描述|
 /// |--|--|
 /// |`Ready`|准备运行|
 /// |`Running`|正在运行|
 /// |`Zombie`|僵尸态|
-#[derive(Copy, Clone, PartialEq)] // 由编译器实现一些特性
+#[derive(Copy, Clone, PartialEq)]
 pub enum TaskStatus {
     Ready,   // 准备运行
     Running, // 正在运行

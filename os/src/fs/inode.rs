@@ -14,7 +14,6 @@ use alloc::{
     vec::Vec,
 };
 use bitflags::*;
-use lazy_static::*;
 use fat32::{create_root_vfile, FAT32Manager, VFile, ATTR_ARCHIVE, ATTR_DIRECTORY};
 use spin::Mutex;
 
@@ -54,7 +53,7 @@ impl OSInode {
     #[allow(unused)]
     pub fn read_all(&self) -> Vec<u8> {
         let mut buffer = [0u8; 512];
-        let mut v: Vec<u8> = Vec::new();
+        let mut v: Vec<u8> = vec![];
         let mut inner = self.inner.lock();
         loop {
             let len = inner.inode.read_at(inner.offset, &mut buffer);

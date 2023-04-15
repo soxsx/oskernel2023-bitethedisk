@@ -1,10 +1,14 @@
-use crate::config::CLOCK_FREQ;
+use crate::consts::CLOCK_FREQ;
 use crate::fs::{open, OpenFlags};
-use crate::mm::{translated_byte_buffer, translated_ref, translated_refmut, translated_str, UserBuffer, MmapProts, MmapFlags};
-use crate::task::{
-    add_task, current_task, current_user_token, exit_current_and_run_next, pid2task, suspend_current_and_run_next, RLimit, RUsage,
-    SignalFlags,
+use crate::mm::{
+    translated_byte_buffer, translated_ref, translated_refmut, translated_str, MmapFlags,
+    MmapProts, UserBuffer,
 };
+use crate::task::{
+    add_task, current_task, current_user_token, exit_current_and_run_next, pid2task,
+    suspend_current_and_run_next, RLimit, RUsage, SignalFlags,
+};
+pub use crate::task::{CloneFlags, Utsname, UTSNAME};
 use crate::timer::{get_time, get_time_ms, get_timeval, tms, TimeVal, NSEC_PER_SEC};
 use alloc::{
     string::{String, ToString},
@@ -12,7 +16,6 @@ use alloc::{
     vec::Vec,
 };
 use core::mem::size_of;
-pub use crate::task::{CloneFlags, Utsname, UTSNAME};
 // use simple_fat32::{CACHEGET_NUM,CACHEHIT_NUM};
 
 /// 结束进程运行然后运行下一程序
@@ -94,7 +97,13 @@ pub fn sys_times(buf: *const u8) -> isize {
 ///     - `newtls`
 /// - 返回值：对于子进程返回 0，对于当前进程则返回子进程的 PID 。
 /// - syscall ID：220
-pub fn sys_fork(flags: usize, stack_ptr: usize, _ptid: usize, _ctid: usize, _newtls: usize) -> isize {
+pub fn sys_fork(
+    flags: usize,
+    stack_ptr: usize,
+    _ptid: usize,
+    _ctid: usize,
+    _newtls: usize,
+) -> isize {
     // println!(
     //     "[DEBUG] enter sys_fork: flags:{}, stack_ptr:{}, ptid:{}, ctid:{}, newtls:{}",
     //     flags, stack_ptr, _ptid, _ctid, _newtls
@@ -117,12 +126,12 @@ pub fn sys_fork(flags: usize, stack_ptr: usize, _ptid: usize, _ctid: usize, _new
     // }
 
     if stack_ptr != 0 {
-        let trap_cx = new_task.inner_exclusive_access().get_trap_cx();
+        let trap_cx = new_task.lock().get_trap_cx();
         trap_cx.set_sp(stack_ptr);
     }
     let new_pid = new_task.pid.0;
     // modify trap context of new_task, because it returns immediately after switching
-    let trap_cx = new_task.inner_exclusive_access().get_trap_cx();
+    let trap_cx = new_task.lock().get_trap_cx();
     // we do not have to move to next instruction since we have done it before
     // trap_handler 已经将当前进程 Trap 上下文中的 sepc 向后移动了 4 字节，
     // 使得它回到用户态之后，会从发出系统调用的 ecall 指令的下一条指令开始执行
@@ -180,13 +189,21 @@ pub fn sys_exec(path: *const u8, mut args: *const usize, mut _envs: *const usize
         for i in &args_vec {
             new_args.push(i.clone());
         }
-        task.exec(open("/", "busybox", OpenFlags::O_RDONLY).unwrap(), new_args, envs_vec);
+        task.exec(
+            open("/", "busybox", OpenFlags::O_RDONLY).unwrap(),
+            new_args,
+            envs_vec,
+        );
         // memory_usage();
         return 0 as isize;
     }
 
-    let inner = task.inner_exclusive_access();
-    if let Some(app_inode) = open(inner.current_path.as_str(), path.as_str(), OpenFlags::O_RDONLY) {
+    let inner = task.lock();
+    if let Some(app_inode) = open(
+        inner.current_path.as_str(),
+        path.as_str(),
+        OpenFlags::O_RDONLY,
+    ) {
         drop(inner);
         task.exec(app_inode, args_vec, envs_vec);
         // memory_usage();
@@ -210,20 +227,24 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
     // crate::task::debug_show_ready_queue();
     let task = current_task().unwrap();
     // ---- access current TCB exclusively
-    let inner = task.inner_exclusive_access();
+    let inner = task.lock();
 
     // 根据pid参数查找有没有符合要求的进程
-    if !inner.children.iter().any(|p| pid == -1 || pid as usize == p.getpid()) {
+    if !inner
+        .children
+        .iter()
+        .any(|p| pid == -1 || pid as usize == p.pid())
+    {
         return -1;
         // ---- release current PCB
     }
     drop(inner);
     loop {
-        let mut inner = task.inner_exclusive_access();
+        let mut inner = task.lock();
         // 查找所有符合PID要求的处于僵尸状态的进程，如果有的话还需要同时找出它在当前进程控制块子进程向量中的下标
         let pair = inner.children.iter().enumerate().find(|(_, p)| {
             // ++++ temporarily access child PCB lock exclusively
-            p.inner_exclusive_access().is_zombie() && (pid == -1 || pid as usize == p.getpid())
+            p.lock().is_zombie() && (pid == -1 || pid as usize == p.pid())
             // ++++ release child PCB
         });
         if let Some((idx, _)) = pair {
@@ -236,9 +257,9 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
             // println!("[KERNEL] pid {} waitpid {}",current_task().unwrap().pid.0, pid);
             assert_eq!(Arc::strong_count(&child), 1);
             // 收集的子进程信息返回
-            let found_pid = child.getpid();
+            let found_pid = child.pid();
             // ++++ temporarily access child TCB exclusively
-            let exit_code = child.inner_exclusive_access().exit_code;
+            let exit_code = child.lock().exit_code;
             // ++++ release child PCB
             // 将子进程的退出码写入到当前进程的应用地址空间中
             if exit_code_ptr as usize != 0 {
@@ -262,7 +283,7 @@ pub fn sys_kill(pid: usize, signal: u32) -> isize {
     let signal = 1 << signal;
     if let Some(task) = pid2task(pid) {
         if let Some(flag) = SignalFlags::from_bits(signal) {
-            task.inner_exclusive_access().signals |= flag;
+            task.lock().signals |= flag;
             0
         } else {
             panic!("[DEBUG] sys_kill: unsupported signal");
@@ -281,13 +302,24 @@ pub fn sys_kill(pid: usize, signal: u32) -> isize {
 pub fn sys_uname(buf: *const u8) -> isize {
     let token = current_user_token();
     let uname = UTSNAME.lock();
-    let mut userbuf = UserBuffer::new(translated_byte_buffer(token, buf, core::mem::size_of::<Utsname>()));
+    let mut userbuf = UserBuffer::new(translated_byte_buffer(
+        token,
+        buf,
+        core::mem::size_of::<Utsname>(),
+    ));
     userbuf.write(uname.as_bytes());
     0
 }
 
 // 在进程虚拟地址空间中分配创建一片虚拟内存地址映射
-pub fn sys_mmap(addr: usize, length: usize, prot: usize, flags: usize, fd: isize, offset: usize) -> isize {
+pub fn sys_mmap(
+    addr: usize,
+    length: usize,
+    prot: usize,
+    flags: usize,
+    fd: isize,
+    offset: usize,
+) -> isize {
     if length == 0 {
         panic!("mmap:len == 0");
     }
@@ -295,7 +327,7 @@ pub fn sys_mmap(addr: usize, length: usize, prot: usize, flags: usize, fd: isize
     let flags = MmapFlags::from_bits(flags).expect("unsupported mmap flags");
 
     // info!("[KERNEL syscall] enter mmap: addr:0x{:x}, length:0x{:x}, prot:{:?}, flags:{:?},fd:{}, offset:0x{:x}", addr, length, prot, flags, fd, offset);
-    
+
     let task = current_task().unwrap();
     let result_addr = task.mmap(addr, length, prot, flags, fd, offset);
     // info!("[DEBUG] sys_mmap return: 0x{:x}", result_addr);
@@ -328,13 +360,22 @@ pub fn sys_brk(brk_addr: usize) -> isize {
     addr_new as isize
 }
 
-pub fn sys_prlimit64(_pid: usize, resource: usize, new_limit: *const u8, old_limit: *const u8) -> isize {
+pub fn sys_prlimit64(
+    _pid: usize,
+    resource: usize,
+    new_limit: *const u8,
+    old_limit: *const u8,
+) -> isize {
     let token = current_user_token();
     // println!("[DEBUG] enter sys_prlimit64: pid:{},resource:{},new_limit:{},old_limit:{}",pid,resource,new_limit as usize,old_limit as usize);
     if old_limit as usize != 0 {
-        let mut buf = UserBuffer::new(translated_byte_buffer(token, old_limit as *const u8, size_of::<RLimit>()));
+        let mut buf = UserBuffer::new(translated_byte_buffer(
+            token,
+            old_limit as *const u8,
+            size_of::<RLimit>(),
+        ));
         let task = current_task().unwrap();
-        let inner = task.inner_exclusive_access();
+        let inner = task.lock();
         let old_resource = inner.resource[resource];
         let old_limit = RLimit {
             rlim_cur: old_resource.rlim_cur,
@@ -350,7 +391,7 @@ pub fn sys_prlimit64(_pid: usize, resource: usize, new_limit: *const u8, old_lim
         let addr = buf.as_ptr() as *const _ as usize;
         let new_limit = unsafe { &*(addr as *const RLimit) };
         let task = current_task().unwrap();
-        let mut inner = task.inner_exclusive_access();
+        let mut inner = task.lock();
         let rlimit = RLimit {
             rlim_cur: new_limit.rlim_cur,
             rlim_max: new_limit.rlim_max,
@@ -429,7 +470,11 @@ pub fn sys_getrusage(who: isize, usage: *mut u8) -> isize {
         panic!("sys_getrusage: \"who\" not supported!");
     }
     let token = current_user_token();
-    let mut userbuf = UserBuffer::new(translated_byte_buffer(token, usage, core::mem::size_of::<RUsage>()));
+    let mut userbuf = UserBuffer::new(translated_byte_buffer(
+        token,
+        usage,
+        core::mem::size_of::<RUsage>(),
+    ));
     let rusage = RUsage::new();
     userbuf.write(rusage.as_bytes());
     0

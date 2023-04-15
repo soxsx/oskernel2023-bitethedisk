@@ -1,16 +1,15 @@
-/// # 页表
-/// `os/src/mm/page_table.rs`
-/// ## 实现功能
-/// ```
-/// pub struct PTEFlags: u8
-/// pub struct PageTableEntry
-/// pub struct PageTable
-///
-/// pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&'static mut [u8]>
-/// ```
-//
+//! # 页表
+//! `os/src/mm/page_table.rs`
+//! ## 实现功能
+//! ```
+//! pub struct PTEFlags: u8
+//! pub struct PageTableEntry
+//! pub struct PageTable
+//!
+//! pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&'static mut [u8]>
+//! ```
 
-use crate::config::PAGE_SIZE;
+use crate::consts::PAGE_SIZE;
 use crate::task::current_task;
 
 use super::{frame_alloc, FrameTracker};

@@ -5,8 +5,6 @@
 /// pub struct CloneFlags
 /// ```
 //
-//use alloc::sync::Arc;
-use lazy_static::*;
 use spin::Mutex;
 
 use crate::timer::TimeVal;

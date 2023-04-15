@@ -1,16 +1,14 @@
-/// # 地址数据类型
-/// `os/src/mm/address.rs`
-/// ## 实现功能
-/// ```
-/// pub struct PhysAddr(pub usize);     // 物理地址 56bit
-/// pub struct PhysPageNum(pub usize);  // 物理页号 44bit
-/// pub struct VirtAddr(pub usize);     // 虚拟地址 39bit
-/// pub struct VirtPageNum(pub usize);  // 虚拟页号 27bit
-/// ```
-//
-
+//! # 地址数据类型
+//! `os/src/mm/address.rs`
+//! ## 实现功能
+//! ```
+//! pub struct PhysAddr(pub usize);     // 物理地址 56bit
+//! pub struct PhysPageNum(pub usize);  // 物理页号 44bit
+//! pub struct VirtAddr(pub usize);     // 虚拟地址 39bit
+//! pub struct VirtPageNum(pub usize);  // 虚拟页号 27bit
+//! ```
 use super::PageTableEntry;
-use crate::config::{PAGE_SIZE, PAGE_SIZE_BITS};
+use crate::consts::{IN_PAGE_OFFSET, PAGE_SIZE};
 use core::fmt::{self, Debug, Formatter};
 
 /// 物理地址宽度：56bit
@@ -18,9 +16,9 @@ const PA_WIDTH_SV39: usize = 56;
 /// 虚拟地址宽度：39bit
 const VA_WIDTH_SV39: usize = 39;
 /// 物理页号宽度：44bit
-const PPN_WIDTH_SV39: usize = PA_WIDTH_SV39 - PAGE_SIZE_BITS;
+const PPN_WIDTH_SV39: usize = PA_WIDTH_SV39 - IN_PAGE_OFFSET;
 /// 虚拟页号宽度：27bit
-const VPN_WIDTH_SV39: usize = VA_WIDTH_SV39 - PAGE_SIZE_BITS;
+const VPN_WIDTH_SV39: usize = VA_WIDTH_SV39 - IN_PAGE_OFFSET;
 
 /// ### 物理地址 56bit
 /// ```
@@ -161,7 +159,7 @@ impl From<VirtAddr> for VirtPageNum {
 }
 impl From<VirtPageNum> for VirtAddr {
     fn from(v: VirtPageNum) -> Self {
-        Self(v.0 << PAGE_SIZE_BITS)
+        Self(v.0 << IN_PAGE_OFFSET)
     }
 }
 impl PhysAddr {
@@ -201,7 +199,7 @@ impl From<PhysAddr> for PhysPageNum {
 // 从物理页号转换到物理地址只需左移 PAGE_SIZE_BITS 大小
 impl From<PhysPageNum> for PhysAddr {
     fn from(v: PhysPageNum) -> Self {
-        Self(v.0 << PAGE_SIZE_BITS)
+        Self(v.0 << IN_PAGE_OFFSET)
     }
 }
 
@@ -255,7 +253,7 @@ impl StepByOne for PhysPageNum {
     }
 }
 
-#[derive(Copy, Clone,Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct SimpleRange<T>
 where
     T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
