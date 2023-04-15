@@ -1,7 +1,8 @@
-use core::ops::{Add, Sub};
+#![allow(unused)]
 
-use crate::config::CLOCK_FREQ;
-use crate::sbi::set_timer;
+use crate::{consts::CLOCK_FREQ, sbi::legacy::set_timer};
+use core::ops::{Add, Sub};
+use riscv::register::time;
 
 pub const TICKS_PER_SEC: usize = 100;
 pub const MSEC_PER_SEC: usize = 1000;
@@ -14,8 +15,8 @@ pub const NSEC_PER_SEC: usize = 1000_000_000;
 /// - 两个值相加的结果是结构体表示的时间
 #[derive(Copy, Clone, Debug)]
 pub struct TimeVal {
-    pub sec: usize,     // 秒
-    pub usec: usize,    // 微秒
+    pub sec: usize,  // 秒
+    pub usec: usize, // 微秒
 }
 
 impl Add for TimeVal {
@@ -72,12 +73,13 @@ impl TimeVal {
     }
 }
 
+/// Linux 间隔计数
+/// 
+/// * `tms_utime`：用户态时间
+/// * `tms_stime`：内核态时间
+/// * `tms_cutime`：已回收子进程的用户态时间
+/// * `tms_cstime`：已回收子进程的内核态时间
 #[allow(non_camel_case_types)]
-/// ### Linux 间隔计数
-/// - `tms_utime`：用户态时间
-/// - `tms_stime`：内核态时间
-/// - `tms_cutime`：已回收子进程的用户态时间
-/// - `tms_cstime`：已回收子进程的内核态时间
 pub struct tms {
     /// 用户态时间
     pub tms_utime: isize,
@@ -96,21 +98,21 @@ impl tms {
     }
 }
 
-/// ### 取得当前 `mtime` 计数器的值
-/// - `mtime`: 统计处理器自上电以来经过了多少个内置时钟的时钟周期,64bit
-// pub fn get_time() -> usize {
-//     time::read()
-// }
-
+/// 取得当前 `mtime` 计数器的值
+/// * `mtime`: 统计处理器自上电以来经过了多少个内置时钟的时钟周期,64bit
 pub fn get_time() -> usize {
-    let mut time: usize = 0;
-    unsafe {
-        core::arch::asm!(
-            "rdtime a0",
-            inout("a0") time
-        );
-    }
-    time
+    time::read()
+    // 下面是另外一种实现，暂时不知道原因，所以以注释的方式保留下来了
+    // pub fn get_time() -> usize {
+    //     let mut time: usize = 0;
+    //     unsafe {
+    //         core::arch::asm!(
+    //             "rdtime a0",
+    //             inout("a0") time
+    //         );
+    //     }
+    //     time
+    // }
 }
 
 /// 获取CPU上电时间（单位：ms）
@@ -118,17 +120,14 @@ pub fn get_time_ms() -> usize {
     get_time() / (CLOCK_FREQ / MSEC_PER_SEC)
 }
 
-#[allow(unused)]
 pub fn get_time_ns() -> usize {
     (get_time() / (CLOCK_FREQ / USEC_PER_SEC)) * MSEC_PER_SEC
 }
 
-#[allow(unused)]
 pub fn get_time_us() -> usize {
     get_time() / (CLOCK_FREQ / USEC_PER_SEC)
 }
 
-#[allow(unused)]
 pub fn get_time_s() -> usize {
     get_time() / CLOCK_FREQ
 }
@@ -141,7 +140,7 @@ pub fn get_timeval() -> TimeVal {
     TimeVal { sec, usec }
 }
 
-/// ### 设置下次触发时钟中断的时间
+/// 设置下次触发时钟中断的时间
 pub fn set_next_trigger() {
     set_timer(get_time() + CLOCK_FREQ / TICKS_PER_SEC);
 }

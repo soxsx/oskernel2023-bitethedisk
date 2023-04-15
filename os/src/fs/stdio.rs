@@ -1,6 +1,6 @@
 use super::File;
 use crate::mm::UserBuffer;
-use crate::sbi::console_getchar;
+use crate::sbi::legacy::console_getchar;
 use crate::task::suspend_current_and_run_next;
 use alloc::vec::Vec;
 

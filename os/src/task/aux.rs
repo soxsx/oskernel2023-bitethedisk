@@ -1,5 +1,5 @@
 use alloc::vec::Vec;
-use crate::config::PAGE_SIZE;
+use crate::consts::PAGE_SIZE;
 
 #[derive(Clone, Copy,Debug)]
 pub struct AuxEntry(pub usize, pub usize);

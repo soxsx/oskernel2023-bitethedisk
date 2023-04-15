@@ -1,8 +1,7 @@
 use super::address::{PhysAddr, PhysPageNum};
-use crate::config::MEMORY_END;
-use alloc::{vec::Vec, collections::BTreeMap};
+use crate::consts::PHYS_END;
+use alloc::{collections::BTreeMap, vec::Vec};
 use core::fmt::{self, Debug, Formatter};
-use lazy_static::*;
 use spin::Mutex;
 
 /// ### 物理页帧
@@ -120,7 +119,10 @@ impl FrameAllocator for StackFrameAllocator {
             self.refcounter.remove(&ppn);
             // 验证物理页号有效性，PPN大于已分配的最高内存或已释放栈中存在这个物理页号
             if ppn >= self.current || self.recycled.iter().any(|&v| v == ppn) {
-                panic!("[StackFrameAllocator::dealloc] Frame ppn={:#x} has not been allocated!", ppn);
+                panic!(
+                    "[StackFrameAllocator::dealloc] Frame ppn={:#x} has not been allocated!",
+                    ppn
+                );
             }
             // 回收，压栈
             self.recycled.push(ppn);
@@ -130,12 +132,12 @@ impl FrameAllocator for StackFrameAllocator {
         (self.current, self.recycled.len(), self.end, self.base_num)
     }
     fn add_ref(&mut self, ppn: PhysPageNum) {
-        let ppn = ppn.0; 
+        let ppn = ppn.0;
         let ref_times = self.refcounter.get_mut(&ppn).unwrap();
         *ref_times += 1;
     }
     fn enquire_ref(&self, ppn: PhysPageNum) -> usize {
-        let ppn = ppn.0; 
+        let ppn = ppn.0;
         let ref_times = self.refcounter.get(&ppn).unwrap();
         (*ref_times).clone() as usize
     }
@@ -155,13 +157,14 @@ lazy_static! {
 /// - 物理页帧范围
 ///     - 对 `ekernel` 物理地址上取整获得起始物理页号
 ///     - 对 `MEMORY_END` 物理地址下取整获得结束物理页号
-pub fn init_frame_allocator() {
+pub fn init() {
     extern "C" {
         fn ekernel();
     }
-    FRAME_ALLOCATOR
-        .lock()
-        .init(PhysAddr::from(ekernel as usize).ceil(), PhysAddr::from(MEMORY_END).floor());
+    FRAME_ALLOCATOR.lock().init(
+        PhysAddr::from(ekernel as usize).ceil(),
+        PhysAddr::from(PHYS_END).floor(),
+    );
 }
 
 /// 分配物理页帧
@@ -178,15 +181,11 @@ pub fn frame_dealloc(ppn: PhysPageNum) {
 }
 
 pub fn frame_add_ref(ppn: PhysPageNum) {
-    FRAME_ALLOCATOR
-        .lock()
-        .add_ref(ppn)
+    FRAME_ALLOCATOR.lock().add_ref(ppn)
 }
 
 pub fn enquire_refcount(ppn: PhysPageNum) -> usize {
-    FRAME_ALLOCATOR
-        .lock()
-        .enquire_ref(ppn)
+    FRAME_ALLOCATOR.lock().enquire_ref(ppn)
 }
 
 pub fn frame_usage() {

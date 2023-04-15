@@ -1,5 +1,4 @@
 use alloc::collections::BTreeMap;
-use lazy_static::*;
 
 const SYSCALL_GETCWD:   usize = 17;
 const SYSCALL_DUP:      usize = 23;

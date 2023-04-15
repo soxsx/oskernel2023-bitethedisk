@@ -1,5 +1,4 @@
 {
-    "rust-analyzer.check.allTargets": false,
     "files.associations": {
         "*.md": "markdown",
         "LICENSE": "plaintext",

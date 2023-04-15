@@ -17,7 +17,7 @@ bitflags! {
 
 pub fn check_signals_of_current() -> Option<(i32, &'static str)> {
     let task = current_task().unwrap();
-    let task_inner = task.inner_exclusive_access();
+    let task_inner = task.lock();
     match task_inner.signals {
         SignalFlags::SIGINT => Some((-2, "Killed, SIGINT=2")),
         SignalFlags::SIGILL => Some((-4, "Illegal Instruction, SIGILL=4")),
@@ -31,7 +31,7 @@ pub fn check_signals_of_current() -> Option<(i32, &'static str)> {
 
 pub fn current_add_signal(signal: SignalFlags) {
     let task = current_task().unwrap();
-    let mut task_inner = task.inner_exclusive_access();
+    let mut task_inner = task.lock();
     task_inner.signals |= signal;
 }
 

@@ -1,10 +1,8 @@
 /// # 任务管理器
-
 use super::TaskControlBlock;
-use spin::Mutex;
 use alloc::collections::{BTreeMap, VecDeque};
 use alloc::sync::Arc;
-use lazy_static::*;
+use spin::Mutex;
 
 /// ### FIFO 任务管理器
 pub struct TaskManager {
@@ -28,17 +26,14 @@ impl TaskManager {
 }
 
 lazy_static! {
-    pub static ref TASK_MANAGER: Mutex<TaskManager> =
-        Mutex::new(TaskManager::new()) ;
+    pub static ref TASK_MANAGER: Mutex<TaskManager> = Mutex::new(TaskManager::new());
     pub static ref PID2TCB: Mutex<BTreeMap<usize, Arc<TaskControlBlock>>> =
         Mutex::new(BTreeMap::new());
 }
 
 /// 将一个任务加入到全局 `FIFO 任务管理器` `TASK_MANAGER` 就绪队列的队尾
 pub fn add_task(task: Arc<TaskControlBlock>) {
-    PID2TCB
-        .lock()
-        .insert(task.getpid(), Arc::clone(&task));
+    PID2TCB.lock().insert(task.pid(), Arc::clone(&task));
     TASK_MANAGER.lock().add(task);
 }
 
@@ -63,7 +58,7 @@ pub fn remove_from_pid2task(pid: usize) {
 #[allow(unused)]
 pub fn debug_show_ready_queue() {
     for task in TASK_MANAGER.lock().ready_queue.iter() {
-        let inner = task.inner_exclusive_access();
+        let inner = task.lock();
         println!("pid = {}, signals: {:?}", task.pid.0, inner.signals);
     }
 }

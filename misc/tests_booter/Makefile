@@ -11,4 +11,4 @@ endif
 initproc: 
 	rm -rf bin
 	mkdir bin
-	$(CC) ./src/usertests_submit.c $(LIB_DIR) $(s_DIR) -T $(LINKER_PATH) -o ./bin/usertests
+	$(CC) ./src/tests_booter.c $(LIB_DIR) $(s_DIR) -T $(LINKER_PATH) -o ./bin/tests_booter
