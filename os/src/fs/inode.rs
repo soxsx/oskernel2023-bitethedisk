@@ -156,18 +156,18 @@ lazy_static! {
 
 pub fn init() {
     // 预创建文件/文件夹
-    open("/", "proc", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
-    open("/", "tmp", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
-    open("/", "dev", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
-    open("/", "var", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
-    open("/dev", "misc", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
-    open("/var", "tmp", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
-    open("/dev", "null", OpenFlags::O_CREATE);
-    open("/dev", "zero", OpenFlags::O_CREATE);
-    open("/proc", "mounts", OpenFlags::O_CREATE);
-    open("/proc", "meminfo", OpenFlags::O_CREATE);
-    open("/dev/misc", "rtc", OpenFlags::O_CREATE);
-    open("/var/tmp", "lmbench", OpenFlags::O_CREATE);
+    // open("/", "proc", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
+    // open("/", "tmp", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
+    // open("/", "dev", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
+    // open("/", "var", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
+    // open("/dev", "misc", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
+    // open("/var", "tmp", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
+    // open("/dev", "null", OpenFlags::O_CREATE);
+    // open("/dev", "zero", OpenFlags::O_CREATE);
+    // open("/proc", "mounts", OpenFlags::O_CREATE);
+    // open("/proc", "meminfo", OpenFlags::O_CREATE);
+    // open("/dev/misc", "rtc", OpenFlags::O_CREATE);
+    // open("/var/tmp", "lmbench", OpenFlags::O_CREATE);
     println!("/**** All Files  ****");
     list_apps(ROOT_INODE.clone());
     println!("**********************/");
@@ -213,6 +213,7 @@ pub fn list_apps(dir: Arc<VFile>) {
 
 // 定义一份打开文件的标志
 bitflags! {
+    #[derive(Debug)]
     pub struct OpenFlags: u32 {
         const O_RDONLY    = 0;
         const O_WRONLY    = 1 << 0;

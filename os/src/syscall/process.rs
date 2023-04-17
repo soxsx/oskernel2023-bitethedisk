@@ -31,7 +31,7 @@ pub fn sys_exit_group(exit_code: i32) -> ! {
 /// ### 应用主动交出 CPU 所有权进入 Ready 状态并切换到其他应用
 /// - 返回值：总是返回 0。
 /// - syscall ID：124
-pub fn sys_yield() -> isize {
+pub fn sys_sched_yield() -> isize {
     suspend_current_and_run_next();
     0
 }
@@ -222,7 +222,7 @@ pub fn sys_exec(path: *const u8, mut args: *const usize, mut _envs: *const usize
 ///     - 否则如果要等待的子进程均未结束则返回，则放权等待；
 ///     - 否则返回结束的子进程的进程 ID。
 /// - syscall ID：260
-pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
+pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> isize {
     // println!("[KERNEL] pid {} waitpid {}",current_task().unwrap().pid.0, pid);
     // crate::task::debug_show_ready_queue();
     let task = current_task().unwrap();

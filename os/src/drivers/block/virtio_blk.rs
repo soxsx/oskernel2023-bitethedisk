@@ -84,6 +84,7 @@ pub extern "C" fn virtio_dma_dealloc(pa: PhysAddr, pages: usize) -> i32 {
         frame_dealloc(ppn_base);
         ppn_base.step();
     }
+
     0
 }
 

@@ -125,11 +125,16 @@ pub fn sys_openat(dirfd: isize, path: *const u8, flags: u32, mode: u32) -> isize
 
     // todo
     _ = mode;
-    let oflags = OpenFlags::from_bits(flags).expect("[DEBUG] sys_openat: unsupported open flag!");
-    // info!(
-    //     "[DEBUG] enter sys_openat: dirfd:{}, path:{}, flags:{:?}, mode:{:o}",
-    //     dirfd, path, oflags, mode
-    // );
+    let oflags_opt = OpenFlags::from_bits(flags);
+    if oflags_opt.is_none() {
+        info!(
+            // flags => 2097152
+            "[DEBUG] enter sys_openat: dirfd:{}, path:{}, flags:{:?}, mode:{:o}",
+            dirfd, path, oflags_opt, mode
+        );
+        return -1;
+    }
+    let oflags = oflags_opt.unwrap();
     if dirfd == AT_FDCWD {
         // 如果是当前工作目录
         if let Some(inode) = open(inner.get_work_path(), path.as_str(), oflags) {
@@ -192,18 +197,24 @@ pub fn sys_close(fd: usize) -> isize {
     0
 }
 
+/// 功能：创建管道；
+///
+/// 输入：
+///  fd\[2\]：用于保存2个文件描述符。其中
+///
+/// * fd\[0\]: 管道的读出端
+/// * fd\[1\]: 管道的写入端。
+///
 /// ### 为当前进程打开一个管道。
 /// - `pipe` 表示应用地址空间中的一个长度为 `2` 的 `usize` 数组的起始地址，
 /// 内核需要按顺序将管道读端和写端的文件描述符写入到数组中。
 /// - 返回值：如果出现了错误则返回 -1，否则返回 0 。可能的错误原因是：传入的地址不合法。
 /// - syscall ID：59
-pub fn sys_pipe(pipe: *mut u32, flag: usize) -> isize {
+pub fn sys_pipe2(pipe: *mut isize, _flag: usize) -> isize {
+    // TODO: 会直接卡死，可能是参数传递有问题
     let task = current_task().unwrap();
     let token = current_user_token();
     let mut inner = task.lock();
-
-    // todo
-    _ = flag;
 
     let (pipe_read, pipe_write) = make_pipe();
     let read_fd = inner.alloc_fd();
@@ -214,8 +225,9 @@ pub fn sys_pipe(pipe: *mut u32, flag: usize) -> isize {
     inner.fd_table[read_fd] = Some(pipe_read);
     let write_fd = inner.alloc_fd();
     inner.fd_table[write_fd] = Some(pipe_write);
-    *translated_refmut(token, pipe) = read_fd as u32;
-    *translated_refmut(token, unsafe { pipe.add(1) }) = write_fd as u32;
+    *translated_refmut(token, pipe) = read_fd as isize;
+    *translated_refmut(token, unsafe { pipe.add(1) }) = write_fd as isize;
+
     0
 }
 
@@ -287,14 +299,12 @@ pub fn sys_dup3(old_fd: usize, new_fd: usize) -> isize {
     new_fd as isize
 }
 
-pub fn sys_mkdirat(dirfd: isize, path: *const u8, mode: u32) -> isize {
+pub fn sys_mkdirat(dirfd: isize, path: *const u8, _mode: u32) -> isize {
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.lock();
     let path = translated_str(token, path);
 
-    // todo
-    _ = mode;
     // println!("[DEBUG] enter sys_mkdirat: dirfd:{}, path:{}. mode:{:o}",dirfd,path,mode);
     if dirfd == AT_FDCWD {
         if let Some(_) = open(

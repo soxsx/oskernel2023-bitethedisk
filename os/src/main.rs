@@ -34,7 +34,7 @@ mod trap;
 use core::{arch::global_asm, slice};
 use riscv::register::sstatus::{set_fs, FS};
 
-global_asm!(include_str!("entry.S")); // 代码的第一条语句，执行指定的汇编文件，汇编程序再调用Rust实现的内核
+global_asm!(include_str!("entry.S"));
 
 #[no_mangle]
 pub fn meow() -> ! {

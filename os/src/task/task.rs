@@ -1,6 +1,7 @@
 use super::signal::SigSet;
+use super::kernel_stack::KernelStack;
 use super::{aux, RLimit, TaskContext, AT_RANDOM, RESOURCE_KIND_NUMBER};
-use super::{pid_alloc, KernelStack, PidHandle, SignalFlags};
+use super::{pid_alloc, PidHandle, SignalFlags};
 use crate::consts::*;
 use crate::fs::{File, OSInode, Stdin, Stdout};
 use crate::mm::kernel_vmm::KERNEL_VMM;
@@ -133,7 +134,7 @@ impl TaskControlBlock {
         let pid_handle = pid_alloc();
         let tgid = pid_handle.0;
         let kernel_stack = KernelStack::new(&pid_handle);
-        let kernel_stack_top = kernel_stack.get_top();
+        let kernel_stack_top = kernel_stack.top();
         // 在该进程的内核栈上压入初始化的任务上下文，使得第一次任务切换到它的时候可以跳转到 trap_return 并进入用户态开始执行
         let task_control_block = Self {
             pid: pid_handle,
@@ -294,7 +295,7 @@ impl TaskControlBlock {
             entry_point,
             user_sp,
             KERNEL_VMM.lock().token(),
-            self.kernel_stack.get_top(),
+            self.kernel_stack.top(),
             user_trap_handler as usize,
         );
         // 修改 Trap 上下文中的 a0/a1 寄存器
@@ -325,7 +326,7 @@ impl TaskControlBlock {
         }
         // 根据 PID 创建一个应用内核栈
         let kernel_stack = KernelStack::new(&pid_handle); // use 2 pages
-        let kernel_stack_top = kernel_stack.get_top();
+        let kernel_stack_top = kernel_stack.top();
         // copy fd table
         let mut new_fd_table: Vec<Option<Arc<dyn File + Send + Sync>>> = Vec::new();
         for fd in parent_inner.fd_table.iter() {

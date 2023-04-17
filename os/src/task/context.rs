@@ -1,3 +1,5 @@
+use core::fmt::Debug;
+
 use crate::trap::trap_return;
 
 /// 任务上下文
@@ -31,15 +33,25 @@ impl TaskContext {
             s: [0; 12],
         }
     }
+}
 
-    #[allow(unused)]
-    pub fn debug_show(&self) {
-        println!("------------------TaskContext info------------------");
-        println!("TaskContext: ra: 0x{:x}  sp: 0x{:x}", self.ra, self.sp);
-        for i in 0..12 {
-            println!("s[{}]: 0x{:x}", i, self.s[i]);
-        }
-
-        println!("----------------------------------------------------");
+impl Debug for TaskContext {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("TaskContext")
+            .field("ra", &self.ra)
+            .field("sp", &self.sp)
+            .field("s0", &self.s[0])
+            .field("s1", &self.s[1])
+            .field("s2", &self.s[2])
+            .field("s3", &self.s[3])
+            .field("s4", &self.s[4])
+            .field("s5", &self.s[5])
+            .field("s6", &self.s[6])
+            .field("s7", &self.s[7])
+            .field("s8", &self.s[8])
+            .field("s9", &self.s[9])
+            .field("s10", &self.s[10])
+            .field("s11", &self.s[11])
+            .finish()
     }
 }

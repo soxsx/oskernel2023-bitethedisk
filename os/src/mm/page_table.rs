@@ -12,13 +12,13 @@
 use crate::consts::PAGE_SIZE;
 use crate::task::current_task;
 
-use super::{frame_alloc, FrameTracker};
 use super::address::{PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
-use core::mem::size_of;
+use super::{frame_alloc, FrameTracker};
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
+use core::mem::size_of;
 
 // 可以将一个 u8 封装成一个标志位的集合类型，支持一些常见的集合运算
 bitflags! {
@@ -57,9 +57,8 @@ bitflags! {
 /// PageTableEntry::executable(&self) -> bool
 /// PageTableEntry::set_pte_flags(&mut self, flags: usize)
 /// ```
-#[derive(Copy, Clone)]
-// 让编译器自动为 PageTableEntry 实现 Copy/Clone Trait，来让这个类型以值语义赋值/传参的时候不会发生所有权转移，而是拷贝一份新的副本
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub struct PageTableEntry {
     pub bits: usize,
 }
@@ -275,7 +274,8 @@ impl PageTable {
         let pte = self.find_pte_create(vpn).unwrap();
         *pte = PageTableEntry::new(ppn, pte.flags() | PTEFlags::W);
         pte.set_cow();
-        ppn.get_bytes_array().copy_from_slice(former_ppn.get_bytes_array());
+        ppn.get_bytes_array()
+            .copy_from_slice(former_ppn.get_bytes_array());
     }
 }
 
@@ -293,7 +293,7 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
     while start < end {
         let start_va = VirtAddr::from(start);
         let mut vpn = start_va.floor();
-        let ppn:PhysPageNum;
+        let ppn: PhysPageNum;
         match page_table.translate(vpn) {
             Some(_ppn) => ppn = _ppn.ppn(),
             None => {
@@ -323,7 +323,10 @@ pub fn translated_str(token: usize, ptr: *const u8) -> String {
     let mut string = String::new();
     let mut va = ptr as usize;
     loop {
-        let ch: u8 = *(page_table.translate_va(VirtAddr::from(va)).unwrap().get_mut());
+        let ch: u8 = *(page_table
+            .translate_va(VirtAddr::from(va))
+            .unwrap()
+            .as_mut());
         if ch == 0 {
             break;
         } else {
@@ -339,7 +342,10 @@ pub fn translated_ref<T>(token: usize, ptr: *const T) -> &'static T {
     let offset = ptr as usize % PAGE_SIZE;
     assert!(PAGE_SIZE - offset >= size_of::<T>(), "cross-page access");
     let page_table = PageTable::from_token(token);
-    page_table.translate_va(VirtAddr::from(ptr as usize)).unwrap().get_ref()
+    page_table
+        .translate_va(VirtAddr::from(ptr as usize))
+        .unwrap()
+        .as_ref()
 }
 
 /// 根据 多级页表token (satp) 和 虚拟地址 获取大小为 T 的空间的切片
@@ -349,7 +355,10 @@ pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
     //println!("into translated_refmut!");
     let page_table = PageTable::from_token(token);
     let va = ptr as usize;
-    page_table.translate_va(VirtAddr::from(va)).unwrap().get_mut()
+    page_table
+        .translate_va(VirtAddr::from(va))
+        .unwrap()
+        .as_mut()
 }
 
 /// ### 应用地址空间中的一段缓冲区（即内存）的抽象
@@ -361,14 +370,14 @@ pub struct UserBuffer {
 
 impl UserBuffer {
     pub fn empty() -> Self {
-        Self { buffers: Vec::new() }
+        Self { buffers: vec![] }
     }
 
     /// 使用 `buffer` 创建一个新的缓冲区实例
     pub fn new(buffers: Vec<&'static mut [u8]>) -> Self {
         Self { buffers }
     }
-    
+
     pub fn len(&self) -> usize {
         let mut total: usize = 0;
         for b in self.buffers.iter() {
@@ -407,7 +416,7 @@ impl UserBuffer {
             if head + sblen < offset {
                 head += sblen;
                 continue;
-            } else if head < offset { 
+            } else if head < offset {
                 for j in (offset - head)..sblen {
                     (*sub_buff)[j] = buff[current];
                     current += 1;

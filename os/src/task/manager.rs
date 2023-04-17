@@ -1,10 +1,9 @@
-/// # 任务管理器
 use super::TaskControlBlock;
 use alloc::collections::{BTreeMap, VecDeque};
 use alloc::sync::Arc;
 use spin::Mutex;
 
-/// ### FIFO 任务管理器
+/// FIFO 任务管理器
 pub struct TaskManager {
     ready_queue: VecDeque<Arc<TaskControlBlock>>,
 }

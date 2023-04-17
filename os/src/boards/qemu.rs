@@ -1,7 +1,8 @@
-/// # 与虚拟机相关的参数
-/// `os/src/boards/qemu.rs`
-//
+//!
+//! 针对 qemu 的相关参数
+//!
 
+/// 晶振频率
 pub const CLOCK_FREQ: usize = 12500000;
 
 /// 硬编码 Qemu 上的 VirtIO 总线的 MMIO 地址区间（起始地址，长度）

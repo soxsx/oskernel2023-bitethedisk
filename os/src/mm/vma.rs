@@ -174,10 +174,6 @@ impl MmapSpace{
         Self {oaddr, length, prot, flags, valid, fd, offset}
     }
 
-    pub fn new_len(&mut self, len:usize) {
-        self.length = len;
-    }
-
     pub fn lazy_map_page(&mut self, page_start: VirtAddr, fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>, token: usize) {
         let offset: usize = self.offset - self.oaddr.0 + page_start.0;
         // println!("[Kernel mmap] map_file 0x{:X} = 0x{:X} - 0x{:X} + 0x{:X}", offset, self.offset, self.oaddr.0, page_start.0);
