@@ -223,17 +223,19 @@ impl VirtPageNum {
 // 但与裸指针不同的是，无需通过 unsafe 的解引用访问它指向的数据，而是可以像一个正常的可变引用一样直接访问
 impl PhysPageNum {
     /// 根据自己的PPN取出当前节点的页表项数组
-    pub fn get_pte_array(&self) -> &'static mut [PageTableEntry] {
+    pub fn as_pte_array(&self) -> &'static mut [PageTableEntry] {
         let pa: PhysAddr = (*self).into();
         unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut PageTableEntry, 512) }
     }
+
     /// 返回一个字节数组的可变引用，可以以字节为粒度对物理页帧上的数据进行访问
-    pub fn get_bytes_array(&self) -> &'static mut [u8] {
+    pub fn as_bytes_array(&self) -> &'static mut [u8] {
         let pa: PhysAddr = (*self).into();
         unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut u8, 4096) }
     }
+
     /// 获取一个恰好放在一个物理页帧开头的类型为 T 的数据的可变引用
-    pub fn get_mut<T>(&self) -> &'static mut T {
+    pub fn as_mut<T>(&self) -> &'static mut T {
         let pa: PhysAddr = (*self).into();
         unsafe { (pa.0 as *mut T).as_mut().unwrap() }
     }

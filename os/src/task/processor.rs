@@ -101,7 +101,7 @@ pub fn current_user_token() -> usize {
 }
 
 pub fn current_trap_cx() -> &'static mut TrapContext {
-    current_task().unwrap().lock().get_trap_cx()
+    current_task().unwrap().lock().trap_context()
 }
 
 /// 换到 idle 控制流并开启新一轮的任务调度

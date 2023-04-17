@@ -8,9 +8,13 @@
 //! pub fn virtio_virt_to_phys ()
 //! ```
 use super::BlockDevice;
-use crate::{mm::{
-    frame_alloc, frame_dealloc, FrameTracker, PageTable, PhysAddr, PhysPageNum, StepByOne, VirtAddr,
-}, kernel_token};
+use crate::{
+    kernel_token,
+    mm::{
+        alloc_frame, dealloc_frame, FrameTracker, PageTable, PhysAddr, PhysPageNum, StepByOne,
+        VirtAddr,
+    },
+};
 use alloc::vec::Vec;
 use spin::Mutex;
 use virtio_drivers::{VirtIOBlk, VirtIOHeader};
@@ -67,7 +71,7 @@ impl VirtIOBlock {
 pub extern "C" fn virtio_dma_alloc(pages: usize) -> PhysAddr {
     let mut ppn_base = PhysPageNum(0);
     for i in 0..pages {
-        let frame = frame_alloc().unwrap();
+        let frame = alloc_frame().unwrap();
         if i == 0 {
             ppn_base = frame.ppn;
         }
@@ -81,7 +85,7 @@ pub extern "C" fn virtio_dma_alloc(pages: usize) -> PhysAddr {
 pub extern "C" fn virtio_dma_dealloc(pa: PhysAddr, pages: usize) -> i32 {
     let mut ppn_base: PhysPageNum = pa.into();
     for _ in 0..pages {
-        frame_dealloc(ppn_base);
+        dealloc_frame(ppn_base);
         ppn_base.step();
     }
 

@@ -7,8 +7,8 @@ pub const S_IFIFO: u32 = 0o0010000;
 pub const S_IFLNK: u32 = 0o0120000;
 pub const S_IFSOCK: u32 = 0o0140000;
 
-#[derive(Debug)]
 #[repr(C)]
+#[derive(Debug)]
 pub struct Kstat {
     st_dev: u64,   // 包含文件的设备 ID
     st_ino: u64,   // 索引节点号
@@ -90,7 +90,7 @@ pub struct Statfs {
 impl Statfs {
     pub fn new() -> Self {
         Self {
-            f_type:1,
+            f_type: 1,
             f_bsize: 512,
             f_blocks: 12345,
             f_bfree: 1234,

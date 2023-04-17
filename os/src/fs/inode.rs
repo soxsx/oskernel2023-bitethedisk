@@ -2,18 +2,14 @@ use super::{
     stat::{S_IFCHR, S_IFDIR, S_IFREG},
     Dirent, File, Kstat, Timespec,
 };
-#[allow(unused)]
-use crate::{
-    drivers::BLOCK_DEVICE,
-    mm::{memory_usage, UserBuffer},
-};
-use core::str::FromStr;
+use crate::{drivers::BLOCK_DEVICE, mm::UserBuffer};
 use alloc::{
     string::{String, ToString},
     sync::Arc,
     vec::Vec,
 };
 use bitflags::*;
+use core::str::FromStr;
 use fat32::{create_root_vfile, FAT32Manager, VFile, ATTR_ARCHIVE, ATTR_DIRECTORY};
 use spin::Mutex;
 
@@ -34,7 +30,13 @@ pub struct OSInodeInner {
 }
 
 impl OSInode {
-    pub fn new(readable: bool, writable: bool, inode: Arc<VFile>, path: String, name: String) -> Self {
+    pub fn new(
+        readable: bool,
+        writable: bool,
+        inode: Arc<VFile>,
+        path: String,
+        name: String,
+    ) -> Self {
         let available = true;
         Self {
             readable,
@@ -95,6 +97,7 @@ impl OSInode {
         if offset >= 0 {
             inner.offset = old_offset;
         }
+
         v
     }
 
@@ -104,7 +107,9 @@ impl OSInode {
         let mut base = 0;
         loop {
             let len = remain.min(512);
-            inner.inode.write_at(inner.offset, &str_vec.as_slice()[base..base + len]);
+            inner
+                .inode
+                .write_at(inner.offset, &str_vec.as_slice()[base..base + len]);
             inner.offset += len;
             base += len;
             remain -= len;
@@ -139,7 +144,7 @@ impl OSInode {
         vfile.set_first_cluster(cluster);
     }
 
-    pub fn get_head_cluster(&self) -> u32 {
+    pub fn head_cluster(&self) -> u32 {
         let inner = self.inner.lock();
         let vfile = &inner.inode;
         vfile.first_cluster()
@@ -150,6 +155,7 @@ impl OSInode {
 lazy_static! {
     pub static ref ROOT_INODE: Arc<VFile> = {
         let fat32_manager = FAT32Manager::open(BLOCK_DEVICE.clone());
+
         Arc::new(create_root_vfile(&fat32_manager)) // 返回根目录
     };
 }
@@ -286,9 +292,15 @@ pub fn open(work_path: &str, path: &str, flags: OpenFlags) -> Option<Arc<OSInode
             let name = pathv.pop().unwrap();
             if let Some(temp_inode) = cur_inode.find_vfile_bypath(pathv.clone()) {
                 // println!("[DEBUG] create file: {}, type:0x{:x}",name,create_type);
-                temp_inode
-                    .create(name, create_type)
-                    .map(|inode| Arc::new(OSInode::new(readable, writable, inode, work_path.to_string(), name.to_string())))
+                temp_inode.create(name, create_type).map(|inode| {
+                    Arc::new(OSInode::new(
+                        readable,
+                        writable,
+                        inode,
+                        work_path.to_string(),
+                        name.to_string(),
+                    ))
+                })
             } else {
                 None
             }
@@ -299,7 +311,13 @@ pub fn open(work_path: &str, path: &str, flags: OpenFlags) -> Option<Arc<OSInode
                 inode.clear();
             }
             let name = inode.name().to_string();
-            Arc::new(OSInode::new(readable, writable, inode, work_path.to_string(), name))
+            Arc::new(OSInode::new(
+                readable,
+                writable,
+                inode,
+                work_path.to_string(),
+                name,
+            ))
         })
     }
 }
@@ -418,7 +436,9 @@ impl File for OSInode {
         let mut base = 0;
         loop {
             let len = remain.min(512);
-            inner.inode.write_at(inner.offset, &data.as_slice()[base..base + len]);
+            inner
+                .inode
+                .write_at(inner.offset, &data.as_slice()[base..base + len]);
             inner.offset += len;
             base += len;
             remain -= len;
@@ -442,11 +462,11 @@ impl File for OSInode {
         }
     }
 
-    fn get_name(&self) -> &str {
+    fn name(&self) -> &str {
         self.name()
     }
 
-    fn get_offset(&self) -> usize {
+    fn offset(&self) -> usize {
         let inner = self.inner.lock();
         inner.offset
     }
@@ -466,7 +486,7 @@ impl File for OSInode {
         inner.available = false;
     }
 
-    fn get_dirent(&self, dirent: &mut Dirent) -> isize {
+    fn dirent(&self, dirent: &mut Dirent) -> isize {
         if !self.is_dir() {
             return -1;
         }
@@ -482,7 +502,7 @@ impl File for OSInode {
         }
     }
 
-    fn get_fstat(&self, kstat: &mut Kstat) {
+    fn fstat(&self, kstat: &mut Kstat) {
         let inner = self.inner.lock();
         let vfile = inner.inode.clone();
         let mut st_mode = 0;

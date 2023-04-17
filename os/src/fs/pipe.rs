@@ -41,7 +41,7 @@ enum RingBufferStatus {
     Normal,
 }
 
-const RING_BUFFER_SIZE: usize = 4096; // 4KB 
+const RING_BUFFER_SIZE: usize = 4096; // 4KB
 
 /// ### 管道缓冲区(双端队列,向右增长)
 /// |成员变量|描述|
@@ -191,11 +191,11 @@ impl File for Pipe {
         }
     }
 
-    fn get_name(&self) -> &str {
+    fn name(&self) -> &str {
         "pipe"
     }
 
-    fn get_offset(&self) -> usize {
+    fn offset(&self) -> usize {
         return 0;
     }
 
