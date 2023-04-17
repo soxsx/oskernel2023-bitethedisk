@@ -7,9 +7,9 @@ mod manager; // 进程管理器
 mod pid; // 进程标识符模块
 mod processor; // 处理器管理模块
 mod resource;
-mod signal; // 进程状态标志
+mod signals;
 mod switch; // 任务上下文切换模块
-mod task; // 进程控制块
+mod task;
 
 use alloc::sync::Arc;
 use manager::fetch_task;
@@ -26,7 +26,7 @@ pub use processor::{
     current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
 };
 pub use resource::*;
-pub use signal::*;
+pub use signals::*;
 pub use task::FD_LIMIT;
 
 use self::initproc::INITPROC;

@@ -1,4 +1,4 @@
-use super::signal::SigSet;
+use super::signals::SigSet;
 use super::kernel_stack::KernelStack;
 use super::{aux, RLimit, TaskContext, AT_RANDOM, RESOURCE_KIND_NUMBER};
 use super::{pid_alloc, PidHandle, SignalFlags};

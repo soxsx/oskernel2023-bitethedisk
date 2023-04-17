@@ -211,10 +211,17 @@ pub fn sys_close(fd: usize) -> isize {
 /// - 返回值：如果出现了错误则返回 -1，否则返回 0 。可能的错误原因是：传入的地址不合法。
 /// - syscall ID：59
 pub fn sys_pipe2(pipe: *mut isize, _flag: usize) -> isize {
+    let fd0 = pipe;
+    let fd1 = unsafe { pipe.add(1) };
+
     // TODO: 会直接卡死，可能是参数传递有问题
     let task = current_task().unwrap();
     let token = current_user_token();
     let mut inner = task.lock();
+
+    let fd0 = *translated_ref(token, fd0);
+    let fd1 = *translated_ref(token, fd1);
+    debug!("fd[0]: {}, fd[1]: {}, flag: {}", fd0, fd1, _flag);
 
     let (pipe_read, pipe_write) = make_pipe();
     let read_fd = inner.alloc_fd();
