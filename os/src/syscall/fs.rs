@@ -117,6 +117,15 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
     }
 }
 
+/// 功能：打开或创建一个文件；
+///
+/// 输入：
+/// - fd：文件所在目录的文件描述符。
+/// - filename：要打开或创建的文件名。如为绝对路径，则忽略fd。如为相对路径，且fd是AT_FDCWD，则filename是相对于当前工作目录来说的。如为相对路径，且fd是一个文件描述符，则filename是相对于fd所指向的目录来说的。
+/// - flags：必须包含如下访问模式的其中一种：O_RDONLY，O_WRONLY，O_RDWR。还可以包含文件创建标志和文件状态标志。
+/// - mode：文件的所有权描述。详见`man 7 inode `。
+///
+/// 返回值：成功执行，返回新的文件描述符。失败，返回-1。
 pub fn sys_openat(dirfd: isize, path: *const u8, flags: u32, mode: u32) -> isize {
     let task = current_task().unwrap();
     let token = current_user_token();
@@ -135,6 +144,29 @@ pub fn sys_openat(dirfd: isize, path: *const u8, flags: u32, mode: u32) -> isize
         );
         return -1;
     }
+    // FIXME: 不知道下面为什么 panic 可能的原因 ：`还可以包含文件创建标志和文件状态标志。`
+    // #define SIGCHLD   17
+    // #define O_RDONLY 0x000
+    // #define O_WRONLY 0x001
+    // #define O_RDWR 0x002 // 可读可写
+    // //#define O_CREATE 0x200
+    // #define O_CREATE 0x40
+    // #define O_DIRECTORY 0x0200000
+    // #define DIR 0x040000
+    // #define FILE 0x100000
+    // #define AT_FDCWD -100
+    // // mmap prot
+    // #define PROT_NONE  0b0000
+    // #define PROT_READ  0b0001
+    // #define PROT_WRITE 0b0010
+    // #define PROT_EXEC  0b0100
+    // #define PROT_GROWSDOWN 0X01000000
+    // #define PROT_GROWSUP   0X02000000
+    // // mmap flags
+    // #define MAP_FILE 0
+    // #define MAP_SHARED  0b0001
+    // #define MAP_PRIVATE 0b0010
+    // #define MAP_FAILED ((void *) -1)
     let oflags = oflags_opt.unwrap();
     if dirfd == AT_FDCWD {
         // 如果是当前工作目录
@@ -1138,4 +1170,17 @@ pub fn sys_pselect(
     }
     // println!("pselect return: r_ready_count:{}, w_ready_count:{}, e_ready_count:{}",r_ready_count,w_ready_count,e_ready_count);
     r_ready_count + w_ready_count + e_ready_count
+}
+
+/// 输入：
+///
+/// - olddirfd：原来的文件所在目录的文件描述符。
+/// - oldpath：文件原来的名字。如果oldpath是相对路径，则它是相对于olddirfd目录而言的。如果oldpath是相对路径，且olddirfd的值为AT_FDCWD，则它是相对于当前路径而言的。如果oldpath是绝对路径，则olddirfd被忽略。
+/// - newdirfd：新文件名所在的目录。
+/// - newpath：文件的新名字。newpath的使用规则同oldpath。
+/// - flags：在2.6.18内核之前，应置为0。其它的值详见`man 2 linkat`。
+///
+/// 返回值：成功执行，返回0。失败，返回-1。
+pub fn sys_linkat(fd: isize, filename: *const u8, flags: isize, mode: usize) -> isize {
+    todo!()
 }

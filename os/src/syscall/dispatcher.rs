@@ -11,6 +11,36 @@ use super::process::*;
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     match syscall_id {
+        SYS_FORK => sys_fork(args[0], args[1], args[2], args[3], args[4]),
+        // TODO: here
+        SYS_CLONE => sys_clone(args[0], args[1], args[2], args[3], args[4]),
+
+        SYS_EXEC => sys_exec(
+            args[0] as *const u8,
+            args[1] as *const usize,
+            args[2] as *const usize,
+        ),
+        // TODO: here
+        SYS_EXECVE => sys_execve(
+            args[0] as *const u8,
+            args[1] as *const u8,
+            args[2] as *const u8,
+        ),
+
+        SYS_LINKAT => sys_linkat(
+            args[0] as isize,
+            args[0] as *const u8,
+            args[0] as isize,
+            args[0],
+        ),
+
+        SYS_OPENAT => sys_openat(
+            args[0] as isize,
+            args[1] as *const u8,
+            args[2] as u32,
+            args[3] as u32,
+        ),
+
         SYS_GETCWD => sys_getcwd(args[0] as *mut u8, args[1]),
         SYS_DUP => sys_dup(args[0]),
         SYS_DUP3 => sys_dup3(args[0], args[1]),
@@ -29,12 +59,6 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_STATFS => sys_statfs(args[0] as *const u8, args[1] as *const u8),
         SYS_FACCESSAT => sys_faccessat(),
         SYS_CHDIR => sys_chdir(args[0] as *const u8),
-        SYS_OPENAT => sys_openat(
-            args[0] as isize,
-            args[1] as *const u8,
-            args[2] as u32,
-            args[3] as u32,
-        ),
         SYS_CLOSE => sys_close(args[0]),
         SYS_PIPE2 => sys_pipe2(args[0] as *mut isize, args[1] as usize),
         SYS_GETDENTS64 => sys_getdents64(args[0] as isize, args[1] as *mut u8, args[2]),
@@ -95,12 +119,6 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_GETUID => sys_getuid(),
         SYS_GETEUID => sys_geteuid(),
         SYS_GETEGID => sys_getegid(),
-        SYS_FORK => sys_fork(args[0], args[1], args[2], args[3], args[4]),
-        SYS_EXEC => sys_exec(
-            args[0] as *const u8,
-            args[1] as *const usize,
-            args[2] as *const usize,
-        ),
         SYS_GETTID => sys_gettid(),
         SYS_SYSINFO => sys_sysinfo(),
         SYS_BRK => sys_brk(args[0]),
@@ -128,11 +146,13 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[4] as u32,
         ),
 
-        // TODO: no handler
-        SYS_CLONE => todo!(),
-        SYS_LINKAT => todo!(),
-        SYS_EXECVE => todo!(),
-
+        // HINT: 这里需要先保留，虽然文档没要求，但现有实现是可用的
+        // SYS_FORK => sys_fork(args[0], args[1], args[2], args[3], args[4]),
+        // SYS_EXEC => sys_exec(
+        //     args[0] as *const u8,
+        //     args[1] as *const usize,
+        //     args[2] as *const usize,
+        // ),
         _ => panic!("unsupported syscall: {:?}", syscall_id),
     }
 }

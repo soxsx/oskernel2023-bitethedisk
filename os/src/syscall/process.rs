@@ -485,3 +485,26 @@ pub fn sys_set_tid_address(tidptr: *mut usize) -> isize {
     *translated_mut(token, tidptr) = 0 as usize;
     0
 }
+
+/// * 功能：创建一个子进程；
+/// * 输入：
+///     - flags: 创建的标志，如SIGCHLD；
+///     - stack: 指定新进程的栈，可为0；
+///     - ptid: 父线程ID；
+///     - tls: TLS线程本地存储描述符；
+///     - ctid: 子线程ID；
+/// * 返回值：成功则返回子进程的线程ID，失败返回-1；
+/// 
+pub fn sys_clone(flags: usize, stack: usize, ptid: usize, tls: usize, ctid: usize) -> isize {
+    todo!()
+}
+
+/// * 功能：执行一个指定的程序；
+/// * 输入：
+///     - path: 待执行程序路径名称，
+///     - argv: 程序的参数， 
+///     - envp: 环境变量的数组指针
+/// * 返回值：成功不返回，失败返回-1；
+pub fn sys_execve(path: *const u8, argv: *const u8, envp: *const u8) -> isize {
+    todo!()
+}
