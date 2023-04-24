@@ -2,31 +2,30 @@ mod aux;
 mod context; // 任务上下文模块
 mod info; // 系统信息模块
 mod initproc;
+mod kernel_stack;
 mod manager; // 进程管理器
 mod pid; // 进程标识符模块
 mod processor; // 处理器管理模块
 mod resource;
-mod signal; // 进程状态标志
+pub mod sched;
+mod signals;
 mod switch; // 任务上下文切换模块
-#[allow(clippy::module_inception)]
-mod task; // 进程控制块
+mod task;
 
 use alloc::sync::Arc;
-use manager::fetch_task;
 use manager::remove_from_pid2task;
-use switch::__switch;
 use task::{TaskControlBlock, TaskStatus};
 
 pub use aux::*;
 pub use context::TaskContext;
 pub use info::{CloneFlags, RUsage, Utsname, UTSNAME};
 pub use manager::{add_task, debug_show_ready_queue, pid2task};
-pub use pid::{pid_alloc, KernelStack, PidHandle};
+pub use pid::{pid_alloc, PidHandle};
 pub use processor::{
     current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
 };
 pub use resource::*;
-pub use signal::*;
+pub use signals::*;
 pub use task::FD_LIMIT;
 
 use self::initproc::INITPROC;

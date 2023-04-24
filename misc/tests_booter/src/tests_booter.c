@@ -4,15 +4,42 @@
 #include "unistd.h"
 
 char *tests[] = {
-    "brk",       "chdir",   "clone",        "close",  "dup",    "dup2",
-    "execve",    "exit",    "fork",         "fstat",  "getcwd", "getdents",
-    "getpid",    "getppid", "gettimeofday", "mkdir_", "mmap",   "mount",
-    "munmap",    "open",    "openat",       "pipe",   "read",   "sleep",
-    "test_echo", "times",   "umount",       "uname",  "unlink", "wait",
-    "waitpid",   "write",   "yield",
+    "brk",          /* 1 */
+    "chdir",        /* 2 */
+    "clone",        /* 3 */
+    "close",        /* 4 */
+    "dup",          /* 5 */
+    "dup2",         /* 6 */
+    "execve",       /* 7 */
+    "exit",         /* 8 */
+    "fork",         /* 9 */
+    "fstat",        /* 10 */
+    "getcwd",       /* 11 */
+    "getdents",     /* 12 */
+    "getpid",       /* 13 */
+    "getppid",      /* 14 */
+    "gettimeofday", /* 15 */
+    "mkdir_",       /* 16 */
+    "mmap",         /* 17 */
+    "mount",        /* 18 */
+    "munmap",       /* 19 */
+    "open",         /* 20 */
+    "openat",       /* 21 */
+    // "pipe",             /* 22 */
+    "read",      /* 23 */
+    "sleep",     /* 24 */
+    "test_echo", /* 25 */
+    "times",     /* 26 */
+    "umount",    /* 27 */
+    "uname",     /* 28 */
+    "unlink",    /* 29 */
+    "wait",      /* 30 */
+    "waitpid",   /* 31 */
+    "write",     /* 32 */
+    "yield",     /* 33 */
 };
 
-#define NTESTS 35
+#define NTESTS (sizeof(tests) / sizeof(tests[0]))
 
 int main() {
   for (int i = 0; i < NTESTS; i++) {

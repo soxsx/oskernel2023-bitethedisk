@@ -1,9 +1,9 @@
-use super::{UserBuffer, translated_byte_buffer};
 use super::address::VirtAddr;
+use super::{translated_bytes_buffer, UserBuffer};
 use crate::consts::PAGE_SIZE;
 use crate::fs::File;
-use alloc::vec::Vec;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 // use core::fmt::{self, Debug, Formatter};
 
 bitflags! {
@@ -46,7 +46,7 @@ bitflags! {
 /// - `mmap_start` : 地址空间中mmap区块起始虚地址
 /// - `mmap_top` : 地址空间中mmap区块当结束虚地址
 /// - `mmap_set` : mmap块 向量
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub struct MmapArea {
     pub mmap_start: VirtAddr,
     pub mmap_top: VirtAddr,
@@ -54,7 +54,7 @@ pub struct MmapArea {
 }
 
 impl MmapArea {
-    pub fn new( mmap_start: VirtAddr, mmap_top: VirtAddr ) -> Self {
+    pub fn new(mmap_start: VirtAddr, mmap_top: VirtAddr) -> Self {
         Self {
             mmap_start,
             mmap_top,
@@ -62,20 +62,35 @@ impl MmapArea {
         }
     }
 
-    pub fn get_mmap_top(&mut self) -> VirtAddr { self.mmap_top }
+    pub fn get_mmap_top(&mut self) -> VirtAddr {
+        self.mmap_top
+    }
 
-    pub fn lazy_map_page(&mut self, va: VirtAddr, fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>, token: usize) {
+    pub fn lazy_map_page(
+        &mut self,
+        va: VirtAddr,
+        fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
+        token: usize,
+    ) {
         for mmap_space in self.mmap_set.iter_mut() {
             if va.0 >= mmap_space.oaddr.0 && va.0 < mmap_space.oaddr.0 + mmap_space.length {
                 mmap_space.lazy_map_page(va, fd_table, token);
-                return 
+                return;
             }
         }
     }
 
-    pub fn push(&mut self, start: usize, len: usize, prot: usize, flags: usize,
-                fd: isize, offset: usize, _fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>, _token: usize) -> usize {
-        
+    pub fn push(
+        &mut self,
+        start: usize,
+        len: usize,
+        prot: usize,
+        flags: usize,
+        fd: isize,
+        offset: usize,
+        _fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
+        _token: usize,
+    ) -> usize {
         let start_addr = start.into();
 
         let mmap_space = MmapSpace::new(start_addr, len, prot, flags, 0, fd, offset);
@@ -84,7 +99,7 @@ impl MmapArea {
         self.mmap_set.push(mmap_space);
 
         // update mmap_top
-        if self.mmap_top == start_addr{
+        if self.mmap_top == start_addr {
             self.mmap_top = (start_addr.0 + len).into();
         }
 
@@ -92,8 +107,11 @@ impl MmapArea {
     }
 
     pub fn remove(&mut self, start: usize, len: usize) -> isize {
-        let pair = self.mmap_set.iter().enumerate()
-            .find(|(_, p)| { p.oaddr.0 == start });
+        let pair = self
+            .mmap_set
+            .iter()
+            .enumerate()
+            .find(|(_, p)| p.oaddr.0 == start);
         if let Some((idx, _)) = pair {
             if self.mmap_top == VirtAddr::from(start + len) {
                 self.mmap_top = VirtAddr::from(start);
@@ -101,24 +119,27 @@ impl MmapArea {
             self.mmap_set.remove(idx);
             0
         } else {
-            panic!{"No matched Mmap Space!"}
+            panic! {"No matched Mmap Space!"}
         }
     }
 
     #[allow(unused)]
     pub fn debug_show(&self) {
         println!("------------------MmapArea Layout-------------------");
-        println!("MmapArea: mmap_start: 0x{:x}  mmap_top: 0x{:x}", self.mmap_start.0, self.mmap_top.0);
+        println!(
+            "MmapArea: mmap_start: 0x{:x}  mmap_top: 0x{:x}",
+            self.mmap_start.0, self.mmap_top.0
+        );
         for mmapspace in &self.mmap_set {
             mmapspace.debug_show();
         }
         println!("----------------------------------------------------");
     }
 
-    pub fn reduce_mmap_range(&mut self, addr:usize, len:usize) {
+    pub fn reduce_mmap_range(&mut self, addr: usize, len: usize) {
         for space in self.mmap_set.iter_mut() {
             // 实际上不止这一种情况，todo
-            if addr == space.oaddr.0{
+            if addr == space.oaddr.0 {
                 space.oaddr = VirtAddr::from(addr + len);
                 space.length = space.length - len;
                 if self.mmap_top.0 == space.oaddr.0 + space.length + len {
@@ -128,12 +149,11 @@ impl MmapArea {
             }
         }
     }
-
 }
 
 /// ### mmap 块
 /// 用于记录 mmap 空间信息，mmap数据并不存放在此
-/// 
+///
 /// |成员变量|含义|
 /// |--|--|
 /// |`oaddr`|mmap 空间起始虚拟地址|
@@ -143,13 +163,13 @@ impl MmapArea {
 /// |`flags`|映射方式|
 /// |`fd`|文件描述符|
 /// |`offset`|映射文件偏移地址|
-/// 
+///
 /// - 成员函数
 ///     ```
 ///     pub fn new()
 ///     pub fn lazy_map_page()
 ///     ```
-#[derive(Clone, Copy,Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct MmapSpace {
     // pub addr: VirtAddr,
     pub oaddr: VirtAddr,
@@ -161,7 +181,7 @@ pub struct MmapSpace {
     pub offset: usize,
 }
 
-impl MmapSpace{
+impl MmapSpace {
     pub fn new(
         oaddr: VirtAddr,
         length: usize,
@@ -171,43 +191,67 @@ impl MmapSpace{
         fd: isize,
         offset: usize,
     ) -> Self {
-        Self {oaddr, length, prot, flags, valid, fd, offset}
+        Self {
+            oaddr,
+            length,
+            prot,
+            flags,
+            valid,
+            fd,
+            offset,
+        }
     }
 
-    pub fn new_len(&mut self, len:usize) {
-        self.length = len;
-    }
-
-    pub fn lazy_map_page(&mut self, page_start: VirtAddr, fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>, token: usize) {
+    pub fn lazy_map_page(
+        &mut self,
+        page_start: VirtAddr,
+        fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
+        token: usize,
+    ) {
         let offset: usize = self.offset - self.oaddr.0 + page_start.0;
         // println!("[Kernel mmap] map_file 0x{:X} = 0x{:X} - 0x{:X} + 0x{:X}", offset, self.offset, self.oaddr.0, page_start.0);
         self.map_file(page_start, PAGE_SIZE, offset, fd_table, token);
     }
 
-    pub fn map_file(&mut self, va_start: VirtAddr, len: usize, offset: usize, fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>, token: usize) -> isize {
+    pub fn map_file(
+        &mut self,
+        va_start: VirtAddr,
+        len: usize,
+        offset: usize,
+        fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
+        token: usize,
+    ) -> isize {
         let flags = MmapFlags::from_bits(self.flags).unwrap();
         // println!("[Kernel mmap] map_file: va_strat:0x{:X} flags:{:?}",va_start.0, flags);
-        if flags.contains(MmapFlags::MAP_ANONYMOUS)
-            && self.fd == -1 
-            && offset == 0{
+        if flags.contains(MmapFlags::MAP_ANONYMOUS) && self.fd == -1 && offset == 0 {
             // println!("[map_anonymous_file]");
             return 1;
         }
 
         // println!("[Kernel mmap] fd_table.length() {}", fd_table.len());
         // println!("[Kernel mmap] fd {}", self.fd);
-        
-        if self.fd as usize >= fd_table.len() { return -1; }
+
+        if self.fd as usize >= fd_table.len() {
+            return -1;
+        }
 
         if let Some(file) = &fd_table[self.fd as usize] {
             let f = file.clone();
             f.set_offset(offset);
-            if !f.readable() { return -1; }
+            if !f.readable() {
+                return -1;
+            }
             // println!{"The va_start is 0x{:X}, offset of file is {}", va_start.0, offset};
-            let _read_len = f.read(UserBuffer::new(translated_byte_buffer(token, va_start.0 as *const u8, len)));
+            let _read_len = f.read(UserBuffer::wrap(translated_bytes_buffer(
+                token,
+                va_start.0 as *const u8,
+                len,
+            )));
             // println!{"[kernel map_file] read {} bytes", _read_len};
             // println!("[kernel] {:?}",va_start);
-        } else { return -1 };
+        } else {
+            return -1;
+        };
         return 1;
     }
 

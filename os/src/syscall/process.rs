@@ -1,8 +1,9 @@
 use crate::consts::CLOCK_FREQ;
+use crate::fs::open_flags::CreateMode;
 use crate::fs::{open, OpenFlags};
 use crate::mm::{
-    translated_byte_buffer, translated_ref, translated_refmut, translated_str, MmapFlags,
-    MmapProts, UserBuffer,
+    translated_bytes_buffer, translated_mut, translated_ref, translated_str, MmapFlags, MmapProts,
+    UserBuffer,
 };
 use crate::task::{
     add_task, current_task, current_user_token, exit_current_and_run_next, pid2task,
@@ -31,7 +32,7 @@ pub fn sys_exit_group(exit_code: i32) -> ! {
 /// ### 应用主动交出 CPU 所有权进入 Ready 状态并切换到其他应用
 /// - 返回值：总是返回 0。
 /// - syscall ID：124
-pub fn sys_yield() -> isize {
+pub fn sys_sched_yield() -> isize {
     suspend_current_and_run_next();
     0
 }
@@ -63,8 +64,8 @@ pub fn sys_nanosleep(buf: *const u8) -> isize {
 /// - 返回值：正确执行返回 0，出现错误返回 -1。
 pub fn sys_gettimeofday(buf: *const u8) -> isize {
     let token = current_user_token();
-    let buffers = translated_byte_buffer(token, buf, core::mem::size_of::<TimeVal>());
-    let mut userbuf = UserBuffer::new(buffers);
+    let buffers = translated_bytes_buffer(token, buf, core::mem::size_of::<TimeVal>());
+    let mut userbuf = UserBuffer::wrap(buffers);
     userbuf.write(get_timeval().as_bytes());
     0
 }
@@ -72,8 +73,8 @@ pub fn sys_gettimeofday(buf: *const u8) -> isize {
 pub fn sys_times(buf: *const u8) -> isize {
     let sec = get_time_ms() as isize * 1000;
     let token = current_user_token();
-    let buffers = translated_byte_buffer(token, buf, core::mem::size_of::<tms>());
-    let mut userbuf = UserBuffer::new(buffers);
+    let buffers = translated_bytes_buffer(token, buf, core::mem::size_of::<tms>());
+    let mut userbuf = UserBuffer::wrap(buffers);
     userbuf.write(
         tms {
             tms_stime: sec,
@@ -126,12 +127,12 @@ pub fn sys_fork(
     // }
 
     if stack_ptr != 0 {
-        let trap_cx = new_task.lock().get_trap_cx();
+        let trap_cx = new_task.lock().trap_context();
         trap_cx.set_sp(stack_ptr);
     }
     let new_pid = new_task.pid.0;
     // modify trap context of new_task, because it returns immediately after switching
-    let trap_cx = new_task.lock().get_trap_cx();
+    let trap_cx = new_task.lock().trap_context();
     // we do not have to move to next instruction since we have done it before
     // trap_handler 已经将当前进程 Trap 上下文中的 sepc 向后移动了 4 字节，
     // 使得它回到用户态之后，会从发出系统调用的 ecall 指令的下一条指令开始执行
@@ -190,7 +191,7 @@ pub fn sys_exec(path: *const u8, mut args: *const usize, mut _envs: *const usize
             new_args.push(i.clone());
         }
         task.exec(
-            open("/", "busybox", OpenFlags::O_RDONLY).unwrap(),
+            open("/", "busybox", OpenFlags::O_RDONLY, CreateMode::empty()).unwrap(),
             new_args,
             envs_vec,
         );
@@ -203,6 +204,7 @@ pub fn sys_exec(path: *const u8, mut args: *const usize, mut _envs: *const usize
         inner.current_path.as_str(),
         path.as_str(),
         OpenFlags::O_RDONLY,
+        CreateMode::empty(),
     ) {
         drop(inner);
         task.exec(app_inode, args_vec, envs_vec);
@@ -222,7 +224,7 @@ pub fn sys_exec(path: *const u8, mut args: *const usize, mut _envs: *const usize
 ///     - 否则如果要等待的子进程均未结束则返回，则放权等待；
 ///     - 否则返回结束的子进程的进程 ID。
 /// - syscall ID：260
-pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
+pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> isize {
     // println!("[KERNEL] pid {} waitpid {}",current_task().unwrap().pid.0, pid);
     // crate::task::debug_show_ready_queue();
     let task = current_task().unwrap();
@@ -263,7 +265,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
             // ++++ release child PCB
             // 将子进程的退出码写入到当前进程的应用地址空间中
             if exit_code_ptr as usize != 0 {
-                *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code << 8;
+                *translated_mut(inner.memory_set.token(), exit_code_ptr) = exit_code << 8;
             }
             return found_pid as isize;
         } else {
@@ -302,7 +304,7 @@ pub fn sys_kill(pid: usize, signal: u32) -> isize {
 pub fn sys_uname(buf: *const u8) -> isize {
     let token = current_user_token();
     let uname = UTSNAME.lock();
-    let mut userbuf = UserBuffer::new(translated_byte_buffer(
+    let mut userbuf = UserBuffer::wrap(translated_bytes_buffer(
         token,
         buf,
         core::mem::size_of::<Utsname>(),
@@ -369,7 +371,7 @@ pub fn sys_prlimit64(
     let token = current_user_token();
     // println!("[DEBUG] enter sys_prlimit64: pid:{},resource:{},new_limit:{},old_limit:{}",pid,resource,new_limit as usize,old_limit as usize);
     if old_limit as usize != 0 {
-        let mut buf = UserBuffer::new(translated_byte_buffer(
+        let mut buf = UserBuffer::wrap(translated_bytes_buffer(
             token,
             old_limit as *const u8,
             size_of::<RLimit>(),
@@ -385,7 +387,7 @@ pub fn sys_prlimit64(
     }
 
     if new_limit as usize != 0 {
-        let buf = translated_byte_buffer(token, new_limit as *const u8, size_of::<RLimit>())
+        let buf = translated_bytes_buffer(token, new_limit as *const u8, size_of::<RLimit>())
             .pop()
             .unwrap();
         let addr = buf.as_ptr() as *const _ as usize;
@@ -409,8 +411,8 @@ pub fn sys_clock_gettime(_clk_id: usize, ts: *mut u64) -> isize {
     let ticks = get_time();
     let sec = (ticks / CLOCK_FREQ) as u64;
     let nsec = ((ticks % CLOCK_FREQ) * (NSEC_PER_SEC / CLOCK_FREQ)) as u64;
-    *translated_refmut(token, ts) = sec;
-    *translated_refmut(token, unsafe { ts.add(1) }) = nsec;
+    *translated_mut(token, ts) = sec;
+    *translated_mut(token, unsafe { ts.add(1) }) = nsec;
     0
 }
 
@@ -470,7 +472,7 @@ pub fn sys_getrusage(who: isize, usage: *mut u8) -> isize {
         panic!("sys_getrusage: \"who\" not supported!");
     }
     let token = current_user_token();
-    let mut userbuf = UserBuffer::new(translated_byte_buffer(
+    let mut userbuf = UserBuffer::wrap(translated_bytes_buffer(
         token,
         usage,
         core::mem::size_of::<RUsage>(),
@@ -482,6 +484,29 @@ pub fn sys_getrusage(who: isize, usage: *mut u8) -> isize {
 
 pub fn sys_set_tid_address(tidptr: *mut usize) -> isize {
     let token = current_user_token();
-    *translated_refmut(token, tidptr) = 0 as usize;
+    *translated_mut(token, tidptr) = 0 as usize;
     0
+}
+
+/// * 功能：创建一个子进程；
+/// * 输入：
+///     - flags: 创建的标志，如SIGCHLD；
+///     - stack: 指定新进程的栈，可为0；
+///     - ptid: 父线程ID；
+///     - tls: TLS线程本地存储描述符；
+///     - ctid: 子线程ID；
+/// * 返回值：成功则返回子进程的线程ID，失败返回-1；
+///
+pub fn sys_clone(flags: usize, stack: usize, ptid: usize, tls: usize, ctid: usize) -> isize {
+    todo!()
+}
+
+/// * 功能：执行一个指定的程序；
+/// * 输入：
+///     - path: 待执行程序路径名称，
+///     - argv: 程序的参数，
+///     - envp: 环境变量的数组指针
+/// * 返回值：成功不返回，失败返回-1；
+pub fn sys_execve(path: *const u8, argv: *const u8, envp: *const u8) -> isize {
+    todo!()
 }

@@ -17,3 +17,5 @@ template rustConstSyscall(syscallName, syscallId: string): string =
 
 for (syscallName, syscallId) in syscalls:
   echo rustConstSyscall(syscallName, syscallId)
+
+echo "total syscalls: " & $syscalls.len

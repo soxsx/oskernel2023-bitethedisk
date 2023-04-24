@@ -10,5 +10,6 @@
         "unistd.h": "c",
         "stdio.h": "c"
     },
-    "rust-analyzer.showUnlinkedFileNotification": false
+    "rust-analyzer.showUnlinkedFileNotification": false,
+    "cmake.configureOnOpen": false
 }

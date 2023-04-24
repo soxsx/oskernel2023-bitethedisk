@@ -6,7 +6,7 @@ use riscv::register::{
 use crate::{
     consts::TRAMPOLINE,
     mm::VirtAddr,
-    syscall::{syscall, SYSCALL_NAME},
+    syscall::dispatcher::syscall,
     task::{
         current_add_signal, current_task, current_trap_cx, suspend_current_and_run_next,
         SignalFlags,
@@ -31,15 +31,6 @@ pub fn user_trap_handler() -> ! {
             let mut cx = current_trap_cx();
             // frame_usage();
             // heap_usage();
-            if cfg!(feature = "debug_1") {
-                debug!(
-                    "[DEBUG] pid:{}, syscall_name: {}",
-                    current_task().unwrap().pid(),
-                    SYSCALL_NAME
-                        .get(&cx.x[17])
-                        .expect("syscall id convert to name error")
-                );
-            }
             // println!("fd_table:{:?}",current_task().unwrap().inner_exclusive_access().fd_table);
             cx.sepc += 4;
             let result = syscall(

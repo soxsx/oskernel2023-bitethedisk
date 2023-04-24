@@ -34,25 +34,24 @@ mod trap;
 use core::{arch::global_asm, slice};
 use riscv::register::sstatus::{set_fs, FS};
 
-global_asm!(include_str!("entry.S")); // 代码的第一条语句，执行指定的汇编文件，汇编程序再调用Rust实现的内核
+global_asm!(include_str!("entry.S"));
 
 #[no_mangle]
 pub fn meow() -> ! {
-    init_bss();
-    if hartid!() != 0 {
+    if hartid!() == 0 {
+        init_bss();
+        unsafe { set_fs(FS::Dirty) }
+        lang_items::setup();
+        mm::init();
+        trap::init();
+        trap::enable_stimer_interrupt();
+        timer::set_next_trigger();
+        fs::init();
+        task::add_initproc();
+        task::run_tasks();
+    } else {
         loop {}
     }
-
-    unsafe { set_fs(FS::Dirty) }
-    lang_items::setup();
-    mm::init();
-    trap::init();
-    trap::enable_stimer_interrupt();
-    timer::set_next_trigger();
-    fs::init();
-    task::add_initproc();
-    println!("[kernel] Initialization succeeded");
-    task::run_tasks();
 
     unreachable!("you should not be here");
 }

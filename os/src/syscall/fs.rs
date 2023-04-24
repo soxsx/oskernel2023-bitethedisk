@@ -1,9 +1,10 @@
 use super::errno::*;
+use crate::fs::open_flags::CreateMode;
 use crate::fs::{
     chdir, make_pipe, open, Dirent, FdSet, File, Kstat, OpenFlags, Statfs, Stdin, MNT_TABLE,
 };
 use crate::mm::{
-    translated_byte_buffer, translated_ref, translated_refmut, translated_str, UserBuffer, VirtAddr,
+    translated_bytes_buffer, translated_mut, translated_ref, translated_str, UserBuffer, VirtAddr,
 };
 use crate::task::{
     current_task, current_user_token, suspend_current_and_run_next, FD_LIMIT, RLIMIT_NOFILE,
@@ -56,7 +57,7 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
         drop(inner);
         drop(task); // 需要及时释放减少引用数
         let write_size =
-            file.write(UserBuffer::new(translated_byte_buffer(token, buf, len))) as isize;
+            file.write(UserBuffer::wrap(translated_bytes_buffer(token, buf, len))) as isize;
         // debug!("[DEBUG] sys_write: return write_size: {}",write_size);
         write_size
     } else {
@@ -95,8 +96,8 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
         drop(task); // 需要及时释放减少引用数
 
         // 对 /dev/zero 的处理，暂时先加在这里
-        if file.get_name() == "zero" {
-            let mut userbuffer = UserBuffer::new(translated_byte_buffer(token, buf, len));
+        if file.name() == "zero" {
+            let mut userbuffer = UserBuffer::wrap(translated_bytes_buffer(token, buf, len));
             let zero: Vec<u8> = (0..userbuffer.buffers.len()).map(|_| 0).collect();
             userbuffer.write(zero.as_slice());
             return userbuffer.buffers.len() as isize;
@@ -107,7 +108,8 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
             warn!("[WARNING] sys_read: file_size is zero!");
         }
         let len = file_size.min(len);
-        let readsize = file.read(UserBuffer::new(translated_byte_buffer(token, buf, len))) as isize;
+        let readsize =
+            file.read(UserBuffer::wrap(translated_bytes_buffer(token, buf, len))) as isize;
         // println!("[DEBUG] sys_read: return readsize: {}",readsize);
         readsize
     } else {
@@ -116,6 +118,15 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
     }
 }
 
+/// 功能：打开或创建一个文件；
+///
+/// 输入：
+/// - fd：文件所在目录的文件描述符。
+/// - filename：要打开或创建的文件名。如为绝对路径，则忽略fd。如为相对路径，且fd是AT_FDCWD，则filename是相对于当前工作目录来说的。如为相对路径，且fd是一个文件描述符，则filename是相对于fd所指向的目录来说的。
+/// - flags：必须包含如下访问模式的其中一种：O_RDONLY，O_WRONLY，O_RDWR。还可以包含文件创建标志和文件状态标志。
+/// - mode：文件的所有权描述。详见`man 7 inode `。
+///
+/// 返回值：成功执行，返回新的文件描述符。失败，返回-1。
 pub fn sys_openat(dirfd: isize, path: *const u8, flags: u32, mode: u32) -> isize {
     let task = current_task().unwrap();
     let token = current_user_token();
@@ -123,25 +134,20 @@ pub fn sys_openat(dirfd: isize, path: *const u8, flags: u32, mode: u32) -> isize
 
     let path = translated_str(token, path);
 
-    // todo
-    _ = mode;
-    let oflags = OpenFlags::from_bits(flags).expect("[DEBUG] sys_openat: unsupported open flag!");
-    // info!(
-    //     "[DEBUG] enter sys_openat: dirfd:{}, path:{}, flags:{:?}, mode:{:o}",
-    //     dirfd, path, oflags, mode
-    // );
+    let mode = CreateMode::from_bits(mode).map_or(CreateMode::empty(), |m| m);
+    let flags = OpenFlags::from_bits(flags).map_or(OpenFlags::empty(), |f| f);
+
     if dirfd == AT_FDCWD {
         // 如果是当前工作目录
-        if let Some(inode) = open(inner.get_work_path(), path.as_str(), oflags) {
+        if let Some(inode) = open(inner.get_work_path(), path.as_str(), flags, mode) {
             let fd = inner.alloc_fd();
             if fd == FD_LIMIT {
                 return -EMFILE;
             }
             inner.fd_table[fd] = Some(inode);
-            // info!("[DEBUG] sys_openat return new fd:{}", fd);
+
             fd as isize
         } else {
-            // println!("[WARNING] sys_openat: can't open file:{}, return -1", path);
             -1
         }
     } else {
@@ -151,13 +157,13 @@ pub fn sys_openat(dirfd: isize, path: *const u8, flags: u32, mode: u32) -> isize
             return -1;
         }
         if let Some(file) = &inner.fd_table[dirfd] {
-            if let Some(tar_f) = open(file.get_name(), path.as_str(), oflags) {
+            if let Some(tar_f) = open(file.name(), path.as_str(), flags, mode) {
                 let fd = inner.alloc_fd();
                 if fd == FD_LIMIT {
                     return -EMFILE;
                 }
                 inner.fd_table[fd] = Some(tar_f);
-                // info!("[DEBUG] sys_openat return new fd:{}", fd);
+                info!("[DEBUG] sys_openat return new fd:{}", fd);
                 fd as isize
             } else {
                 warn!("[WARNING] sys_openat: can't open file:{}, return -1", path);
@@ -192,18 +198,31 @@ pub fn sys_close(fd: usize) -> isize {
     0
 }
 
+/// 功能：创建管道；
+///
+/// 输入：
+///  fd\[2\]：用于保存2个文件描述符。其中
+///
+/// * fd\[0\]: 管道的读出端
+/// * fd\[1\]: 管道的写入端。
+///
 /// ### 为当前进程打开一个管道。
 /// - `pipe` 表示应用地址空间中的一个长度为 `2` 的 `usize` 数组的起始地址，
 /// 内核需要按顺序将管道读端和写端的文件描述符写入到数组中。
 /// - 返回值：如果出现了错误则返回 -1，否则返回 0 。可能的错误原因是：传入的地址不合法。
 /// - syscall ID：59
-pub fn sys_pipe(pipe: *mut u32, flag: usize) -> isize {
+pub fn sys_pipe2(pipe: *mut isize, _flag: usize) -> isize {
+    let fd0 = pipe;
+    let fd1 = unsafe { pipe.add(1) };
+
+    // TODO: 会直接卡死，可能是参数传递有问题
     let task = current_task().unwrap();
     let token = current_user_token();
     let mut inner = task.lock();
 
-    // todo
-    _ = flag;
+    let fd0 = *translated_ref(token, fd0);
+    let fd1 = *translated_ref(token, fd1);
+    debug!("fd[0]: {}, fd[1]: {}, flag: {}", fd0, fd1, _flag);
 
     let (pipe_read, pipe_write) = make_pipe();
     let read_fd = inner.alloc_fd();
@@ -214,8 +233,9 @@ pub fn sys_pipe(pipe: *mut u32, flag: usize) -> isize {
     inner.fd_table[read_fd] = Some(pipe_read);
     let write_fd = inner.alloc_fd();
     inner.fd_table[write_fd] = Some(pipe_write);
-    *translated_refmut(token, pipe) = read_fd as u32;
-    *translated_refmut(token, unsafe { pipe.add(1) }) = write_fd as u32;
+    *translated_mut(token, pipe) = read_fd as isize;
+    *translated_mut(token, unsafe { pipe.add(1) }) = write_fd as isize;
+
     0
 }
 
@@ -287,20 +307,19 @@ pub fn sys_dup3(old_fd: usize, new_fd: usize) -> isize {
     new_fd as isize
 }
 
-pub fn sys_mkdirat(dirfd: isize, path: *const u8, mode: u32) -> isize {
+pub fn sys_mkdirat(dirfd: isize, path: *const u8, _mode: u32) -> isize {
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.lock();
     let path = translated_str(token, path);
 
-    // todo
-    _ = mode;
     // println!("[DEBUG] enter sys_mkdirat: dirfd:{}, path:{}. mode:{:o}",dirfd,path,mode);
     if dirfd == AT_FDCWD {
         if let Some(_) = open(
             inner.get_work_path(),
             path.as_str(),
             OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE,
+            CreateMode::empty(),
         ) {
             0
         } else {
@@ -313,9 +332,10 @@ pub fn sys_mkdirat(dirfd: isize, path: *const u8, mode: u32) -> isize {
         }
         if let Some(file) = &inner.fd_table[dirfd] {
             if let Some(_) = open(
-                file.get_name(),
+                file.name(),
                 path.as_str(),
                 OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE,
+                CreateMode::empty(),
             ) {
                 0
             } else {
@@ -337,8 +357,8 @@ pub fn sys_getcwd(buf: *mut u8, len: usize) -> isize {
     if buf as usize == 0 {
         unimplemented!();
     } else {
-        let buf_vec = translated_byte_buffer(token, buf, len);
-        let mut userbuf = UserBuffer::new(buf_vec);
+        let buf_vec = translated_bytes_buffer(token, buf, len);
+        let mut userbuf = UserBuffer::wrap(buf_vec);
         let cwd = inner.current_path.as_bytes();
         userbuf.write(cwd);
         userbuf.write_at(cwd.len(), &[0]); // 添加字符串末尾的\0
@@ -379,7 +399,12 @@ pub fn sys_unlinkat(fd: isize, path: *const u8, flags: u32) -> isize {
     let path = translated_str(token, path);
     // println!("[DEBUG] enter sys_unlinkat: fd:{}, path:{}, flags:{}",fd,path,flags);
     if fd == AT_FDCWD {
-        if let Some(file) = open(inner.get_work_path(), path.as_str(), OpenFlags::O_RDWR) {
+        if let Some(file) = open(
+            inner.get_work_path(),
+            path.as_str(),
+            OpenFlags::O_RDWR,
+            CreateMode::empty(),
+        ) {
             file.delete();
             0
         } else {
@@ -410,10 +435,10 @@ pub fn sys_fstat(fd: isize, buf: *mut u8) -> isize {
     // info!("[DEBUG] enter sys_fstat: fd:{}, buf:0x{:x}", fd, buf as usize);
     let token = current_user_token();
     let task = current_task().unwrap();
-    let buf_vec = translated_byte_buffer(token, buf, size_of::<Kstat>());
+    let buf_vec = translated_bytes_buffer(token, buf, size_of::<Kstat>());
     let inner = task.lock();
 
-    let mut userbuf = UserBuffer::new(buf_vec);
+    let mut userbuf = UserBuffer::wrap(buf_vec);
     let mut kstat = Kstat::new();
 
     let dirfd = fd as usize;
@@ -421,7 +446,7 @@ pub fn sys_fstat(fd: isize, buf: *mut u8) -> isize {
         return -1;
     }
     if let Some(file) = &inner.fd_table[dirfd] {
-        file.get_fstat(&mut kstat);
+        file.fstat(&mut kstat);
         // println!("kstat:{:?}",kstat);
         userbuf.write(kstat.as_bytes());
         0
@@ -436,19 +461,24 @@ pub fn sys_getdents64(fd: isize, buf: *mut u8, len: usize) -> isize {
     let task = current_task().unwrap();
     let inner = task.lock();
     let work_path = inner.current_path.clone();
-    let buf_vec = translated_byte_buffer(token, buf, len);
-    let mut userbuf = UserBuffer::new(buf_vec);
+    let buf_vec = translated_bytes_buffer(token, buf, len);
+    let mut userbuf = UserBuffer::wrap(buf_vec);
     let mut dirent = Dirent::new();
     let dent_len = size_of::<Dirent>();
     let mut total_len: usize = 0;
 
     if fd == AT_FDCWD {
-        if let Some(file) = open("/", work_path.as_str(), OpenFlags::O_RDONLY) {
+        if let Some(file) = open(
+            "/",
+            work_path.as_str(),
+            OpenFlags::O_RDONLY,
+            CreateMode::empty(),
+        ) {
             loop {
                 if total_len + dent_len > len {
                     break;
                 }
-                if file.get_dirent(&mut dirent) > 0 {
+                if file.dirent(&mut dirent) > 0 {
                     userbuf.write_at(total_len, dirent.as_bytes());
                     total_len += dent_len;
                 } else {
@@ -465,7 +495,7 @@ pub fn sys_getdents64(fd: isize, buf: *mut u8, len: usize) -> isize {
                 if total_len + dent_len > len {
                     break;
                 }
-                if file.get_dirent(&mut dirent) > 0 {
+                if file.dirent(&mut dirent) > 0 {
                     userbuf.write_at(total_len, dirent.as_bytes());
                     total_len += dent_len;
                 } else {
@@ -507,7 +537,7 @@ pub fn sys_lseek(fd: usize, off_t: usize, whence: usize) -> isize {
                 off_t as isize
             }
             SeekFlags::SEEK_CUR => {
-                let current_offset = file.get_offset();
+                let current_offset = file.offset();
                 file.set_offset(off_t + current_offset);
                 (off_t + current_offset) as isize
             }
@@ -545,9 +575,9 @@ pub fn sys_ioctl(fd: usize, request: usize, argp: *mut u8) -> isize {
     match request {
         TCGETS => {}
         TCSETS => {}
-        TIOCGPGRP => *translated_refmut(token, argp) = 0 as u8,
+        TIOCGPGRP => *translated_mut(token, argp) = 0 as u8,
         TIOCSPGRP => {}
-        TIOCGWINSZ => *translated_refmut(token, argp) = 0 as u8,
+        TIOCGWINSZ => *translated_mut(token, argp) = 0 as u8,
         RTC_RD_TIME => {}
         _ => panic!("sys_ioctl: unsupported request!"),
     }
@@ -576,7 +606,7 @@ pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> isize {
             return -1;
         }
         let iovp_buf =
-            translated_byte_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>())
+            translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>())
                 .pop()
                 .unwrap();
         let file = file.clone();
@@ -585,7 +615,7 @@ pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> isize {
         drop(inner);
         for _ in 0..iovcnt {
             let iovp = unsafe { &*(addr as *const Iovec) };
-            total_write_len += file.write(UserBuffer::new(translated_byte_buffer(
+            total_write_len += file.write(UserBuffer::wrap(translated_bytes_buffer(
                 token,
                 iovp.iov_base as *const u8,
                 iovp.iov_len,
@@ -614,13 +644,18 @@ pub fn sys_newfstatat(
     //     dirfd, path, satabuf as usize, _flags
     // );
 
-    let buf_vec = translated_byte_buffer(token, satabuf as *const u8, size_of::<Kstat>());
-    let mut userbuf = UserBuffer::new(buf_vec);
+    let buf_vec = translated_bytes_buffer(token, satabuf as *const u8, size_of::<Kstat>());
+    let mut userbuf = UserBuffer::wrap(buf_vec);
     let mut kstat = Kstat::new();
 
     if dirfd == AT_FDCWD {
-        if let Some(inode) = open(inner.get_work_path(), path.as_str(), OpenFlags::O_RDONLY) {
-            inode.get_fstat(&mut kstat);
+        if let Some(inode) = open(
+            inner.get_work_path(),
+            path.as_str(),
+            OpenFlags::O_RDONLY,
+            CreateMode::empty(),
+        ) {
+            inode.fstat(&mut kstat);
             userbuf.write(kstat.as_bytes());
             // panic!();
             0
@@ -633,8 +668,13 @@ pub fn sys_newfstatat(
             return -1;
         }
         if let Some(file) = &inner.fd_table[dirfd] {
-            if let Some(inode) = open(file.get_name(), path.as_str(), OpenFlags::O_RDONLY) {
-                inode.get_fstat(&mut kstat);
+            if let Some(inode) = open(
+                file.name(),
+                path.as_str(),
+                OpenFlags::O_RDONLY,
+                CreateMode::empty(),
+            ) {
+                inode.fstat(&mut kstat);
                 userbuf.write(kstat.as_bytes());
                 0
             } else {
@@ -662,7 +702,12 @@ pub fn sys_utimensat(dirfd: isize, pathname: *const u8, time: *const usize, flag
             unimplemented!();
         } else {
             let pathname = translated_str(token, pathname);
-            if let Some(_file) = open(inner.get_work_path(), pathname.as_str(), OpenFlags::O_RDWR) {
+            if let Some(_file) = open(
+                inner.get_work_path(),
+                pathname.as_str(),
+                OpenFlags::O_RDWR,
+                CreateMode::empty(),
+            ) {
                 unimplemented!(); // 记得重新制作文件镜像
             } else {
                 -ENOENT
@@ -675,7 +720,7 @@ pub fn sys_utimensat(dirfd: isize, pathname: *const u8, time: *const usize, flag
             }
             if let Some(file) = &inner.fd_table[dirfd as usize] {
                 let timespec_buf =
-                    translated_byte_buffer(token, time as *const u8, size_of::<Kstat>())
+                    translated_bytes_buffer(token, time as *const u8, size_of::<Kstat>())
                         .pop()
                         .unwrap();
                 let addr = timespec_buf.as_ptr() as *const _ as usize;
@@ -703,7 +748,7 @@ pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> isize {
             return -1;
         }
         let iovp_buf =
-            translated_byte_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>())
+            translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>())
                 .pop()
                 .unwrap();
         let file = file.clone();
@@ -717,7 +762,7 @@ pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> isize {
         for _ in 0..iovcnt {
             let iovp = unsafe { &*(addr as *const Iovec) };
             let len = file_size.min(iovp.iov_len);
-            total_read_len += file.read(UserBuffer::new(translated_byte_buffer(
+            total_read_len += file.read(UserBuffer::wrap(translated_bytes_buffer(
                 token,
                 iovp.iov_base as *const u8,
                 len,
@@ -830,7 +875,7 @@ pub fn sys_statfs(path: *const u8, buf: *const u8) -> isize {
 
     _ = path;
 
-    let mut userbuf = UserBuffer::new(translated_byte_buffer(token, buf, size_of::<Statfs>()));
+    let mut userbuf = UserBuffer::wrap(translated_bytes_buffer(token, buf, size_of::<Statfs>()));
     userbuf.write(Statfs::new().as_bytes());
     0
 }
@@ -842,10 +887,10 @@ pub fn sys_pread64(fd: usize, buf: *const u8, count: usize, offset: usize) -> is
     if let Some(file) = &inner.fd_table[fd] {
         let file = file.clone();
         drop(inner);
-        let old_offset = file.get_offset();
+        let old_offset = file.offset();
         file.set_offset(offset);
         let readsize =
-            file.read(UserBuffer::new(translated_byte_buffer(token, buf, count))) as isize;
+            file.read(UserBuffer::wrap(translated_bytes_buffer(token, buf, count))) as isize;
         file.set_offset(old_offset);
         readsize
     } else {
@@ -903,7 +948,12 @@ pub fn sys_renameat2(
     //     old_dirfd, old_path, new_dirfd, new_path, _flags
     // );
     if old_dirfd == AT_FDCWD {
-        if let Some(old_file) = open(inner.get_work_path(), old_path.as_str(), OpenFlags::O_RDWR) {
+        if let Some(old_file) = open(
+            inner.get_work_path(),
+            old_path.as_str(),
+            OpenFlags::O_RDWR,
+            CreateMode::empty(),
+        ) {
             let flag = {
                 if old_file.is_dir() {
                     OpenFlags::O_RDWR | OpenFlags::O_CREATE | OpenFlags::O_DIRECTROY
@@ -912,8 +962,13 @@ pub fn sys_renameat2(
                 }
             };
             if new_dirfd == AT_FDCWD {
-                if let Some(new_file) = open(inner.get_work_path(), new_path.as_str(), flag) {
-                    let first_cluster = old_file.get_head_cluster();
+                if let Some(new_file) = open(
+                    inner.get_work_path(),
+                    new_path.as_str(),
+                    flag,
+                    CreateMode::empty(),
+                ) {
+                    let first_cluster = old_file.head_cluster();
                     new_file.set_head_cluster(first_cluster);
                     old_file.delete();
                     0
@@ -942,7 +997,7 @@ pub fn sys_readlinkat(dirfd: isize, pathname: *const u8, buf: *const u8, bufsiz:
         if path.as_str() != "/proc/self/exe" {
             panic!("sys_readlinkat: pathname not support");
         }
-        let mut userbuf = UserBuffer::new(translated_byte_buffer(token, buf, bufsiz));
+        let mut userbuf = UserBuffer::wrap(translated_bytes_buffer(token, buf, bufsiz));
         let procinfo = "/lmbench_all\0";
         userbuf.write(procinfo.as_bytes());
         let len = procinfo.len() - 1;
@@ -978,7 +1033,7 @@ pub fn sys_pselect(
 
     let mut ubuf_rfds = {
         if readfds as usize != 0 {
-            UserBuffer::new(translated_byte_buffer(token, readfds, size_of::<FdSet>()))
+            UserBuffer::wrap(translated_bytes_buffer(token, readfds, size_of::<FdSet>()))
         } else {
             UserBuffer::empty()
         }
@@ -987,7 +1042,7 @@ pub fn sys_pselect(
 
     let mut ubuf_wfds = {
         if writefds as usize != 0 {
-            UserBuffer::new(translated_byte_buffer(token, writefds, size_of::<FdSet>()))
+            UserBuffer::wrap(translated_bytes_buffer(token, writefds, size_of::<FdSet>()))
         } else {
             UserBuffer::empty()
         }
@@ -996,7 +1051,11 @@ pub fn sys_pselect(
 
     let mut ubuf_efds = {
         if exceptfds as usize != 0 {
-            UserBuffer::new(translated_byte_buffer(token, exceptfds, size_of::<FdSet>()))
+            UserBuffer::wrap(translated_bytes_buffer(
+                token,
+                exceptfds,
+                size_of::<FdSet>(),
+            ))
         } else {
             UserBuffer::empty()
         }
@@ -1116,4 +1175,17 @@ pub fn sys_pselect(
     }
     // println!("pselect return: r_ready_count:{}, w_ready_count:{}, e_ready_count:{}",r_ready_count,w_ready_count,e_ready_count);
     r_ready_count + w_ready_count + e_ready_count
+}
+
+/// 输入：
+///
+/// - olddirfd：原来的文件所在目录的文件描述符。
+/// - oldpath：文件原来的名字。如果oldpath是相对路径，则它是相对于olddirfd目录而言的。如果oldpath是相对路径，且olddirfd的值为AT_FDCWD，则它是相对于当前路径而言的。如果oldpath是绝对路径，则olddirfd被忽略。
+/// - newdirfd：新文件名所在的目录。
+/// - newpath：文件的新名字。newpath的使用规则同oldpath。
+/// - flags：在2.6.18内核之前，应置为0。其它的值详见`man 2 linkat`。
+///
+/// 返回值：成功执行，返回0。失败，返回-1。
+pub fn sys_linkat(fd: isize, filename: *const u8, flags: isize, mode: usize) -> isize {
+    todo!()
 }

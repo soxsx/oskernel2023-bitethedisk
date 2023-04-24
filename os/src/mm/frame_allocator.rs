@@ -14,7 +14,7 @@ impl FrameTracker {
     /// 通过物理页号创建一个物理页帧的结构体，创建时初始化内存空间
     pub fn new(ppn: PhysPageNum) -> Self {
         // 物理页清零
-        let bytes_array = ppn.get_bytes_array();
+        let bytes_array = ppn.as_bytes_array();
         for i in bytes_array {
             *i = 0;
         }
@@ -36,7 +36,7 @@ impl Debug for FrameTracker {
 impl Drop for FrameTracker {
     /// 当一个 FrameTracker 生命周期结束被编译器回收的时候，我们需要将它控制的物理页帧回收掉
     fn drop(&mut self) {
-        frame_dealloc(self.ppn);
+        dealloc_frame(self.ppn);
     }
 }
 
@@ -168,15 +168,12 @@ pub fn init() {
 }
 
 /// 分配物理页帧
-pub fn frame_alloc() -> Option<FrameTracker> {
-    // frame_usage();
+pub fn alloc_frame() -> Option<FrameTracker> {
     FRAME_ALLOCATOR.lock().alloc().map(FrameTracker::new)
 }
 
 /// 回收物理页帧
-pub fn frame_dealloc(ppn: PhysPageNum) {
-    // println!("dealloc ppn:{}",ppn.0);
-    // frame_usage();
+pub fn dealloc_frame(ppn: PhysPageNum) {
     FRAME_ALLOCATOR.lock().dealloc(ppn);
 }
 

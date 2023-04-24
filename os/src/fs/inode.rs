@@ -1,19 +1,16 @@
 use super::{
+    open_flags::CreateMode,
     stat::{S_IFCHR, S_IFDIR, S_IFREG},
-    Dirent, File, Kstat, Timespec,
+    Dirent, File, Kstat, OpenFlags, Timespec,
 };
-#[allow(unused)]
-use crate::{
-    drivers::BLOCK_DEVICE,
-    mm::{memory_usage, UserBuffer},
-};
-use core::str::FromStr;
+use crate::{drivers::BLOCK_DEVICE, mm::UserBuffer};
 use alloc::{
     string::{String, ToString},
     sync::Arc,
     vec::Vec,
 };
 use bitflags::*;
+use core::str::FromStr;
 use fat32::{create_root_vfile, FAT32Manager, VFile, ATTR_ARCHIVE, ATTR_DIRECTORY};
 use spin::Mutex;
 
@@ -34,7 +31,13 @@ pub struct OSInodeInner {
 }
 
 impl OSInode {
-    pub fn new(readable: bool, writable: bool, inode: Arc<VFile>, path: String, name: String) -> Self {
+    pub fn new(
+        readable: bool,
+        writable: bool,
+        inode: Arc<VFile>,
+        path: String,
+        name: String,
+    ) -> Self {
         let available = true;
         Self {
             readable,
@@ -95,6 +98,7 @@ impl OSInode {
         if offset >= 0 {
             inner.offset = old_offset;
         }
+
         v
     }
 
@@ -104,7 +108,9 @@ impl OSInode {
         let mut base = 0;
         loop {
             let len = remain.min(512);
-            inner.inode.write_at(inner.offset, &str_vec.as_slice()[base..base + len]);
+            inner
+                .inode
+                .write_at(inner.offset, &str_vec.as_slice()[base..base + len]);
             inner.offset += len;
             base += len;
             remain -= len;
@@ -139,7 +145,7 @@ impl OSInode {
         vfile.set_first_cluster(cluster);
     }
 
-    pub fn get_head_cluster(&self) -> u32 {
+    pub fn head_cluster(&self) -> u32 {
         let inner = self.inner.lock();
         let vfile = &inner.inode;
         vfile.first_cluster()
@@ -150,24 +156,25 @@ impl OSInode {
 lazy_static! {
     pub static ref ROOT_INODE: Arc<VFile> = {
         let fat32_manager = FAT32Manager::open(BLOCK_DEVICE.clone());
+
         Arc::new(create_root_vfile(&fat32_manager)) // 返回根目录
     };
 }
 
 pub fn init() {
     // 预创建文件/文件夹
-    open("/", "proc", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
-    open("/", "tmp", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
-    open("/", "dev", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
-    open("/", "var", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
-    open("/dev", "misc", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
-    open("/var", "tmp", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
-    open("/dev", "null", OpenFlags::O_CREATE);
-    open("/dev", "zero", OpenFlags::O_CREATE);
-    open("/proc", "mounts", OpenFlags::O_CREATE);
-    open("/proc", "meminfo", OpenFlags::O_CREATE);
-    open("/dev/misc", "rtc", OpenFlags::O_CREATE);
-    open("/var/tmp", "lmbench", OpenFlags::O_CREATE);
+    // open("/", "proc", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
+    // open("/", "tmp", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
+    // open("/", "dev", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
+    // open("/", "var", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
+    // open("/dev", "misc", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
+    // open("/var", "tmp", OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE);
+    // open("/dev", "null", OpenFlags::O_CREATE);
+    // open("/dev", "zero", OpenFlags::O_CREATE);
+    // open("/proc", "mounts", OpenFlags::O_CREATE);
+    // open("/proc", "meminfo", OpenFlags::O_CREATE);
+    // open("/dev/misc", "rtc", OpenFlags::O_CREATE);
+    // open("/var/tmp", "lmbench", OpenFlags::O_CREATE);
     println!("/**** All Files  ****");
     list_apps(ROOT_INODE.clone());
     println!("**********************/");
@@ -197,7 +204,13 @@ pub fn list_apps(dir: Arc<VFile>) {
                 }
             }
             info!("{}/", app.0);
-            let dir = open(dir.name(), app.0.as_str(), OpenFlags::O_RDONLY).unwrap();
+            let dir = open(
+                dir.name(),
+                app.0.as_str(),
+                OpenFlags::O_RDONLY,
+                CreateMode::empty(),
+            )
+            .unwrap();
             let inner = dir.inner.lock();
             let inode = inner.inode.clone();
             unsafe {
@@ -211,37 +224,12 @@ pub fn list_apps(dir: Arc<VFile>) {
     }
 }
 
-// 定义一份打开文件的标志
-bitflags! {
-    pub struct OpenFlags: u32 {
-        const O_RDONLY    = 0;
-        const O_WRONLY    = 1 << 0;
-        const O_RDWR      = 1 << 1;
-        const O_CREATE    = 1 << 6;
-        const O_EXCL      = 1 << 7;
-        const O_TRUNC     = 1 << 9;
-        const O_APPEND    = 1 << 10;
-        const O_NONBLOCK  = 1 << 11;
-        const O_LARGEFILE = 1 << 15;
-        const O_DIRECTROY = 1 << 16;
-        const O_NOFOLLOW  = 1 << 17;
-        const O_CLOEXEC   = 1 << 19;
-    }
-}
-
-impl OpenFlags {
-    pub fn read_write(&self) -> (bool, bool) {
-        if self.is_empty() {
-            (true, false)
-        } else if self.contains(Self::O_WRONLY) {
-            (false, true)
-        } else {
-            (true, true)
-        }
-    }
-}
-
-pub fn open(work_path: &str, path: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
+pub fn open(
+    work_path: &str,
+    path: &str,
+    flags: OpenFlags,
+    _mode: CreateMode,
+) -> Option<Arc<OSInode>> {
     // println!("[DEBUG] enter open: work_path:{}, path:{}, flags:{:?}", work_path, path, flags);
     let mut pathv: Vec<&str> = {
         if path == "libc.musl-riscv64.so.1" {
@@ -285,9 +273,15 @@ pub fn open(work_path: &str, path: &str, flags: OpenFlags) -> Option<Arc<OSInode
             let name = pathv.pop().unwrap();
             if let Some(temp_inode) = cur_inode.find_vfile_bypath(pathv.clone()) {
                 // println!("[DEBUG] create file: {}, type:0x{:x}",name,create_type);
-                temp_inode
-                    .create(name, create_type)
-                    .map(|inode| Arc::new(OSInode::new(readable, writable, inode, work_path.to_string(), name.to_string())))
+                temp_inode.create(name, create_type).map(|inode| {
+                    Arc::new(OSInode::new(
+                        readable,
+                        writable,
+                        inode,
+                        work_path.to_string(),
+                        name.to_string(),
+                    ))
+                })
             } else {
                 None
             }
@@ -298,7 +292,13 @@ pub fn open(work_path: &str, path: &str, flags: OpenFlags) -> Option<Arc<OSInode
                 inode.clear();
             }
             let name = inode.name().to_string();
-            Arc::new(OSInode::new(readable, writable, inode, work_path.to_string(), name))
+            Arc::new(OSInode::new(
+                readable,
+                writable,
+                inode,
+                work_path.to_string(),
+                name,
+            ))
         })
     }
 }
@@ -417,7 +417,9 @@ impl File for OSInode {
         let mut base = 0;
         loop {
             let len = remain.min(512);
-            inner.inode.write_at(inner.offset, &data.as_slice()[base..base + len]);
+            inner
+                .inode
+                .write_at(inner.offset, &data.as_slice()[base..base + len]);
             inner.offset += len;
             base += len;
             remain -= len;
@@ -441,11 +443,11 @@ impl File for OSInode {
         }
     }
 
-    fn get_name(&self) -> &str {
+    fn name(&self) -> &str {
         self.name()
     }
 
-    fn get_offset(&self) -> usize {
+    fn offset(&self) -> usize {
         let inner = self.inner.lock();
         inner.offset
     }
@@ -465,7 +467,7 @@ impl File for OSInode {
         inner.available = false;
     }
 
-    fn get_dirent(&self, dirent: &mut Dirent) -> isize {
+    fn dirent(&self, dirent: &mut Dirent) -> isize {
         if !self.is_dir() {
             return -1;
         }
@@ -481,7 +483,7 @@ impl File for OSInode {
         }
     }
 
-    fn get_fstat(&self, kstat: &mut Kstat) {
+    fn fstat(&self, kstat: &mut Kstat) {
         let inner = self.inner.lock();
         let vfile = inner.inode.clone();
         let mut st_mode = 0;

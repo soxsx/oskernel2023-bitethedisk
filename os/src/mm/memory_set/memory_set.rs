@@ -1,10 +1,14 @@
-use super::address::{PhysAddr, PhysPageNum, StepByOne, VPNRange, VirtAddr, VirtPageNum};
-use super::frame_allocator::{enquire_refcount, frame_add_ref, frame_alloc, FrameTracker};
-#[allow(unused)]
-use super::frame_usage;
-use super::page_table::{PTEFlags, PageTable, PageTableEntry};
-use crate::consts::*;
+use super::chunk_area::ChunkArea;
+use super::{MapArea, MapPermission, MapType};
+use crate::consts::{PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE, USER_STACK_SIZE};
+use crate::fs::open_flags::CreateMode;
 use crate::fs::{open, OSInode, OpenFlags};
+use crate::mm::frame_allocator::{enquire_refcount, frame_add_ref};
+use crate::mm::page_table::PTEFlags;
+use crate::mm::{
+    alloc_frame, FrameTracker, PageTable, PageTableEntry, PhysAddr, PhysPageNum, VirtAddr,
+    VirtPageNum,
+};
 use crate::task::{AuxEntry, AT_BASE, AT_ENTRY, AT_PHDR, AT_PHENT, AT_PHNUM};
 use alloc::{sync::Arc, vec::Vec};
 
@@ -101,7 +105,7 @@ impl MemorySet {
     /// - 如果是以 Framed 方式映射到物理内存,
     /// 还可以可选性地在那些被映射到的物理页帧上写入一些初始化数据
     /// - data:(osinode,offset,len,page_offset)
-    pub(super) fn push(
+    pub fn push(
         &mut self,
         mut map_area: MapArea,
         data: Option<(Arc<OSInode>, usize, usize, usize)>,
@@ -122,7 +126,7 @@ impl MemorySet {
     }
 
     /// 映射跳板的虚拟页号和物理物理页号
-    pub(super) fn map_trampoline(&mut self) {
+    pub fn map_trampoline(&mut self) {
         extern "C" {
             fn strampoline();
         }
@@ -148,15 +152,18 @@ impl MemorySet {
     /// ### 从 ELF 格式可执行文件解析出各数据段并对应生成应用的地址空间
     pub fn load_elf(elf_file: Arc<OSInode>, auxs: &mut Vec<AuxEntry>) -> (Self, usize, usize) {
         let mut memory_set = Self::new_bare();
+
         // 将跳板插入到应用地址空间
         memory_set.map_trampoline();
+
         // 在应用地址空间中映射次高页面来存放 Trap 上下文
         // 将 TRAP_CONTEXT 段尽量放前，以节省 cow 时寻找时间
         memory_set.map_trap_context();
 
         // 第一次读取前64字节确定程序表的位置与大小
         let elf_head_data = elf_file.read_vec(0, 64);
-        let elf = xmas_elf::ElfFile::new(elf_head_data.as_slice()).unwrap();
+        let elf_head_data_slice = elf_head_data.as_slice();
+        let elf = xmas_elf::ElfFile::new(elf_head_data_slice).unwrap();
 
         let ph_entry_size = elf.header.pt2.ph_entry_size() as usize;
         let ph_offset = elf.header.pt2.ph_offset() as usize;
@@ -219,8 +226,13 @@ impl MemorySet {
         }
         if elf_interpreter {
             // 动态链接
-            let interpreter_file = open("/", "ld-musl-riscv64.so.1", OpenFlags::O_RDONLY)
-                .expect("can't find interpreter file");
+            let interpreter_file = open(
+                "/",
+                "ld-musl-riscv64.so.1",
+                OpenFlags::O_RDONLY,
+                CreateMode::empty(),
+            )
+            .expect("can't find interpreter file");
             // 第一次读取前64字节确定程序表的位置与大小
             let interpreter_head_data = interpreter_file.read_vec(0, 64);
             let interp_elf = xmas_elf::ElfFile::new(interpreter_head_data.as_slice()).unwrap();
@@ -322,8 +334,8 @@ impl MemorySet {
                     let dst_ppn = new_memory_set.translate(vpn).unwrap().ppn();
                     // println!{"[COW TRAP_CONTEXT] mapping {:?} --- {:?}, src: {:?}", vpn, dst_ppn, src_ppn};
                     dst_ppn
-                        .get_bytes_array()
-                        .copy_from_slice(src_ppn.get_bytes_array());
+                        .as_bytes_array()
+                        .copy_from_slice(src_ppn.as_bytes_array());
                 }
             }
             break;
@@ -414,7 +426,7 @@ impl MemorySet {
             );
             return 0;
         }
-        let frame = frame_alloc().unwrap();
+        let frame = alloc_frame().unwrap();
         let ppn = frame.ppn;
         self.remap_cow(vpn, ppn, former_ppn);
         for area in self.areas.iter_mut() {
@@ -538,278 +550,7 @@ impl MemorySet {
     }
 }
 
-/// ### 离散逻辑段
-pub struct ChunkArea {
-    vpn_table: Vec<VirtPageNum>,
-    data_frames: Vec<FrameTracker>,
-    map_type: MapType,
-    map_perm: MapPermission,
-    start_va: VirtAddr,
-    end_va: VirtAddr,
-}
-
-impl ChunkArea {
-    pub fn new(map_type: MapType, map_perm: MapPermission, start: VirtAddr, end: VirtAddr) -> Self {
-        Self {
-            vpn_table: Vec::new(),
-            data_frames: Vec::new(),
-            map_type,
-            map_perm,
-            start_va: start,
-            end_va: end,
-        }
-    }
-
-    pub fn set_mmap_range(&mut self, start: VirtAddr, end: VirtAddr) {
-        self.start_va = start;
-        self.end_va = end;
-        for (idx, vpn) in self.vpn_table.clone().iter_mut().enumerate() {
-            if VirtAddr::from(*vpn) >= self.end_va {
-                self.vpn_table.remove(idx);
-                // todo:删除 data_frame 中超范围的物理页帧
-            }
-        }
-    }
-
-    pub fn push_vpn(&mut self, vpn: VirtPageNum, page_table: &mut PageTable) {
-        self.vpn_table.push(vpn);
-        self.map_one(page_table, vpn);
-    }
-
-    pub fn from_another(another: &ChunkArea) -> Self {
-        Self {
-            vpn_table: Vec::new(),
-            data_frames: Vec::new(),
-            map_type: another.map_type,
-            map_perm: another.map_perm,
-            start_va: another.start_va,
-            end_va: another.end_va,
-        }
-    }
-
-    // Alloc and map one page
-    pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
-        let ppn: PhysPageNum;
-        match self.map_type {
-            MapType::Identical => {
-                ppn = PhysPageNum(vpn.0);
-            }
-            MapType::Framed => {
-                if let Some(frame) = frame_alloc() {
-                    ppn = frame.ppn;
-                    self.data_frames.push(frame);
-                } else {
-                    panic!("No more memory!");
-                }
-            }
-        }
-        let pte_flags = PTEFlags::from_bits(self.map_perm.bits()).unwrap();
-        page_table.map(vpn, ppn, pte_flags);
-    }
-
-    // Alloc and map all pages
-    // pub fn map(&mut self, page_table: &mut PageTable) {
-    //     for vpn in self.vpn_table {
-    //         self.map_one(page_table, vpn);
-    //     }
-    // }
-
-    pub fn unmap(&mut self, page_table: &mut PageTable) {
-        for vpn in self.vpn_table.clone() {
-            page_table.unmap(vpn);
-        }
-    }
-}
-
-// 虚拟页面映射到物理页帧的方式
-#[derive(Copy, Clone, PartialEq, Debug)]
-pub enum MapType {
-    Identical, // 恒等映射，一般用在内核空间（空间已分配）
-    Framed, // 对于每个虚拟页面都有一个新分配的物理页帧与之对应，虚地址与物理地址的映射关系是相对随机的
-}
-
-bitflags! {
-    /// 页表项标志位 `PTE Flags` 的一个子集，仅保留 `U` `R` `W` `X` 四个标志位
-    #[derive(Clone, Copy)]
-    pub struct MapPermission: u8 {
-        const R = 1 << 1;
-        const W = 1 << 2;
-        const X = 1 << 3;
-        const U = 1 << 4;
-    }
-}
-
-impl MapPermission {
-    pub fn is_read(self) -> bool {
-        self.bits() & 1 << 1 == 1 << 1
-    }
-    pub fn is_write(self) -> bool {
-        self.bits() & 1 << 2 == 1 << 2
-    }
-    pub fn is_execute(self) -> bool {
-        self.bits() & 1 << 3 == 1 << 3
-    }
-    pub fn is_user(self) -> bool {
-        self.bits() & 1 << 4 == 1 << 4
-    }
-}
-
-/// ### 连续逻辑段
-/// - 一段虚拟页号连续的区间
-///
-/// |参数|描述|
-/// |--|--|
-/// |`vpn_range`|描述一段虚拟页号的连续区间，表示该逻辑段在地址区间中的位置和长度
-/// |`data_frames`|键值对容器 BTreeMap ,保存了该逻辑段内的每个虚拟页面的 VPN 和被映射到的物理页帧<br>这些物理页帧被用来存放实际内存数据而不是作为多级页表中的中间节点
-/// |`map_type`|描述该逻辑段内的所有虚拟页面映射到物理页帧的方式
-/// |`map_perm`|控制该逻辑段的访问方式，它是页表项标志位 PTEFlags 的一个子集，仅保留 `U` `R` `W` `X` 四个标志位
-/// ```
-/// MapArea::new(start_va: VirtAddr, end_va: VirtAddr, map_type: MapType, map_perm: MapPermission) -> Self
-/// MapArea::map(&mut self, page_table: &mut PageTable)
-/// MapArea::unmap(&mut self, page_table: &mut PageTable)
-/// MapArea::copy_data(&mut self, page_table: &mut PageTable, data: &[u8])
-/// ```
-pub struct MapArea {
-    /// 描述一段虚拟页号的连续区间，表示该逻辑段在地址区间中的位置和长度
-    vpn_range: VPNRange,
-    /// 键值对容器 BTreeMap ,保存了该逻辑段内的每个虚拟页面的 VPN 和被映射到的物理页帧<br>
-    /// 这些物理页帧被用来存放实际内存数据而不是作为多级页表中的中间节点
-    data_frames: Vec<FrameTracker>,
-    /// 描述该逻辑段内的所有虚拟页面映射到物理页帧的方式
-    map_type: MapType,
-    /// 控制该逻辑段的访问方式，它是页表项标志位 PTEFlags 的一个子集，仅保留 `U` `R` `W` `X` 四个标志位
-    map_perm: MapPermission,
-
-    // 决赛补充
-    start_va: VirtAddr,
-    end_va: VirtAddr,
-}
-
-impl MapArea {
-    /// ### 根据起始 *(会被下取整)* 和终止 *(会被上取整)* 虚拟地址生成一块逻辑段
-    /// - 逻辑段大于等于虚拟地址范围
-    pub fn new(
-        start_va: VirtAddr,
-        end_va: VirtAddr,
-        map_type: MapType,
-        map_perm: MapPermission,
-    ) -> Self {
-        let start_vpn: VirtPageNum = start_va.floor();
-        let end_vpn: VirtPageNum = end_va.ceil();
-        Self {
-            vpn_range: VPNRange::new(start_vpn, end_vpn),
-            data_frames: Vec::new(),
-            map_type,
-            map_perm,
-            start_va,
-            end_va,
-        }
-    }
-
-    /// ### 从一个逻辑段复制得到一个虚拟地址区间、映射方式和权限控制均相同的逻辑段
-    /// 不同的是由于它还没有真正被映射到物理页帧上，所以 data_frames 字段为空
-    pub fn from_another(another: &MapArea) -> Self {
-        Self {
-            vpn_range: VPNRange::new(another.vpn_range.get_start(), another.vpn_range.get_end()),
-            data_frames: Vec::new(),
-            map_type: another.map_type,
-            map_perm: another.map_perm,
-            start_va: another.start_va,
-            end_va: another.end_va,
-        }
-    }
-
-    /// 在多级页表中根据vpn分配空间
-    pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
-        let ppn: PhysPageNum;
-        match self.map_type {
-            MapType::Identical => {
-                ppn = PhysPageNum(vpn.0);
-            }
-            MapType::Framed => {
-                // 获取一个物理页帧
-                let frame = frame_alloc().expect("out of memory");
-                ppn = frame.ppn;
-                // 将物理页帧生命周期捆绑到data_frames中，从而进程结束时可以自动释放
-                self.data_frames.push(frame);
-            }
-        }
-        let pte_flags = PTEFlags::from_bits(self.map_perm.bits()).unwrap();
-        // 在多级页表中建立映射
-        page_table.map(vpn, ppn, pte_flags);
-    }
-
-    /// 在多级页表中为逻辑块分配空间
-    pub fn map(&mut self, page_table: &mut PageTable) {
-        for vpn in self.vpn_range {
-            self.map_one(page_table, vpn);
-        }
-    }
-
-    /// 将当前逻辑段到物理内存的映射从传入的该逻辑段所属的地址空间的多级页表中删除
-    pub fn unmap(&mut self, page_table: &mut PageTable) {
-        for vpn in self.vpn_range {
-            page_table.unmap(vpn);
-        }
-    }
-
-    pub fn copy_data(
-        &mut self,
-        page_table: &mut PageTable,
-        elf_file: Arc<OSInode>,
-        data_start: usize,
-        data_len: usize,
-        page_offset: usize,
-    ) {
-        assert_eq!(self.map_type, MapType::Framed);
-        let mut offset: usize = 0;
-        let mut page_offset: usize = page_offset;
-        let mut current_vpn = self.vpn_range.get_start();
-        let mut data_len = data_len;
-        loop {
-            let mut data = Vec::new();
-            let mut data_slice = data.as_slice();
-            _ = data_slice; // 消除 value never read 警告
-
-            // 利用部分堆空间对 busybox 做部分缓存加快读取速度
-            if elf_file.name() == "busybox" && data_start == 0 && offset < 95 * PAGE_SIZE {
-                let busybox_slice = BUSYBOX.as_slice();
-                data_slice = &busybox_slice[data_start + offset..data_start + offset + PAGE_SIZE]
-            } else {
-                // 正常读取
-                data = elf_file.read_vec((data_start + offset) as isize, data_len.min(PAGE_SIZE));
-                data_slice = data.as_slice();
-            }
-
-            let src = &data_slice[0..data_len.min(PAGE_SIZE - page_offset)];
-            let dst = &mut page_table
-                .translate(current_vpn)
-                .unwrap()
-                .ppn()
-                .get_bytes_array()[page_offset..page_offset + src.len()];
-            dst.copy_from_slice(src);
-            offset += PAGE_SIZE - page_offset;
-
-            page_offset = 0;
-            data_len -= src.len();
-            if data_len == 0 {
-                break;
-            }
-            current_vpn.step();
-        }
-    }
-}
-
-lazy_static! {
-    pub static ref BUSYBOX: Vec<u8> = {
-        if let Some(app_inode) = open("/", "busybox", OpenFlags::O_RDONLY) {
-            app_inode.read_vec(0, 96 * 4096)
-        } else {
-            panic!("can't find busybox");
-        }
-    };
-}
-
+// For debug usage.
 impl MemorySet {
     #[allow(unused)]
     pub fn debug_show_data(&self, va: VirtAddr) {

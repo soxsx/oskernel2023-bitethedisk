@@ -1,11 +1,12 @@
-use super::signal::SigSet;
+use super::kernel_stack::KernelStack;
+use super::signals::SigSet;
 use super::{aux, RLimit, TaskContext, AT_RANDOM, RESOURCE_KIND_NUMBER};
-use super::{pid_alloc, KernelStack, PidHandle, SignalFlags};
+use super::{pid_alloc, PidHandle, SignalFlags};
 use crate::consts::*;
 use crate::fs::{File, OSInode, Stdin, Stdout};
 use crate::mm::kernel_vmm::KERNEL_VMM;
 use crate::mm::{
-    translated_refmut, MapPermission, MemorySet, MmapArea, MmapFlags, MmapProts, PageTableEntry,
+    translated_mut, MapPermission, MemorySet, MmapArea, MmapFlags, MmapProts, PageTableEntry,
     PhysPageNum, VirtAddr, VirtPageNum,
 };
 use crate::trap::handler::user_trap_handler;
@@ -66,8 +67,8 @@ pub struct TaskControlBlockInner {
 }
 
 impl TaskControlBlockInner {
-    pub fn get_trap_cx(&self) -> &'static mut TrapContext {
-        self.trap_cx_ppn.get_mut()
+    pub fn trap_context(&self) -> &'static mut TrapContext {
+        self.trap_cx_ppn.as_mut()
     }
     /// 获取用户地址空间的 token (符合 satp CSR 格式要求的多级页表的根节点所在的物理页号)
     pub fn get_user_token(&self) -> usize {
@@ -133,7 +134,7 @@ impl TaskControlBlock {
         let pid_handle = pid_alloc();
         let tgid = pid_handle.0;
         let kernel_stack = KernelStack::new(&pid_handle);
-        let kernel_stack_top = kernel_stack.get_top();
+        let kernel_stack_top = kernel_stack.top();
         // 在该进程的内核栈上压入初始化的任务上下文，使得第一次任务切换到它的时候可以跳转到 trap_return 并进入用户态开始执行
         let task_control_block = Self {
             pid: pid_handle,
@@ -168,7 +169,7 @@ impl TaskControlBlock {
         };
         // 初始化位于该进程应用地址空间中的 Trap 上下文，使得第一次进入用户态的时候时候能正
         // 确跳转到应用入口点并设置好用户栈，同时也保证在 Trap 的时候用户态能正确进入内核态
-        let trap_cx = task_control_block.lock().get_trap_cx();
+        let trap_cx = task_control_block.lock().trap_context();
         *trap_cx = TrapContext::app_init_context(
             entry_point,
             user_sp,
@@ -207,10 +208,10 @@ impl TaskControlBlock {
                 let mut p = user_sp;
                 for c in envs[env].as_bytes() {
                     // 将参数写入到用户栈
-                    *translated_refmut(memory_set.token(), p as *mut u8) = *c;
+                    *translated_mut(memory_set.token(), p as *mut u8) = *c;
                     p += 1;
                 } // 写入字符串结束标记
-                *translated_refmut(memory_set.token(), p as *mut u8) = 0;
+                *translated_mut(memory_set.token(), p as *mut u8) = 0;
                 user_sp
             })
             .collect();
@@ -223,10 +224,10 @@ impl TaskControlBlock {
                 let mut p = user_sp;
                 for c in args[arg].as_bytes() {
                     // 将参数写入到用户栈
-                    *translated_refmut(memory_set.token(), p as *mut u8) = *c;
+                    *translated_mut(memory_set.token(), p as *mut u8) = *c;
                     p += 1;
                 } // 写入字符串结束标记
-                *translated_refmut(memory_set.token(), p as *mut u8) = 0;
+                *translated_mut(memory_set.token(), p as *mut u8) = 0;
                 user_sp
             })
             .collect();
@@ -238,18 +239,18 @@ impl TaskControlBlock {
         // 分配 auxs 空间，并写入数据
         for i in 0..auxs.len() {
             user_sp -= core::mem::size_of::<aux::AuxEntry>();
-            *translated_refmut(memory_set.token(), user_sp as *mut aux::AuxEntry) = auxs[i];
+            *translated_mut(memory_set.token(), user_sp as *mut aux::AuxEntry) = auxs[i];
         }
 
         // envp，0，表示结束
         user_sp -= core::mem::size_of::<usize>();
-        *translated_refmut(memory_set.token(), user_sp as *mut usize) = 0;
+        *translated_mut(memory_set.token(), user_sp as *mut usize) = 0;
 
         // envp
         user_sp -= (envs.len()) * core::mem::size_of::<usize>();
         let envp_base = user_sp; // 参数字符串指针起始地址
         for i in 0..envs.len() {
-            *translated_refmut(
+            *translated_mut(
                 memory_set.token(),
                 (envp_base + i * core::mem::size_of::<usize>()) as *mut usize,
             ) = envv[i];
@@ -257,13 +258,13 @@ impl TaskControlBlock {
 
         // argv, 0, 表示结束
         user_sp -= core::mem::size_of::<usize>();
-        *translated_refmut(memory_set.token(), user_sp as *mut usize) = 0;
+        *translated_mut(memory_set.token(), user_sp as *mut usize) = 0;
 
         // argv
         user_sp -= (args.len()) * core::mem::size_of::<usize>();
         let argv_base = user_sp; // 参数字符串指针起始地址
         for i in 0..args.len() {
-            *translated_refmut(
+            *translated_mut(
                 memory_set.token(),
                 (argv_base + i * core::mem::size_of::<usize>()) as *mut usize,
             ) = argv[i];
@@ -271,12 +272,12 @@ impl TaskControlBlock {
 
         // argc
         user_sp -= core::mem::size_of::<usize>();
-        *translated_refmut(memory_set.token(), user_sp as *mut usize) = args.len();
+        *translated_mut(memory_set.token(), user_sp as *mut usize) = args.len();
         let mut inner = self.lock();
 
         inner.memory_set = memory_set; // 这将导致原有的地址空间生命周期结束，里面包含的全部物理页帧都会被回收
         inner.trap_cx_ppn = trap_cx_ppn;
-        let trap_cx = inner.get_trap_cx();
+        let trap_cx = inner.trap_context();
 
         inner
             .fd_table
@@ -294,7 +295,7 @@ impl TaskControlBlock {
             entry_point,
             user_sp,
             KERNEL_VMM.lock().token(),
-            self.kernel_stack.get_top(),
+            self.kernel_stack.top(),
             user_trap_handler as usize,
         );
         // 修改 Trap 上下文中的 a0/a1 寄存器
@@ -325,7 +326,7 @@ impl TaskControlBlock {
         }
         // 根据 PID 创建一个应用内核栈
         let kernel_stack = KernelStack::new(&pid_handle); // use 2 pages
-        let kernel_stack_top = kernel_stack.get_top();
+        let kernel_stack_top = kernel_stack.top();
         // copy fd table
         let mut new_fd_table: Vec<Option<Arc<dyn File + Send + Sync>>> = Vec::new();
         for fd in parent_inner.fd_table.iter() {
@@ -362,7 +363,7 @@ impl TaskControlBlock {
         // 把新生成的进程加入到子进程向量中
         parent_inner.children.push(task_control_block.clone());
         // 更新子进程 trap 上下文中的栈顶指针
-        let trap_cx = task_control_block.lock().get_trap_cx();
+        let trap_cx = task_control_block.lock().trap_context();
         trap_cx.kernel_sp = kernel_stack_top;
 
         task_control_block
