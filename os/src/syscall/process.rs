@@ -1,4 +1,5 @@
 use crate::consts::CLOCK_FREQ;
+use crate::fs::open_flags::CreateMode;
 use crate::fs::{open, OpenFlags};
 use crate::mm::{
     translated_bytes_buffer, translated_mut, translated_ref, translated_str, MmapFlags, MmapProts,
@@ -190,7 +191,7 @@ pub fn sys_exec(path: *const u8, mut args: *const usize, mut _envs: *const usize
             new_args.push(i.clone());
         }
         task.exec(
-            open("/", "busybox", OpenFlags::O_RDONLY).unwrap(),
+            open("/", "busybox", OpenFlags::O_RDONLY, CreateMode::empty()).unwrap(),
             new_args,
             envs_vec,
         );
@@ -203,6 +204,7 @@ pub fn sys_exec(path: *const u8, mut args: *const usize, mut _envs: *const usize
         inner.current_path.as_str(),
         path.as_str(),
         OpenFlags::O_RDONLY,
+        CreateMode::empty(),
     ) {
         drop(inner);
         task.exec(app_inode, args_vec, envs_vec);
@@ -494,7 +496,7 @@ pub fn sys_set_tid_address(tidptr: *mut usize) -> isize {
 ///     - tls: TLS线程本地存储描述符；
 ///     - ctid: 子线程ID；
 /// * 返回值：成功则返回子进程的线程ID，失败返回-1；
-/// 
+///
 pub fn sys_clone(flags: usize, stack: usize, ptid: usize, tls: usize, ctid: usize) -> isize {
     todo!()
 }
@@ -502,7 +504,7 @@ pub fn sys_clone(flags: usize, stack: usize, ptid: usize, tls: usize, ctid: usiz
 /// * 功能：执行一个指定的程序；
 /// * 输入：
 ///     - path: 待执行程序路径名称，
-///     - argv: 程序的参数， 
+///     - argv: 程序的参数，
 ///     - envp: 环境变量的数组指针
 /// * 返回值：成功不返回，失败返回-1；
 pub fn sys_execve(path: *const u8, argv: *const u8, envp: *const u8) -> isize {

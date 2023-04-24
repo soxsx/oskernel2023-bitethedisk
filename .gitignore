@@ -2,3 +2,4 @@ build/
 temp/
 sbi-qemu
 kernel-qemu
+temp

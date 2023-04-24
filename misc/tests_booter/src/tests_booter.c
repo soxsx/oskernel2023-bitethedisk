@@ -4,40 +4,39 @@
 #include "unistd.h"
 
 char *tests[] = {
-    // "mnt/test_mount", /* 1 */ 
-    "brk",              /* 2 */ 
-    "chdir",            /* 3 */ 
-    "clone",            /* 4 */ 
-    "close",            /* 5 */ 
-    "dup",              /* 6 */ 
-    "dup2",             /* 7 */ 
-    "execve",           /* 8 */ 
-    "exit",             /* 9 */ 
-     "fork",            /* 10 */
-     "fstat",           /* 11 */
-     "getcwd",          /* 12 */
-     "getdents",        /* 13 */
-     "getpid",          /* 14 */
-     "getppid",         /* 15 */
-     "gettimeofday",    /* 16 */
-    //  "mkdir_",          /* 17 */
-     "mmap",            /* 18 */
-     "mount",           /* 19 */
-     "munmap",          /* 20 */
-     "open",            /* 21 */
-    //  "openat",          /* 22 */
-    //  "pipe",            /* 23 */
-     "read",            /* 24 */
-     "sleep",           /* 25 */
-     "test_echo",       /* 26 */
-     "times",           /* 27 */
-     "umount",          /* 28 */
-     "uname",           /* 29 */
-     "unlink",          /* 30 */
-     "wait",            /* 31 */
-     "waitpid",         /* 32 */
-     "write",           /* 33 */
-     "yield",           /* 34 */
+    "brk",          /* 1 */
+    "chdir",        /* 2 */
+    "clone",        /* 3 */
+    "close",        /* 4 */
+    "dup",          /* 5 */
+    "dup2",         /* 6 */
+    "execve",       /* 7 */
+    "exit",         /* 8 */
+    "fork",         /* 9 */
+    "fstat",        /* 10 */
+    "getcwd",       /* 11 */
+    "getdents",     /* 12 */
+    "getpid",       /* 13 */
+    "getppid",      /* 14 */
+    "gettimeofday", /* 15 */
+    "mkdir_",       /* 16 */
+    "mmap",         /* 17 */
+    "mount",        /* 18 */
+    "munmap",       /* 19 */
+    "open",         /* 20 */
+    "openat",       /* 21 */
+    // "pipe",             /* 22 */
+    "read",      /* 23 */
+    "sleep",     /* 24 */
+    "test_echo", /* 25 */
+    "times",     /* 26 */
+    "umount",    /* 27 */
+    "uname",     /* 28 */
+    "unlink",    /* 29 */
+    "wait",      /* 30 */
+    "waitpid",   /* 31 */
+    "write",     /* 32 */
+    "yield",     /* 33 */
 };
 
 #define NTESTS (sizeof(tests) / sizeof(tests[0]))

@@ -2,6 +2,7 @@ mod dirent;
 mod fdset;
 mod inode;
 mod mount;
+pub mod open_flags;
 mod pipe;
 mod stat;
 mod stdio;
@@ -87,8 +88,9 @@ impl Debug for dyn File + Send + Sync {
 
 pub use dirent::Dirent;
 pub use fdset::*;
-pub use inode::{chdir, init, open, OSInode, OpenFlags};
+pub use inode::{chdir, init, open, OSInode};
 pub use mount::MNT_TABLE;
+pub use open_flags::OpenFlags;
 pub use pipe::{make_pipe, Pipe};
 pub use stat::*;
 pub use stdio::{Stdin, Stdout};

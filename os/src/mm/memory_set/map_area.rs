@@ -4,7 +4,7 @@ use crate::{
     consts::PAGE_SIZE,
     fs::OSInode,
     mm::{
-        address::VPNRange, alloc_frame, memory_set::BUSYBOX, page_table::PTEFlags, FrameTracker,
+        address::VPNRange, alloc_frame, page_table::PTEFlags, FrameTracker,
         PageTable, PhysPageNum, StepByOne, VirtAddr, VirtPageNum,
     },
 };
@@ -122,19 +122,11 @@ impl MapArea {
         let mut current_vpn = self.vpn_range.get_start();
         let mut data_len = data_len;
         loop {
-            let mut data = Vec::new();
-            let mut data_slice = data.as_slice();
-            _ = data_slice; // 消除 value never read 警告
+            let data;
+            let data_slice;
 
-            // 利用部分堆空间对 busybox 做部分缓存加快读取速度
-            if elf_file.name() == "busybox" && data_start == 0 && offset < 95 * PAGE_SIZE {
-                let busybox_slice = BUSYBOX.as_slice();
-                data_slice = &busybox_slice[data_start + offset..data_start + offset + PAGE_SIZE]
-            } else {
-                // 正常读取
-                data = elf_file.read_vec((data_start + offset) as isize, data_len.min(PAGE_SIZE));
-                data_slice = data.as_slice();
-            }
+            data = elf_file.read_vec((data_start + offset) as isize, data_len.min(PAGE_SIZE));
+            data_slice = data.as_slice();
 
             let src = &data_slice[0..data_len.min(PAGE_SIZE - page_offset)];
             let dst = &mut page_table

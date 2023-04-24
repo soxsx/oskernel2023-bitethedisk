@@ -147,7 +147,6 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         ),
 
         // HINT: 这里需要先保留，虽然文档没要求，但现有实现是可用的
-        // SYS_FORK => sys_fork(args[0], args[1], args[2], args[3], args[4]),
         // SYS_EXEC => sys_exec(
         //     args[0] as *const u8,
         //     args[1] as *const usize,

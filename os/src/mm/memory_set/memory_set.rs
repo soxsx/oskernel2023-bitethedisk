@@ -1,6 +1,7 @@
 use super::chunk_area::ChunkArea;
 use super::{MapArea, MapPermission, MapType};
 use crate::consts::{PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE, USER_STACK_SIZE};
+use crate::fs::open_flags::CreateMode;
 use crate::fs::{open, OSInode, OpenFlags};
 use crate::mm::frame_allocator::{enquire_refcount, frame_add_ref};
 use crate::mm::page_table::PTEFlags;
@@ -151,15 +152,18 @@ impl MemorySet {
     /// ### 从 ELF 格式可执行文件解析出各数据段并对应生成应用的地址空间
     pub fn load_elf(elf_file: Arc<OSInode>, auxs: &mut Vec<AuxEntry>) -> (Self, usize, usize) {
         let mut memory_set = Self::new_bare();
+
         // 将跳板插入到应用地址空间
         memory_set.map_trampoline();
+
         // 在应用地址空间中映射次高页面来存放 Trap 上下文
         // 将 TRAP_CONTEXT 段尽量放前，以节省 cow 时寻找时间
         memory_set.map_trap_context();
 
         // 第一次读取前64字节确定程序表的位置与大小
         let elf_head_data = elf_file.read_vec(0, 64);
-        let elf = xmas_elf::ElfFile::new(elf_head_data.as_slice()).unwrap();
+        let elf_head_data_slice = elf_head_data.as_slice();
+        let elf = xmas_elf::ElfFile::new(elf_head_data_slice).unwrap();
 
         let ph_entry_size = elf.header.pt2.ph_entry_size() as usize;
         let ph_offset = elf.header.pt2.ph_offset() as usize;
@@ -222,8 +226,13 @@ impl MemorySet {
         }
         if elf_interpreter {
             // 动态链接
-            let interpreter_file = open("/", "ld-musl-riscv64.so.1", OpenFlags::O_RDONLY)
-                .expect("can't find interpreter file");
+            let interpreter_file = open(
+                "/",
+                "ld-musl-riscv64.so.1",
+                OpenFlags::O_RDONLY,
+                CreateMode::empty(),
+            )
+            .expect("can't find interpreter file");
             // 第一次读取前64字节确定程序表的位置与大小
             let interpreter_head_data = interpreter_file.read_vec(0, 64);
             let interp_elf = xmas_elf::ElfFile::new(interpreter_head_data.as_slice()).unwrap();

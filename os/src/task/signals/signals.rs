@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 pub const SIGHUP: u32 = 1;
 pub const SIGINT: u32 = 2;
 pub const SIGQUIT: u32 = 3;

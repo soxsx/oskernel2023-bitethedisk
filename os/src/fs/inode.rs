@@ -1,6 +1,7 @@
 use super::{
+    open_flags::CreateMode,
     stat::{S_IFCHR, S_IFDIR, S_IFREG},
-    Dirent, File, Kstat, Timespec,
+    Dirent, File, Kstat, OpenFlags, Timespec,
 };
 use crate::{drivers::BLOCK_DEVICE, mm::UserBuffer};
 use alloc::{
@@ -203,7 +204,13 @@ pub fn list_apps(dir: Arc<VFile>) {
                 }
             }
             info!("{}/", app.0);
-            let dir = open(dir.name(), app.0.as_str(), OpenFlags::O_RDONLY).unwrap();
+            let dir = open(
+                dir.name(),
+                app.0.as_str(),
+                OpenFlags::O_RDONLY,
+                CreateMode::empty(),
+            )
+            .unwrap();
             let inner = dir.inner.lock();
             let inode = inner.inode.clone();
             unsafe {
@@ -217,38 +224,12 @@ pub fn list_apps(dir: Arc<VFile>) {
     }
 }
 
-// 定义一份打开文件的标志
-bitflags! {
-    #[derive(Debug)]
-    pub struct OpenFlags: u32 {
-        const O_RDONLY    = 0;
-        const O_WRONLY    = 1 << 0;
-        const O_RDWR      = 1 << 1;
-        const O_CREATE    = 1 << 6;
-        const O_EXCL      = 1 << 7;
-        const O_TRUNC     = 1 << 9;
-        const O_APPEND    = 1 << 10;
-        const O_NONBLOCK  = 1 << 11;
-        const O_LARGEFILE = 1 << 15;
-        const O_DIRECTROY = 1 << 16;
-        const O_NOFOLLOW  = 1 << 17;
-        const O_CLOEXEC   = 1 << 19;
-    }
-}
-
-impl OpenFlags {
-    pub fn read_write(&self) -> (bool, bool) {
-        if self.is_empty() {
-            (true, false)
-        } else if self.contains(Self::O_WRONLY) {
-            (false, true)
-        } else {
-            (true, true)
-        }
-    }
-}
-
-pub fn open(work_path: &str, path: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
+pub fn open(
+    work_path: &str,
+    path: &str,
+    flags: OpenFlags,
+    _mode: CreateMode,
+) -> Option<Arc<OSInode>> {
     // println!("[DEBUG] enter open: work_path:{}, path:{}, flags:{:?}", work_path, path, flags);
     let mut pathv: Vec<&str> = {
         if path == "libc.musl-riscv64.so.1" {
