@@ -125,6 +125,7 @@ impl PageTable {
             //println!("translate_va:pa_align = {:?}", aligned_pa);
             let offset = va.page_offset();
             let aligned_pa_usize: usize = aligned_pa.into();
+
             (aligned_pa_usize + offset).into()
         })
     }

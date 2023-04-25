@@ -21,6 +21,7 @@ impl MountTable {
         _ = flags;
 
         self.mnt_list.push((special, dir, fstype));
+
         0
     }
 

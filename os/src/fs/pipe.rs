@@ -41,7 +41,7 @@ enum RingBufferStatus {
     Normal,
 }
 
-const RING_BUFFER_SIZE: usize = 4096; // 4KB
+const RING_BUFFER_SIZE: usize = 2048; // FIXME: 2048 能跑，4096 会卡死，可能需要调整堆大小？ 或者是因为爆栈了？
 
 /// ### 管道缓冲区(双端队列,向右增长)
 /// |成员变量|描述|
@@ -121,6 +121,7 @@ pub fn make_pipe() -> (Arc<Pipe>, Arc<Pipe>) {
     let read_end = Arc::new(Pipe::read_end_with_buffer(buffer.clone()));
     let write_end = Arc::new(Pipe::write_end_with_buffer(buffer.clone()));
     buffer.lock().set_write_end(&write_end);
+
     (read_end, write_end)
 }
 

@@ -60,7 +60,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_FACCESSAT => sys_faccessat(),
         SYS_CHDIR => sys_chdir(args[0] as *const u8),
         SYS_CLOSE => sys_close(args[0]),
-        SYS_PIPE2 => sys_pipe2(args[0] as *mut isize, args[1] as usize),
+        SYS_PIPE2 => sys_pipe2(args[0] as *mut i32, args[1] as usize),
         SYS_GETDENTS64 => sys_getdents64(args[0] as isize, args[1] as *mut u8, args[2]),
         SYS_LSEEK => sys_lseek(args[0], args[1], args[2]),
         SYS_READ => sys_read(args[0], args[1] as *const u8, args[2]),

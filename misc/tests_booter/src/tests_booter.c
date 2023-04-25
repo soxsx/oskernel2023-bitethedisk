@@ -25,7 +25,7 @@ char *tests[] = {
     "munmap",       /* 19 */
     "open",         /* 20 */
     "openat",       /* 21 */
-    // "pipe",             /* 22 */
+    "pipe",         /* 22 */
     "read",      /* 23 */
     "sleep",     /* 24 */
     "test_echo", /* 25 */

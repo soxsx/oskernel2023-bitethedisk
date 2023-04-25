@@ -40,22 +40,24 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
         warn!("[WARNING] sys_write: fd >= inner.fd_table.len, return -1");
         return -1;
     }
-    if inner
+
+    let is_va_range_valid = inner
         .memory_set
-        .check_va_range(VirtAddr::from(buf as usize), len)
-        == false
-    {
+        .check_va_range(VirtAddr::from(buf as usize), len);
+    if !is_va_range_valid {
         return -EFAULT;
     }
+
     if let Some(file) = &inner.fd_table[fd] {
         // 文件不可写
         if !file.writable() {
-            warn!("[WARNING] sys_write: file can't write, return -1");
+            warn!(
+                "[WARNING] sys_write: file can't write, return -1, filename: {}",
+                file.name()
+            );
             return -1;
         }
-        let file = file.clone();
-        drop(inner);
-        drop(task); // 需要及时释放减少引用数
+
         let write_size =
             file.write(UserBuffer::wrap(translated_bytes_buffer(token, buf, len))) as isize;
         // debug!("[DEBUG] sys_write: return write_size: {}",write_size);
@@ -163,15 +165,17 @@ pub fn sys_openat(dirfd: isize, path: *const u8, flags: u32, mode: u32) -> isize
                     return -EMFILE;
                 }
                 inner.fd_table[fd] = Some(tar_f);
-                info!("[DEBUG] sys_openat return new fd:{}", fd);
+                // info!("[DEBUG] sys_openat return new fd:{}", fd);
                 fd as isize
             } else {
                 warn!("[WARNING] sys_openat: can't open file:{}, return -1", path);
+
                 -1
             }
         } else {
             // dirfd 对应条目为 None
             warn!("[WARNING] sys_read: fd {} is none, return -1", dirfd);
+
             -1
         }
     }
@@ -195,6 +199,7 @@ pub fn sys_close(fd: usize) -> isize {
     // 把 fd 对应的值取走，变为 None
     inner.fd_table[fd].take();
     // info!("[DEBUG] sys_close return 0");
+
     0
 }
 
@@ -211,30 +216,34 @@ pub fn sys_close(fd: usize) -> isize {
 /// 内核需要按顺序将管道读端和写端的文件描述符写入到数组中。
 /// - 返回值：如果出现了错误则返回 -1，否则返回 0 。可能的错误原因是：传入的地址不合法。
 /// - syscall ID：59
-pub fn sys_pipe2(pipe: *mut isize, _flag: usize) -> isize {
+pub fn sys_pipe2(pipe: *mut i32, _flag: usize) -> isize {
     let fd0 = pipe;
     let fd1 = unsafe { pipe.add(1) };
 
-    // TODO: 会直接卡死，可能是参数传递有问题
     let task = current_task().unwrap();
     let token = current_user_token();
     let mut inner = task.lock();
 
-    let fd0 = *translated_ref(token, fd0);
-    let fd1 = *translated_ref(token, fd1);
-    debug!("fd[0]: {}, fd[1]: {}, flag: {}", fd0, fd1, _flag);
-
     let (pipe_read, pipe_write) = make_pipe();
+
     let read_fd = inner.alloc_fd();
     if read_fd == FD_LIMIT {
         return -EMFILE;
     }
-
     inner.fd_table[read_fd] = Some(pipe_read);
+
     let write_fd = inner.alloc_fd();
     inner.fd_table[write_fd] = Some(pipe_write);
-    *translated_mut(token, pipe) = read_fd as isize;
-    *translated_mut(token, unsafe { pipe.add(1) }) = write_fd as isize;
+
+    println!("fd0: {:?}, fd1: {:?}", fd0, fd1);
+    println!("read_fd: {:?}, write_fd: {:?}", read_fd, write_fd);
+
+    let fd0_phys_addr = translated_mut(token, fd0 as *mut _);
+    let fd1_phys_addr = translated_mut(token, fd1 as *mut _);
+
+    *fd0_phys_addr = read_fd as isize;
+    *fd1_phys_addr = write_fd as isize;
+    println!("fd0_phys: {:?}, fd1_phys: {:?}", fd0_phys_addr, fd1_phys_addr);
 
     0
 }
