@@ -9,7 +9,6 @@ use alloc::{
     sync::Arc,
     vec::Vec,
 };
-use bitflags::*;
 use core::str::FromStr;
 use fat32::{create_root_vfile, FAT32Manager, VFile, ATTR_ARCHIVE, ATTR_DIRECTORY};
 use spin::Mutex;
@@ -159,61 +158,6 @@ lazy_static! {
 
         Arc::new(create_root_vfile(&fat32_manager)) // 返回根目录
     };
-}
-
-// TODO: 拆分到多个模块
-pub fn init() {
-    // 预创建文件/文件夹
-    // open(
-    //     "/",
-    //     "proc",
-    //     OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE,
-    //     CreateMode::empty(),
-    // );
-    // open(
-    //     "/",
-    //     "tmp",
-    //     OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE,
-    //     CreateMode::empty(),
-    // );
-    // open(
-    //     "/",
-    //     "dev",
-    //     OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE,
-    //     CreateMode::empty(),
-    // );
-    // open(
-    //     "/",
-    //     "var",
-    //     OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE,
-    //     CreateMode::empty(),
-    // );
-    // open(
-    //     "/dev",
-    //     "misc",
-    //     OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE,
-    //     CreateMode::empty(),
-    // );
-    // open(
-    //     "/var",
-    //     "tmp",
-    //     OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE,
-    //     CreateMode::empty(),
-    // );
-    // open("/dev", "null", OpenFlags::O_CREATE, CreateMode::empty());
-    // open("/dev", "zero", OpenFlags::O_CREATE, CreateMode::empty());
-    // open("/proc", "mounts", OpenFlags::O_CREATE, CreateMode::empty());
-    // open("/proc", "meminfo", OpenFlags::O_CREATE, CreateMode::empty());
-    // open("/dev/misc", "rtc", OpenFlags::O_CREATE, CreateMode::empty());
-    // open(
-    //     "/var/tmp",
-    //     "lmbench",
-    //     OpenFlags::O_CREATE,
-    //     CreateMode::empty(),
-    // );
-    println!("/**** All Files  ****");
-    list_apps(ROOT_INODE.clone());
-    println!("**********************/");
 }
 
 static mut LAYER: usize = 0;

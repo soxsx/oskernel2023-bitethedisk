@@ -1,5 +1,5 @@
+mod default_files;
 mod dirent;
-mod fdset;
 mod inode;
 mod mount;
 pub mod open_flags;
@@ -7,9 +7,28 @@ mod pipe;
 mod stat;
 mod stdio;
 
-use crate::{mm::UserBuffer, timer::Timespec};
+use crate::{
+    fs::inode::{list_apps, ROOT_INODE},
+    mm::UserBuffer,
+    timer::Timespec,
+};
 use alloc::vec::Vec;
 use core::fmt::{self, Debug, Formatter};
+
+pub use dirent::Dirent;
+pub use inode::{chdir, open, OSInode};
+pub use mount::MNT_TABLE;
+pub use open_flags::OpenFlags;
+pub use pipe::{make_pipe, Pipe};
+pub use stat::*;
+pub use stdio::{Stdin, Stdout};
+
+pub fn init() {
+    default_files::pre_init(false);
+    println!("===+ Files Loaded +===");
+    list_apps(ROOT_INODE.clone());
+    println!("===+==============+===");
+}
 
 pub trait File: Send + Sync {
     fn readable(&self) -> bool;
@@ -74,23 +93,8 @@ pub trait File: Send + Sync {
     }
 }
 
-// impl Debug for dyn File {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-//         f.write_fmt(format_args!("File trait"))
-//     }
-// }
-
 impl Debug for dyn File + Send + Sync {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!("name:{}", self.name()))
+        write!(f, "name:{}", self.name())
     }
 }
-
-pub use dirent::Dirent;
-pub use fdset::*;
-pub use inode::{chdir, init, open, OSInode};
-pub use mount::MNT_TABLE;
-pub use open_flags::OpenFlags;
-pub use pipe::{make_pipe, Pipe};
-pub use stat::*;
-pub use stdio::{Stdin, Stdout};
