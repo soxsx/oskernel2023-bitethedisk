@@ -211,15 +211,8 @@ pub fn open(
     _mode: CreateMode,
 ) -> Option<Arc<OSInode>> {
     // println!("[DEBUG] enter open: work_path:{}, path:{}, flags:{:?}", work_path, path, flags);
-    let mut pathv: Vec<&str> = {
-        if path == "libc.musl-riscv64.so.1" {
-            "ld-musl-riscv64.so.1".split("/").collect()
-        } else if path == "//libffi.so.8" {
-            "libffi.so".split("/").collect()
-        } else {
-            path.split('/').collect()
-        }
-    };
+
+    let mut pathv: Vec<&str> = path.split('/').collect();
     // println!("pathv:{:?}",pathv);
     let cur_inode = {
         if work_path == "/" {
