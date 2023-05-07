@@ -1,6 +1,6 @@
 use super::kernel_stack::KernelStack;
 use super::signals::SigSet;
-use super::{aux, RLimit, TaskContext, AT_RANDOM, RESOURCE_KIND_NUMBER};
+use super::{RLimit, TaskContext, RESOURCE_KIND_NUMBER};
 use super::{pid_alloc, PidHandle, SignalFlags};
 use crate::consts::*;
 use crate::fs::{File, OSInode, Stdin, Stdout};
@@ -121,9 +121,8 @@ impl TaskControlBlock {
 
     /// 通过 elf 数据新建一个任务控制块，目前仅用于内核中手动创建唯一一个初始进程 initproc
     pub fn new(initproc: Arc<OSInode>) -> Self {
-        let mut auxs = aux::new();
         // 解析传入的 ELF 格式数据构造应用的地址空间 memory_set 并获得其他信息
-        let (memory_set, user_sp, entry_point) = MemorySet::load_elf(initproc.clone(), &mut auxs);
+        let (memory_set, user_sp, entry_point) = MemorySet::load_elf(initproc.clone());
         initproc.delete();
         // 从地址空间 memory_set 中查多级页表找到应用地址空间中的 Trap 上下文实际被放在哪个物理页帧
         let trap_cx_ppn = memory_set
@@ -182,9 +181,8 @@ impl TaskControlBlock {
 
     /// 用来实现 exec 系统调用，即当前进程加载并执行另一个 ELF 格式可执行文件
     pub fn exec(&self, elf_file: Arc<OSInode>, args: Vec<String>, envs: Vec<String>) {
-        let mut auxs = aux::new();
         // 从 ELF 文件生成一个全新的地址空间并直接替换
-        let (memory_set, mut user_sp, entry_point) = MemorySet::load_elf(elf_file, &mut auxs);
+        let (memory_set, mut user_sp, entry_point) = MemorySet::load_elf(elf_file);
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT).into())
             .unwrap()
@@ -231,16 +229,6 @@ impl TaskControlBlock {
                 user_sp
             })
             .collect();
-
-        if argv.len() != 0 {
-            auxs.push(aux::AuxEntry(AT_RANDOM, argv[0]));
-        }
-
-        // 分配 auxs 空间，并写入数据
-        for i in 0..auxs.len() {
-            user_sp -= core::mem::size_of::<aux::AuxEntry>();
-            *translated_mut(memory_set.token(), user_sp as *mut aux::AuxEntry) = auxs[i];
-        }
 
         // envp，0，表示结束
         user_sp -= core::mem::size_of::<usize>();

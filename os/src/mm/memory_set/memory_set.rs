@@ -1,15 +1,13 @@
 use super::chunk_area::ChunkArea;
 use super::{MapArea, MapPermission, MapType};
 use crate::consts::{PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE, USER_STACK_SIZE};
-use crate::fs::open_flags::CreateMode;
-use crate::fs::{open, OSInode, OpenFlags};
+use crate::fs::OSInode;
 use crate::mm::frame_allocator::{enquire_refcount, frame_add_ref};
 use crate::mm::page_table::PTEFlags;
 use crate::mm::{
     alloc_frame, FrameTracker, PageTable, PageTableEntry, PhysAddr, PhysPageNum, VirtAddr,
     VirtPageNum,
 };
-use crate::task::{AuxEntry, AT_BASE, AT_ENTRY, AT_PHDR, AT_PHENT, AT_PHNUM};
 use alloc::{sync::Arc, vec::Vec};
 
 /// ### 地址空间
@@ -150,7 +148,7 @@ impl MemorySet {
     }
 
     /// ### 从 ELF 格式可执行文件解析出各数据段并对应生成应用的地址空间
-    pub fn load_elf(elf_file: Arc<OSInode>, auxs: &mut Vec<AuxEntry>) -> (Self, usize, usize) {
+    pub fn load_elf(elf_file: Arc<OSInode>) -> (Self, usize, usize) {
         let mut memory_set = Self::new_bare();
 
         // 将跳板插入到应用地址空间
@@ -175,24 +173,11 @@ impl MemorySet {
 
         // 记录目前涉及到的最大的虚拟页号
         let mut max_end_vpn = VirtPageNum(0);
-        // 是否为动态加载
-        let mut elf_interpreter = false;
-        // 动态链接器加载地址
-        let mut interp_entry_point = 0;
+
         // 遍历程序段进行加载
         for i in 0..ph_count as u16 {
             let ph = elf.program_header(i).unwrap();
             match ph.get_type().unwrap() {
-                xmas_elf::program::Type::Phdr => {
-                    auxs.push(AuxEntry(AT_PHDR, ph.virtual_addr() as usize))
-                }
-                xmas_elf::program::Type::Interp => {
-                    // 加入解释器需要的 aux 字段
-                    auxs.push(AuxEntry(AT_PHENT, elf.header.pt2.ph_entry_size().into()));
-                    auxs.push(AuxEntry(AT_PHNUM, ph_count.into()));
-                    auxs.push(AuxEntry(AT_ENTRY, elf.header.pt2.entry_point() as usize));
-                    elf_interpreter = true;
-                }
                 xmas_elf::program::Type::Load => {
                     let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
                     let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
@@ -223,55 +208,6 @@ impl MemorySet {
                 }
                 _ => continue,
             }
-        }
-        if elf_interpreter {
-            // 动态链接
-            let interpreter_file = open(
-                "/",
-                "ld-musl-riscv64.so.1",
-                OpenFlags::O_RDONLY,
-                CreateMode::empty(),
-            )
-            .expect("can't find interpreter file");
-            // 第一次读取前64字节确定程序表的位置与大小
-            let interpreter_head_data = interpreter_file.read_vec(0, 64);
-            let interp_elf = xmas_elf::ElfFile::new(interpreter_head_data.as_slice()).unwrap();
-
-            let ph_entry_size = interp_elf.header.pt2.ph_entry_size() as usize;
-            let ph_offset = interp_elf.header.pt2.ph_offset() as usize;
-            let ph_count = interp_elf.header.pt2.ph_count() as usize;
-
-            // 进行第二次读取，这样的elf对象才能正确解析程序段头的信息
-            let interpreter_head_data =
-                interpreter_file.read_vec(0, ph_offset + ph_count * ph_entry_size);
-            let interp_elf = xmas_elf::ElfFile::new(interpreter_head_data.as_slice()).unwrap();
-            let base_address = 0x2000000000;
-            auxs.push(AuxEntry(AT_BASE, base_address));
-            interp_entry_point = base_address + interp_elf.header.pt2.entry_point() as usize;
-            // 获取 program header 的数目
-            let ph_count = interp_elf.header.pt2.ph_count();
-            for i in 0..ph_count {
-                let ph = interp_elf.program_header(i).unwrap();
-                if ph.get_type().unwrap() == xmas_elf::program::Type::Load {
-                    let start_va: VirtAddr = (ph.virtual_addr() as usize + base_address).into();
-                    let end_va: VirtAddr =
-                        (ph.virtual_addr() as usize + ph.mem_size() as usize + base_address).into();
-                    let map_perm =
-                        MapPermission::U | MapPermission::R | MapPermission::W | MapPermission::X;
-                    let map_area = MapArea::new(start_va, end_va, MapType::Framed, map_perm);
-                    memory_set.push(
-                        map_area,
-                        Some((
-                            interpreter_file.clone(),
-                            ph.offset() as usize,
-                            ph.file_size() as usize,
-                            start_va.page_offset(),
-                        )),
-                    );
-                }
-            }
-        } else {
-            auxs.push(AuxEntry(AT_BASE, 0));
         }
 
         // 分配用户栈
@@ -304,15 +240,11 @@ impl MemorySet {
         memory_set.heap_start = user_heap_bottom;
         memory_set.stack_top = user_stack_top;
 
-        if elf_interpreter {
-            (memory_set, user_stack_top, interp_entry_point)
-        } else {
-            (
-                memory_set,
-                user_stack_top,
-                elf.header.pt2.entry_point() as usize,
-            )
-        }
+        (
+            memory_set,
+            user_stack_top,
+            elf.header.pt2.entry_point() as usize,
+        )
     }
 
     /// 以COW的方式复制一个地址空间

@@ -1,4 +1,3 @@
-mod aux;
 mod context; // 任务上下文模块
 mod info; // 系统信息模块
 mod initproc;
@@ -16,7 +15,6 @@ use alloc::sync::Arc;
 use manager::remove_from_pid2task;
 use task::{TaskControlBlock, TaskStatus};
 
-pub use aux::*;
 pub use context::TaskContext;
 pub use info::{CloneFlags, RUsage, Utsname, UTSNAME};
 pub use manager::{add_task, debug_show_ready_queue, pid2task};
