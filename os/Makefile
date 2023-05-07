@@ -18,7 +18,7 @@ NCPU = 2
 ##################################################################
 initproc:
 	@echo Build initproc...
-	@cd ../misc && make initproc 
+	@cd ../misc && make initproc
 
 # 不再自动清除缓存，需要手动清除
 kernel: initproc
@@ -26,7 +26,7 @@ kernel: initproc
 
 fat32img:
 	@echo Build all syscall tests...
-	@cd ../misc && make tests 
+	@cd ../misc && make tests
 
 	@echo Move all tests to workspace...
 	@cd ../workspace && mkdir -p tests/

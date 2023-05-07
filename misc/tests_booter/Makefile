@@ -8,7 +8,7 @@ CC := riscv64-unknown-elf-gcc -ffreestanding -nostdlib -g -mcmodel=medany -I ./i
 endif
 
 .PHONY: initproc
-initproc: 
+initproc:
 	rm -rf bin
 	mkdir bin
 	$(CC) ./src/tests_booter.c $(LIB_DIR) $(s_DIR) -T $(LINKER_PATH) -o ./bin/tests_booter
