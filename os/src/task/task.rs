@@ -1,6 +1,5 @@
 use super::kernel_stack::KernelStack;
-use super::signals::SigSet;
-use super::{RLimit, TaskContext, RESOURCE_KIND_NUMBER};
+use super::TaskContext;
 use super::{pid_alloc, PidHandle, SignalFlags};
 use crate::consts::*;
 use crate::fs::{File, OSInode, Stdin, Stdout};
@@ -60,10 +59,6 @@ pub struct TaskControlBlockInner {
     // 状态信息
     pub signals: SignalFlags,
     pub current_path: String,
-
-    // 决赛添加：信号集
-    pub sigset: SigSet,
-    pub resource: [RLimit; RESOURCE_KIND_NUMBER],
 }
 
 impl TaskControlBlockInner {
@@ -159,11 +154,6 @@ impl TaskControlBlock {
                 signals: SignalFlags::empty(),
                 current_path: String::from("/"),
                 mmap_area: MmapArea::new(VirtAddr::from(MMAP_BASE), VirtAddr::from(MMAP_BASE)),
-                sigset: SigSet::new(),
-                resource: [RLimit {
-                    rlim_cur: 0,
-                    rlim_max: 1,
-                }; RESOURCE_KIND_NUMBER],
             }),
         };
         // 初始化位于该进程应用地址空间中的 Trap 上下文，使得第一次进入用户态的时候时候能正
@@ -199,7 +189,7 @@ impl TaskControlBlock {
         // 进行对齐
         user_sp -= (8 - total_len % 8) * core::mem::size_of::<u8>();
 
-        // 分配 envs 的空间，加入动态链接库位置
+        // 分配 envs 的空间
         let envv: Vec<_> = (0..envs.len())
             .map(|env| {
                 user_sp -= envs[env].len() + 1; //1是手动添加结束标记的空间
@@ -341,11 +331,6 @@ impl TaskControlBlock {
                 signals: SignalFlags::empty(),
                 current_path: parent_inner.current_path.clone(),
                 mmap_area,
-                sigset: SigSet::new(),
-                resource: [RLimit {
-                    rlim_cur: 0,
-                    rlim_max: 1,
-                }; RESOURCE_KIND_NUMBER],
             }),
         });
         // 把新生成的进程加入到子进程向量中

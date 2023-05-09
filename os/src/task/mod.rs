@@ -5,7 +5,6 @@ mod kernel_stack;
 mod manager; // 进程管理器
 mod pid; // 进程标识符模块
 mod processor; // 处理器管理模块
-mod resource;
 pub mod sched;
 mod signals;
 mod switch; // 任务上下文切换模块
@@ -16,13 +15,12 @@ use manager::remove_from_pid2task;
 use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
-pub use info::{CloneFlags, RUsage, Utsname, UTSNAME};
-pub use manager::{add_task, debug_show_ready_queue, pid2task};
+pub use info::{CloneFlags, Utsname, UTSNAME};
+pub use manager::add_task;
 pub use pid::{pid_alloc, PidHandle};
 pub use processor::{
     current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
 };
-pub use resource::*;
 pub use signals::*;
 pub use task::FD_LIMIT;
 

@@ -20,7 +20,6 @@ initproc:
 	@echo Build initproc...
 	@cd ../misc && make initproc
 
-# 不再自动清除缓存，需要手动清除
 kernel: initproc
 	@cargo build --release
 

@@ -9,7 +9,7 @@
 _entry:
         mv tp, a0
         la sp, stack0
-        li a0, 0x2000  # 8KiB 参考 Linux
+        li a0, 0x4000  # 16KiB
 
         addi a1, tp, 1
         mul a0, a0, a1
@@ -22,4 +22,4 @@ spin:
 
 .section .bss.stack
 stack0:                 
-        .space 0x2000 * 2  # -smp 2
+        .space 0x4000 * 2  # -smp 2

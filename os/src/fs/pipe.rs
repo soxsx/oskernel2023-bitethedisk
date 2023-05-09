@@ -41,7 +41,7 @@ enum RingBufferStatus {
     Normal,
 }
 
-const RING_BUFFER_SIZE: usize = 2048; // FIXME: 2048 能跑，4096 会卡死，可能需要调整堆大小？ 或者是因为爆栈了？
+const RING_BUFFER_SIZE: usize = 4096;
 
 /// ### 管道缓冲区(双端队列,向右增长)
 /// |成员变量|描述|

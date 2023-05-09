@@ -3,9 +3,8 @@ use core::fmt::Debug;
 use crate::trap::trap_return;
 
 /// 任务上下文
-/// * `ra`:返回后PC的位置
-/// * `sp`:栈顶指针
-/// * `s`:`s[0]~s[11]`
+/// 
+/// - `s`: s\[0\]~s\[11\]
 #[repr(C)]
 pub struct TaskContext {
     ra: usize,

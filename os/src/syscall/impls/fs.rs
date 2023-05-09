@@ -2,7 +2,7 @@ use super::super::errno::*;
 use crate::fs::open_flags::CreateMode;
 use crate::fs::{chdir, make_pipe, open, Dirent, File, Kstat, OpenFlags, MNT_TABLE};
 use crate::mm::{translated_bytes_buffer, translated_mut, translated_str, UserBuffer, VirtAddr};
-use crate::task::{current_task, current_user_token, FD_LIMIT, RLIMIT_NOFILE};
+use crate::task::{current_task, current_user_token, FD_LIMIT};
 
 use alloc::{sync::Arc, vec::Vec};
 use core::mem::size_of;
@@ -105,10 +105,10 @@ pub fn sys_dup(fd: usize) -> isize {
     let mut inner = task.lock();
 
     // 做资源检查，目前只检查 RLIMIT_NOFILE 这一种
-    let rlim_max = inner.resource[RLIMIT_NOFILE].rlim_max;
-    if inner.fd_table.len() - 1 == rlim_max - 1 {
-        return -EMFILE;
-    }
+    // let rlim_max = inner.resource[RLIMIT_NOFILE].rlim_max;
+    // if inner.fd_table.len() - 1 == rlim_max - 1 {
+    //     return -EMFILE;
+    // }
 
     // 检查传入 fd 的合法性
     if fd >= inner.fd_table.len() {

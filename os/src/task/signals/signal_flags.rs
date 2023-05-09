@@ -1,5 +1,4 @@
 bitflags! {
-    /// 进程信号
     #[derive(PartialEq, Eq, Debug)]
     pub struct SignalFlags: u32 {
         const SIGINT    = 1 << 2;

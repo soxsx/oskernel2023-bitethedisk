@@ -7,6 +7,18 @@ use crate::{
 
 use super::{Utsname, UTSNAME};
 
+/// #define SYS_times 153
+/// 
+/// 功能：获取进程时间；
+/// 
+/// 输入：tms结构体指针，用于获取保存当前进程的运行时间数据；
+/// 
+/// 返回值：成功返回已经过去的滴答数，失败返回-1;
+/// 
+/// ```c
+/// struct tms *tms;
+/// clock_t ret = syscall(SYS_times, tms);
+/// ```
 pub fn sys_times(buf: *const u8) -> isize {
     let sec = get_time_ms() as isize * 1000;
     let token = current_user_token();
@@ -21,15 +33,31 @@ pub fn sys_times(buf: *const u8) -> isize {
         }
         .as_bytes(),
     );
+
     0
 }
 
-/// ### 获取系统utsname参数
-/// - 参数
-///     - `buf`：用户空间存放utsname结构体的缓冲区
-/// - 返回值
-///     - 0表示正常
-/// - syscall_ID: 160
+/// struct utsname {
+/// 	char sysname\[65\];
+/// 	char nodename\[65\];
+/// 	char release\[65\];
+/// 	char version\[65\];
+/// 	char machine\[65\];
+/// 	char domainname\[65\];
+/// };
+/// 
+/// #define SYS_uname 160
+/// 
+/// 功能：打印系统信息；
+/// 
+/// 输入：utsname结构体指针用于获得系统信息数据；
+/// 
+/// 返回值：成功返回0，失败返回-1;
+///
+/// ```c
+/// struct utsname *uts;
+/// int ret = syscall(SYS_uname, uts);
+/// ```
 pub fn sys_uname(buf: *const u8) -> isize {
     let token = current_user_token();
     let uname = UTSNAME.lock();

@@ -1,13 +1,12 @@
-//! # 提供 `Trap` 管理
-//! `os/src/trap/mod.rs`
-//! ## 实现功能
-//! ```
-//! pub fn init()
-//! pub fn enable_timer_interrupt()
-//! pub fn trap_handler() -> !
-//! pub fn trap_return() -> !
-//! pub fn trap_from_kernel() -> !
-//! ```
+//! 
+//! 内核 Trap 管理
+//! 
+//! 流程：
+//! 首先通过 __alltraps 将 Trap 上下文（不是那个结构体）保存在进程内核栈上，
+//! 然后跳转到使用 Rust 编写的 trap_handler 函数完成 Trap 分发及处理。
+//! 当 trap_handler 返回之后，使用 __restore 从保存在内核栈上的 Trap 上下文恢复寄存器。
+//! 最后通过一条 sret 指令回到应用程序执行。
+
 mod context;
 pub mod handler;
 
@@ -19,11 +18,6 @@ use riscv::register::{mtvec::TrapMode, sie, stvec};
 
 // 跳板页上的汇编代码
 global_asm!(include_str!("trampoline.S"));
-
-// Trap 处理的总体流程如下：首先通过 __alltraps 将 Trap 上下文（不是那个结构体）保存在内核栈上，
-// 然后跳转到使用 Rust 编写的 trap_handler 函数完成 Trap 分发及处理。
-// 当 trap_handler 返回之后，使用 __restore 从保存在内核栈上的 Trap 上下文恢复寄存器。
-// 最后通过一条 sret 指令回到应用程序执行。
 
 pub fn init() {
     set_kernel_trap_entry();

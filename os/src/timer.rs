@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 use crate::{consts::CLOCK_FREQ, sbi::legacy::set_timer};
 use core::ops::{Add, Sub};
 use riscv::register::time;
@@ -74,7 +72,7 @@ impl TimeVal {
 }
 
 /// Linux 间隔计数
-/// 
+///
 /// * `tms_utime`：用户态时间
 /// * `tms_stime`：内核态时间
 /// * `tms_cutime`：已回收子进程的用户态时间
@@ -99,20 +97,10 @@ impl tms {
 }
 
 /// 取得当前 `mtime` 计数器的值
-/// * `mtime`: 统计处理器自上电以来经过了多少个内置时钟的时钟周期,64bit
+///
+/// - `mtime`: 统计处理器自上电以来经过了多少个内置时钟的时钟周期,64bit
 pub fn get_time() -> usize {
     time::read()
-    // 下面是另外一种实现，暂时不知道原因，所以以注释的方式保留下来了
-    // pub fn get_time() -> usize {
-    //     let mut time: usize = 0;
-    //     unsafe {
-    //         core::arch::asm!(
-    //             "rdtime a0",
-    //             inout("a0") time
-    //         );
-    //     }
-    //     time
-    // }
 }
 
 /// 获取CPU上电时间（单位：ms）

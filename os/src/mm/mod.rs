@@ -10,7 +10,7 @@ use core::mem::size_of;
 
 pub use address::{PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 use alloc::{string::String, vec::Vec};
-pub use frame_allocator::{alloc_frame, dealloc_frame, frame_usage, FrameTracker};
+pub use frame_allocator::{alloc_frame, dealloc_frame, FrameTracker};
 pub use memory_set::{MapPermission, MemorySet};
 pub use page_table::{PageTable, PageTableEntry};
 use riscv::register::satp;
@@ -34,7 +34,8 @@ pub fn enable_mmu() {
     unsafe { core::arch::asm!("sfence.vma") } // 刷新 MMU 的 TLB
 }
 
-/// ### 以向量的形式返回一组可以在内存空间中直接访问的字节数组切片
+/// 以向量的形式返回一组可以在内存空间中直接访问的字节数组切片
+/// 
 /// |参数|描述|
 /// |--|--|
 /// |`token`|某个应用地址空间的 token|
@@ -71,7 +72,8 @@ pub fn translated_bytes_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<
     v
 }
 
-/// ### 从内核地址空间之外的某个应用的用户态地址空间中拿到一个字符串
+/// 从内核地址空间之外的某个应用的用户态地址空间中拿到一个字符串
+/// 
 /// 针对应用的字符串中字符的用户态虚拟地址，查页表，找到对应的内核虚拟地址，逐字节地构造字符串，直到发现一个 \0 为止
 pub fn translated_str(token: usize, ptr: *const u8) -> String {
     let page_table = PageTable::from_token(token);

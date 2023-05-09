@@ -4,8 +4,7 @@ use alloc::{collections::BTreeMap, vec::Vec};
 use core::fmt::{self, Debug, Formatter};
 use spin::Mutex;
 
-/// ### 物理页帧
-/// 借用RAII思想，在通过物理页号创建的时候初始化物理页帧
+/// 物理页帧，代表 RAM 上一段实际的物理页，通过物理页号标识
 pub struct FrameTracker {
     pub ppn: PhysPageNum,
 }
@@ -13,11 +12,9 @@ pub struct FrameTracker {
 impl FrameTracker {
     /// 通过物理页号创建一个物理页帧的结构体，创建时初始化内存空间
     pub fn new(ppn: PhysPageNum) -> Self {
-        // 物理页清零
-        let bytes_array = ppn.as_bytes_array();
-        for i in bytes_array {
-            *i = 0;
-        }
+        let bytes_arr = ppn.as_bytes_array();
+        bytes_arr.into_iter().for_each(|b| *b = 0);
+
         Self { ppn }
     }
 
@@ -32,9 +29,7 @@ impl Debug for FrameTracker {
     }
 }
 
-// 当变量生命周期结束被编译器回收的时候执行 drop()
 impl Drop for FrameTracker {
-    /// 当一个 FrameTracker 生命周期结束被编译器回收的时候，我们需要将它控制的物理页帧回收掉
     fn drop(&mut self) {
         dealloc_frame(self.ppn);
     }
@@ -56,7 +51,7 @@ trait FrameAllocator {
     fn usage(&self) -> (usize, usize, usize, usize);
 }
 
-/// ### 栈式物理页帧管理器
+/// 栈式物理页帧管理器
 pub struct StackFrameAllocator {
     /// 管理内存的起始物理页号
     base_num: usize,
@@ -71,7 +66,7 @@ pub struct StackFrameAllocator {
 }
 
 impl StackFrameAllocator {
-    /// ### 初始化栈式物理页管理器
+    /// 初始化栈式物理页管理器
     /// - `l`:空闲内存起始页号
     /// - `r`:空闲内存结束页号
     pub fn init(&mut self, l: PhysPageNum, r: PhysPageNum) {
@@ -147,16 +142,16 @@ impl FrameAllocator for StackFrameAllocator {
 type FrameAllocatorImpl = StackFrameAllocator;
 
 lazy_static! {
-    /// ### 物理页帧管理器实例
+    /// 物理页帧管理器实例
     /// - 全局变量，管理除内核空间外的内存空间
     pub static ref FRAME_ALLOCATOR: Mutex<FrameAllocatorImpl> =
         Mutex::new(FrameAllocatorImpl::new());
 }
 
-/// ### 初始化物理页帧管理器
+/// 初始化物理页帧管理器
 /// - 物理页帧范围
 ///     - 对 `ekernel` 物理地址上取整获得起始物理页号
-///     - 对 `MEMORY_END` 物理地址下取整获得结束物理页号
+///     - 对 `PHYS_END` 物理地址下取整获得结束物理页号
 pub fn init() {
     extern "C" {
         fn ekernel();
@@ -183,16 +178,4 @@ pub fn frame_add_ref(ppn: PhysPageNum) {
 
 pub fn enquire_refcount(ppn: PhysPageNum) -> usize {
     FRAME_ALLOCATOR.lock().enquire_ref(ppn)
-}
-
-#[allow(unused)]
-pub fn frame_usage() {
-    let (current, recycled, end, base_num) = FRAME_ALLOCATOR.lock().usage();
-    let usage = (current - base_num - recycled) as f64 * 100.0 / (end - base_num) as f64;
-    println!(
-        "[kernel] page usage: {:.2}% ({}/{} pages)",
-        usage,
-        current - base_num - recycled,
-        end - base_num
-    );
 }

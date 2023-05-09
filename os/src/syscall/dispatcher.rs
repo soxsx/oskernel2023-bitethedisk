@@ -14,7 +14,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_EXEC => sys_exec(
             args[0] as *const u8,
             args[1] as *const usize,
-            args[2] as *const usize,
+            args[2] as *const u8,
         ),
         // TODO: here
         // SYS_EXECVE => sys_execve(

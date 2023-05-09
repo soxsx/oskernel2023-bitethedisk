@@ -29,9 +29,6 @@ pub fn user_trap_handler() -> ! {
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
             let mut cx = current_trap_cx();
-            // frame_usage();
-            // heap_usage();
-            // println!("fd_table:{:?}",current_task().unwrap().inner_exclusive_access().fd_table);
             cx.sepc += 4;
             let result = syscall(
                 cx.x[17],
@@ -65,13 +62,7 @@ pub fn user_trap_handler() -> ! {
 
             if lazy != 0 {
                 current_add_signal(SignalFlags::SIGSEGV);
-                // current_task().unwrap().inner_exclusive_access().memory_set.debug_show_layout();
-                // current_task().unwrap().inner_exclusive_access().memory_set.debug_show_data(0x0060000000usize.into());
-                // panic!("lazy != 0: va:0x{:x}",va.0);
             }
-
-            // current_task().unwrap().inner_exclusive_access().task_cx.debug_show();
-            // current_task().unwrap().inner_exclusive_access().memory_set.debug_show_data(TRAP_CONTEXT.into());
         }
 
         Trap::Exception(Exception::InstructionFault)
@@ -85,11 +76,6 @@ pub fn user_trap_handler() -> ! {
                 current_trap_cx().sepc,
             );
             drop(task);
-
-            current_trap_cx().debug_show();
-            // current_task().unwrap().inner_exclusive_access().task_cx.debug_show();
-
-            //current_task().unwrap().inner_exclusive_access().memory_set.debug_show_data(TRAP_CONTEXT.into());
 
             current_add_signal(SignalFlags::SIGSEGV);
         }

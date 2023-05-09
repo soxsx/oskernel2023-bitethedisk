@@ -1,12 +1,8 @@
 use super::current_task;
 
 pub mod signal_flags;
-// pub mod signals;
-pub mod sigset;
 
 pub use signal_flags::SignalFlags;
-// pub use signals::*;
-pub use sigset::SigSet;
 
 pub fn check_signals_of_current() -> Option<(i32, &'static str)> {
     let task = current_task().unwrap();
@@ -25,5 +21,5 @@ pub fn check_signals_of_current() -> Option<(i32, &'static str)> {
 pub fn current_add_signal(signal: SignalFlags) {
     let task = current_task().unwrap();
     let mut task_inner = task.lock();
-    task_inner.signals |= signal;
+    task_inner.signals.set(signal, true);
 }

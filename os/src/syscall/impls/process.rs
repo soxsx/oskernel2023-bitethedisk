@@ -7,11 +7,7 @@ use crate::task::{
 };
 pub use crate::task::{CloneFlags, Utsname, UTSNAME};
 
-use alloc::{
-    string::{String, ToString},
-    sync::Arc,
-    vec::Vec,
-};
+use alloc::{string::String, sync::Arc, vec::Vec};
 
 /// ### #define SYS_clone 220
 /// * 功能：创建一个子进程；
@@ -201,14 +197,22 @@ pub fn sys_fork(
     new_pid as isize // 对于父进程，返回值是子进程的 PID
 }
 
-/// ### 将当前进程的地址空间清空并加载一个特定的可执行文件，返回用户态后开始它的执行。
-/// - 参数：
-///     - `path` 给出了要加载的可执行文件的名字
-///     - `args` 数组中的每个元素都是一个命令行参数字符串的起始地址，以地址为0表示参数尾
-///     - 'envs' 环境变量，暂未处理，直接加地址0结束
-/// - 返回值：如果出错的话（如找不到名字相符的可执行文件）则返回 -1，否则返回参数个数 `argc`。
-/// - syscall ID：221
-pub fn sys_exec(path: *const u8, mut args: *const usize, mut _envs: *const usize) -> isize {
+/// #define SYS_execve 221
+///
+/// 功能：执行一个指定的程序；
+///
+/// 输入：
+///     - path: 待执行程序路径名称，
+///     - argv: 程序的参数，
+///     - envp: 环境变量的数组指针
+///
+/// 返回值：成功不返回，失败返回-1；
+///
+/// ```c
+/// const char *path, char *const argv[], char *const envp[];
+/// int ret = syscall(SYS_execve, path, argv, envp);
+/// ```
+pub fn sys_exec(path: *const u8, mut args: *const usize, mut envs: *const u8) -> isize {
     let token = current_user_token();
     // 读取到用户空间的应用程序名称（路径）
     let path = translated_str(token, path);
@@ -229,15 +233,21 @@ pub fn sys_exec(path: *const u8, mut args: *const usize, mut _envs: *const usize
 
     // 环境变量
     let mut envs_vec: Vec<String> = Vec::new();
-    envs_vec.push("LD_LIBRARY_PATH=/".to_string());
-    envs_vec.push("PATH=/".to_string());
-    envs_vec.push("ENOUGH=2500".to_string());
-    // envs_vec.push("TIMING_0=7".to_string());
-    // envs_vec.push("LOOP_O=0.2".to_string());
+    if envs as usize != 0 {
+        loop {
+            let env_str_ptr = *translated_ref(token, envs);
+            if env_str_ptr == 0 {
+                // 读到下一参数地址为0表示参数结束
+                break;
+            } // 否则从用户空间取出参数，压入向量
+            envs_vec.push(translated_str(token, env_str_ptr as *const u8));
+            unsafe {
+                envs = envs.add(1);
+            }
+        }
+    }
 
     let task = current_task().unwrap();
-    // println!("[kernel] exec name:{},argvs:{:?}", path, args_vec);
-    // println!("time start!{}",get_time_ms());
 
     let inner = task.lock();
     if let Some(app_inode) = open(
@@ -248,7 +258,7 @@ pub fn sys_exec(path: *const u8, mut args: *const usize, mut _envs: *const usize
     ) {
         drop(inner);
         task.exec(app_inode, args_vec, envs_vec);
-        // memory_usage();
+
         0 as isize
     } else {
         -1
