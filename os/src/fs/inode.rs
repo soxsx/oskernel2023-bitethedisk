@@ -160,26 +160,26 @@ lazy_static! {
     };
 }
 
-static mut LAYER: usize = 0;
 pub fn list_apps(dir: Arc<VFile>) {
+    let mut layer: usize = 0;
     for app in dir.ls().unwrap() {
         // 不打印initproc，事实上它也在task::new之后删除了
         unsafe {
-            if LAYER == 0 && app.0 == "initproc" {
+            if layer == 0 && app.0 == "initproc" {
                 continue;
             }
         }
         if app.1 & ATTR_DIRECTORY == 0 {
             // 如果不是目录
             unsafe {
-                for _ in 0..LAYER {
+                for _ in 0..layer {
                     print!("----");
                 }
             }
             println!("{}", app.0);
         } else if app.0 != "." && app.0 != ".." {
             unsafe {
-                for _ in 0..LAYER {
+                for _ in 0..layer {
                     print!("----");
                 }
             }
@@ -194,13 +194,13 @@ pub fn list_apps(dir: Arc<VFile>) {
             let inner = dir.inner.lock();
             let inode = inner.inode.clone();
             unsafe {
-                LAYER += 1;
+                layer += 1;
             }
             list_apps(inode);
         }
     }
-    unsafe {
-        LAYER -= 1;
+    if layer > 0 {
+        layer -= 1;
     }
 }
 

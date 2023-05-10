@@ -22,6 +22,10 @@ initproc:
 
 kernel: initproc
 	@cargo build --release
+	# @cargo build --release --features "multi_harts"
+
+	# @cargo build 
+	# @cargo build --features "multi_harts"
 
 fat32img:
 	@echo Build all syscall tests...

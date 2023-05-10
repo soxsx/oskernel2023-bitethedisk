@@ -42,6 +42,7 @@ pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
 }
 
 /// 通过PID获取对应的进程控制块
+#[allow(unused)]
 pub fn pid2task(pid: usize) -> Option<Arc<TaskControlBlock>> {
     let map = PID2TCB.lock();
     map.get(&pid).map(Arc::clone)

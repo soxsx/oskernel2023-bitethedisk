@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use crate::{consts::CLOCK_FREQ, sbi::legacy::set_timer};
 use core::ops::{Add, Sub};
 use riscv::register::time;

@@ -1,11 +1,10 @@
-mod context; // 任务上下文模块
+pub mod context; // 任务上下文模块
 mod info; // 系统信息模块
 mod initproc;
 mod kernel_stack;
 mod manager; // 进程管理器
 mod pid; // 进程标识符模块
 mod processor; // 处理器管理模块
-pub mod sched;
 mod signals;
 mod switch; // 任务上下文切换模块
 mod task;
@@ -19,12 +18,12 @@ pub use info::{CloneFlags, Utsname, UTSNAME};
 pub use manager::add_task;
 pub use pid::{pid_alloc, PidHandle};
 pub use processor::{
-    current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
+    current_task, current_trap_cx, current_user_token, schedule::*, take_current_task,
 };
 pub use signals::*;
 pub use task::FD_LIMIT;
 
-use self::initproc::INITPROC;
+use self::{initproc::INITPROC, processor::schedule};
 
 /// 将当前任务置为就绪态，放回到进程管理器中的就绪队列中，重新选择一个进程运行
 pub fn suspend_current_and_run_next() -> isize {

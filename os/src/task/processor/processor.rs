@@ -1,13 +1,15 @@
+use core::cell::RefMut;
+
 use alloc::sync::Arc;
-use spin::Mutex;
 
-use crate::task::{task::TaskControlBlock, TaskContext};
+use crate::task::{processor::cpu::Cpu, task::TaskControlBlock, TaskContext};
 
-lazy_static! {
-    /// - Processor 是描述 CPU执行状态 的数据结构。
-    /// - 在单核CPU环境下，我们仅创建单个 Processor 的全局实例 PROCESSOR
-    pub static ref PROCESSOR: Mutex<Processor> = Mutex::new(Processor::new());
-}
+/// - Processor 是描述 CPU执行状态 的数据结构。
+/// - 在单核CPU环境下，我们仅创建单个 Processor 的全局实例 PROCESSOR
+pub static mut PROCESSOR: Cpu = Cpu::new();
+
+#[cfg(feature = "multi_harts")]
+pub static mut PROCESSORS: [Cpu; 2] = [Cpu::new(), Cpu::new()];
 
 /// 每个核上的处理器，负责运行一个进程
 pub struct Processor {
@@ -18,7 +20,7 @@ pub struct Processor {
 }
 
 impl Processor {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             current: None,
             idle_task_cx: TaskContext::empty(),
@@ -41,5 +43,18 @@ impl Processor {
 
     pub fn current_mut(&mut self) -> &mut Option<Arc<TaskControlBlock>> {
         &mut self.current
+    }
+}
+
+pub fn acquire_processor<'a>() -> RefMut<'a, Processor> {
+    #[cfg(not(feature = "multi_harts"))]
+    {
+        unsafe { PROCESSOR.get_mut() }
+    }
+
+    #[cfg(feature = "multi_harts")]
+    {
+        use super::processor::PROCESSORS;
+        unsafe { PROCESSORS[hartid!()].get_mut() }
     }
 }
