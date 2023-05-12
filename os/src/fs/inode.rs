@@ -164,24 +164,18 @@ pub fn list_apps(dir: Arc<VFile>) {
     let mut layer: usize = 0;
     for app in dir.ls().unwrap() {
         // 不打印initproc，事实上它也在task::new之后删除了
-        unsafe {
-            if layer == 0 && app.0 == "initproc" {
-                continue;
-            }
+        if layer == 0 && app.0 == "initproc" {
+            continue;
         }
         if app.1 & ATTR_DIRECTORY == 0 {
             // 如果不是目录
-            unsafe {
-                for _ in 0..layer {
-                    print!("----");
-                }
+            for _ in 0..layer {
+                print!("----");
             }
             println!("{}", app.0);
         } else if app.0 != "." && app.0 != ".." {
-            unsafe {
-                for _ in 0..layer {
-                    print!("----");
-                }
+            for _ in 0..layer {
+                print!("----");
             }
             info!("{}/", app.0);
             let dir = open(
@@ -193,9 +187,7 @@ pub fn list_apps(dir: Arc<VFile>) {
             .unwrap();
             let inner = dir.inner.lock();
             let inode = inner.inode.clone();
-            unsafe {
-                layer += 1;
-            }
+            layer += 1;
             list_apps(inode);
         }
     }
