@@ -162,19 +162,26 @@ lazy_static! {
 
 pub fn list_apps(dir: Arc<VFile>) {
     let mut layer: usize = 0;
+    list_apps_helper(dir, &mut layer);
+}
+
+fn list_apps_helper(dir: Arc<VFile>, layer: &mut usize) {
     for app in dir.ls().unwrap() {
         // 不打印initproc，事实上它也在task::new之后删除了
-        if layer == 0 && app.0 == "initproc" {
+        if *layer == 0 && app.0 == "initproc" {
             continue;
         }
+
+        // 如果不是目录
         if app.1 & ATTR_DIRECTORY == 0 {
-            // 如果不是目录
-            for _ in 0..layer {
+            for _ in 0..*layer {
                 print!("----");
             }
             println!("{}", app.0);
-        } else if app.0 != "." && app.0 != ".." {
-            for _ in 0..layer {
+        }
+        // 是目录但排除 "." 和 ".."
+        else if app.0 != "." && app.0 != ".." {
+            for _ in 0..*layer {
                 print!("----");
             }
             info!("{}/", app.0);
@@ -187,12 +194,12 @@ pub fn list_apps(dir: Arc<VFile>) {
             .unwrap();
             let inner = dir.inner.lock();
             let inode = inner.inode.clone();
-            layer += 1;
-            list_apps(inode);
+            *layer += 1;
+            list_apps_helper(inode, layer);
         }
     }
-    if layer > 0 {
-        layer -= 1;
+    if *layer > 0 {
+        *layer -= 1;
     }
 }
 
