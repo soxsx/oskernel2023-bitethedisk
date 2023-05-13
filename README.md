@@ -1,5 +1,56 @@
 # Bite The Disk
 
+## 项目定位
+
+具有详实文档和开发流程记录的多 CPU 支持内核开发项目，可用于教学参考或开发样例。
+
+## 目标
+
+使用 Rust 语言实现多 CPU 内核所需功能与结构，在学长的代码基础上逐步重写，逐步减少第三方依赖。使当前项目能作为教材或样例为后人提供参考
+
+- 选择 Rust 的理由：
+  - Rust 相对于 C/C++，在一定程度上解决了内存和并发的安全性问题，能够减少意料之外的错误
+  - 小组成员有着一定的 Rust 使用经验，对 Rust 及其相关生态比较熟悉
+  - Rust 提供了出色的模块化管理方案，其内置的数据结构支持也是我们考虑的因素之一
+  - 相对 C/C++，Rust 的依赖管理和构建方式较为出色，自动化构建省去了不必要的麻烦
+- 选择继承上届学长代码的原因
+  - 所选学长代码参考于清华大学 rCore，小组成员多数参加过 rCore-Tutorial 的夏令营，有一定的从零编写内核代码经验，对已形成生态的 rCore 相关比较熟悉
+  - 项目相关可以得到上届学长的支持答疑
+  - 省去从零开始的麻烦，专注于实现自己的想法，巩固所学
+
+## 预计产出
+
+- 较高质量的代码
+- 详实的文档支持
+- 开发流程记录
+
+## 进度
+
+### 文件系统（90% debugging）
+
+- [x] 依据 Fat32 文档，用 Rust 语言实现对 Fat32 格式镜像的读写支持
+- [x] 对 lib 添加块缓存，提高性能
+- [ ] ~~充实 lib，支持大多数 Fat 格式镜像的读写~~
+
+### 内存管理
+
+- [ ] 参考 Linux 实现应用地址空间，支持 mmap, brk, sbrk 等系统调用
+- [ ] 参考 `buddy_system_allocator` 实现自己的内核堆地址分配器
+- [ ] 支持堆内存溢出 panic handle
+- [ ] 尝试基于 buddy 内存分配器实现一个简单的 slab 内存分配器
+
+### 进程调度
+- [ ] 实现简单的分时调度策略
+- [ ] 简单支持优先级
+- [ ] 支持多核调度，实现简单的调度方案
+
+### IO
+
+*暂时使用第三方库*
+
+- [ ] 调整 `BlockDevice`，删去不必要的 `trait` 以适配高版本 VirtIOBlk
+
+
 ## 项目结构
 | 目录      | 简述                                     |
 | --------- | ---------------------------------------- |
@@ -10,58 +61,9 @@
 | os        | 内核源码，SBI                            |
 | workspace | 用于做一下临时的挂载等任务，方便内核调试 |
 
-```
-# 区域赛完整的 qemu 命令
-qemu-system-riscv64 \
-    -machine virt \
-    -kernel kernel-qemu \
-    -m 128M \
-    -nographic \
-    -smp 2 \
-    -bios sbi-qemu \
-    -drive file=sdcard.img,if=none,format=raw,id=x0 \
-    -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
-    -initrd initrd.img
-```
+## 区域赛相关文档
 
-## 有关 Makefile
-一般只会用到项目根目录中的 [Makefile](./Makefile)
+[点我前往](docs/oscomp_syscalls.md)
 
-```shell
-sbi-qemu:
-    将 ./os/bootloader/ 中的 SBI 改名复制到根目录
 
-kernel-qemu:
-    按照 release 编译内核后将其改名放到根目录
 
-all: sbi-qemu kernel-qemu
-
-clean:
-	rm -f kernel-qemu
-	rm -f sbi-qemu
-	rm -rf build/
-	rm -rf temp/
-	cd os/ && cargo clean
-	cd workspace/ && make clean
-	cd fat32/ && cargo clean
-	cd misc/ && make clean
-
-fat32img: 
-    构建一个 fat32 格式 300 MiB 大小的镜像，并将编译后的测例拷贝进去（测例的编译结果会复用，
-    除非删除 ./misc/user/riscv64 这个文件夹，可使用上面的 `clean` 一键清空所以先前的构建
-    还原到项目最干净的状态）
-
-run:
-    将内核按 release 编译后，使用本地构建的 fat32 镜像（见上面 fat32img），挂载到 qemu 运行
-
-debug-server:
-    将内核按照 debug 编译，搭载 fat32 （见上面 fat32img），挂在 qemu 启动 debug server
-
-debug:
-    连接上面 `debug-server` 启动的服务，用 gdb 开始调试
-
-```
-
-debug 建议开启两个 shell，一个 make debug-server，另一个等前一个 shell 进入等待后 make debug
-
-debug 相关文档：[docs/debug.md](docs/debug.md)
