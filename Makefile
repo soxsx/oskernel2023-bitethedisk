@@ -7,7 +7,7 @@ sbi-qemu:
 
 kernel-qemu:
 	@echo Prepare kernel-qemu...
-	cd os/ && make kernel
+	cd kernel/ && make kernel
 	cp $(KERNEL_ELF) kernel-qemu
 
 all: sbi-qemu kernel-qemu
