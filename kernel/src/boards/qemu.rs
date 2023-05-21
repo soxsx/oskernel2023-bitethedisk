@@ -1,6 +1,4 @@
-//!
 //! 针对 qemu 的相关参数
-//!
 
 /// 晶振频率
 pub const CLOCK_FREQ: usize = 12500000;

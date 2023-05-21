@@ -79,13 +79,26 @@ pub fn sys_sched_yield() -> isize {
     0
 }
 
-/// ### 获取CPU上电时间 秒+微秒
-/// syscall_id：169
-/// - 输入参数
-///     - `ts`：`TimeVal` 结构体在用户空间的地址
-///     - `tz`：表示时区，这里无需考虑，始终为0
-/// - 功能：内核根据时钟周期数和时钟频率换算系统运行时间，并写入到用户地址空间
-/// - 返回值：正确执行返回 0，出现错误返回 -1。
+/// ```c
+/// struct timespec {
+/// 	time_t tv_sec;        /* 秒 */
+/// 	long   tv_nsec;       /* 纳秒, 范围在0~999999999 */
+/// };
+/// 
+/// ```
+/// 
+/// #define SYS_gettimeofday 169
+/// 
+/// 功能：获取时间；
+/// 
+/// 输入： timespec结构体指针用于获得时间值；
+/// 
+/// 返回值：成功返回0，失败返回-1;
+/// 
+/// ```c
+/// struct timespec *ts;
+/// int ret = syscall(SYS_gettimeofday, ts, 0);
+/// ```
 pub fn sys_gettimeofday(buf: *const u8) -> isize {
     let token = current_user_token();
     let buffers = translated_bytes_buffer(token, buf, core::mem::size_of::<TimeVal>());
@@ -95,9 +108,18 @@ pub fn sys_gettimeofday(buf: *const u8) -> isize {
     0
 }
 
-/// ### sleep 给定时长（TimeVal格式）
-/// - 返回值：总是返回 0。
-/// - syscall ID：101
+/// #define SYS_nanosleep 101
+/// 
+/// 功能：执行线程睡眠，sleep()库函数基于此系统调用；
+/// 
+/// 输入：睡眠的时间间隔；
+/// 
+/// 返回值：成功返回0，失败返回-1;
+/// 
+/// ```c
+/// const struct timespec *req, struct timespec *rem;
+/// int ret = syscall(SYS_nanosleep, req, rem);
+/// ```
 pub fn sys_nanosleep(buf: *const u8) -> isize {
     let tic = get_time_ms();
 

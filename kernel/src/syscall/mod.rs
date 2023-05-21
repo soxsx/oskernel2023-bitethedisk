@@ -3,4 +3,3 @@
 pub mod dispatcher;
 mod errno;
 mod impls;
-mod syscall_id;

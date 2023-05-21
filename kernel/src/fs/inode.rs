@@ -197,10 +197,7 @@ pub fn open(
     flags: OpenFlags,
     _mode: CreateMode,
 ) -> Option<Arc<OSInode>> {
-    // println!("[DEBUG] enter open: work_path:{}, path:{}, flags:{:?}", work_path, path, flags);
-
     let mut pathv: Vec<&str> = path.split('/').collect();
-    // println!("pathv:{:?}",pathv);
     let cur_inode = {
         if work_path == "/" {
             ROOT_INODE.clone()

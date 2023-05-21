@@ -1,3 +1,5 @@
+//! 文件相关的系统调用
+
 use super::super::errno::*;
 use crate::fs::open_flags::CreateMode;
 use crate::fs::{chdir, make_pipe, open, Dirent, File, Kstat, OpenFlags, MNT_TABLE};
@@ -10,14 +12,16 @@ use core::mem::size_of;
 const AT_FDCWD: isize = -100;
 
 /// #define SYS_getcwd 17
-/// 
+///
 /// 功能：获取当前工作目录；
 ///
 /// 输入：
+///
 /// - char *buf：一块缓存区，用于保存当前工作目录的字符串。当buf设为NULL，由系统来分配缓存区。
 /// - size：buf 缓存区的大小。
 ///
 /// 返回值：
+///
 /// - 成功：返回当前工作目录的字符串的指针。
 /// - 失败：则返回NULL。
 ///
@@ -43,15 +47,18 @@ pub fn sys_getcwd(buf: *mut u8, size: usize) -> isize {
     }
 }
 
-/// ### #define SYS_pipe2 59
+/// #define SYS_pipe2 59
+///
 /// 功能：创建管道；
 ///
 /// 输入：
+///
 /// - fd\[2\]：用于保存2个文件描述符。
 ///     - fd\[0\] 为管道的读出端
 ///     - fd\[1\] 为管道的写入端。
 ///
 /// 返回值：
+///
 /// - 成功执行，返回0。
 /// - 失败，返回-1。
 ///
@@ -87,13 +94,16 @@ pub fn sys_pipe2(pipe: *mut i32, _flag: usize) -> isize {
     0
 }
 
-/// ### #define SYS_dup 23
+/// #define SYS_dup 23
+///
 /// 功能：复制文件描述符；
 ///
 /// 输入：
+///
 /// - fd：被复制的文件描述符。
 ///
 /// 返回值：
+///
 /// - 成功：返回新的文件描述符。
 /// - 失败：返回-1。
 ///
@@ -105,17 +115,8 @@ pub fn sys_dup(fd: usize) -> isize {
     let task = current_task().unwrap();
     let mut inner = task.lock();
 
-    // 做资源检查，目前只检查 RLIMIT_NOFILE 这一种
-    // let rlim_max = inner.resource[RLIMIT_NOFILE].rlim_max;
-    // if inner.fd_table.len() - 1 == rlim_max - 1 {
-    //     return -EMFILE;
-    // }
-
     // 检查传入 fd 的合法性
-    if fd >= inner.fd_table.len() {
-        return -1;
-    }
-    if inner.fd_table[fd].is_none() {
+    if fd >= inner.fd_table.len() || inner.fd_table[fd].is_none() {
         return -1;
     }
     let new_fd = inner.alloc_fd();
@@ -123,19 +124,23 @@ pub fn sys_dup(fd: usize) -> isize {
         return -1;
     }
     inner.fd_table[new_fd] = Some(Arc::clone(inner.fd_table[fd].as_ref().unwrap()));
+
     new_fd as isize
 }
 
-/// ### #define SYS_dup3 24
+/// #define SYS_dup3 24
+///
 /// 功能：复制文件描述符，并指定了新的文件描述符；
 ///
 /// 输入：
-/// * old：被复制的文件描述符。
-/// * new：新的文件描述符。
+///
+/// - old：被复制的文件描述符。
+/// - new：新的文件描述符。
 ///
 /// 返回值：
-/// * 成功：返回新的文件描述符。
-/// * 失败：返回-1。
+///
+/// - 成功：返回新的文件描述符。
+/// - 失败：返回-1。
 ///
 /// ```c
 /// int old, int new;
@@ -157,22 +162,20 @@ pub fn sys_dup3(old_fd: usize, new_fd: usize) -> isize {
         }
     }
 
-    //let mut act_fd = new_fd;
-    //if inner.fd_table[new_fd].is_some() {
-    //    act_fd = inner.alloc_fd();
-    //}
-    //let new_fd = inner.alloc_fd();
     inner.fd_table[new_fd] = Some(inner.fd_table[old_fd].as_ref().unwrap().clone());
     new_fd as isize
 }
 
-/// ### #define SYS_chdir 49
+/// #define SYS_chdir 49
+///
 /// 功能：切换工作目录；
 ///
 /// 输入：
+///
 /// - path：需要切换到的目录。
 ///
 /// 返回值：
+///
 /// - 成功：返回0。
 /// - 失败：返回-1。
 ///
@@ -195,12 +198,13 @@ pub fn sys_chdir(path: *const u8) -> isize {
     }
 }
 
-/// ### #define SYS_openat 56
+/// #define SYS_openat 56
+///
 /// 功能：打开或创建一个文件；
 ///
 /// 输入：
-/// - fd：文件所在目录的文件描述符。
 ///
+/// - fd：文件所在目录的文件描述符。
 /// - filename：要打开或创建的文件名。如为绝对路径，则忽略fd。如为相对路径，且fd是AT_FDCWD，则filename是相对于当前工作目录来说的。如为相对路径，且fd是一个文件描述符，则filename是相对于fd所指向的目录来说的。
 /// - flags：必须包含如下访问模式的其中一种：O_RDONLY，O_WRONLY，O_RDWR。还可以包含文件创建标志和文件状态标志。
 /// - mode：文件的所有权描述。详见`man 7 inode `。
@@ -263,13 +267,16 @@ pub fn sys_openat(fd: isize, path: *const u8, flags: u32, mode: u32) -> isize {
     }
 }
 
-/// ### #define SYS_close 57
+/// #define SYS_close 57
+///
 /// 功能：关闭一个文件描述符；
 ///
 /// 输入：
+///
 /// - fd：要关闭的文件描述符。
 ///
 /// 返回值：
+///
 /// - 成功执行，返回0。
 /// - 失败，返回-1。
 ///
@@ -292,15 +299,18 @@ pub fn sys_close(fd: usize) -> isize {
     0
 }
 
-/// ### #define SYS_getdents64 61
+/// #define SYS_getdents64 61
+///
 /// 功能：获取目录的条目;
 ///
 /// 输入：
+///
 /// - fd：所要读取目录的文件描述符。
 /// - buf：一个缓存区，用于保存所读取目录的信息。
 /// - len：buf的大小。
 ///
 /// 缓存区的结构如下：
+///
 /// ```c
 /// struct dirent {
 ///     uint64 d_ino;	// 索引结点号
@@ -312,6 +322,7 @@ pub fn sys_close(fd: usize) -> isize {
 /// ```
 ///
 /// 返回值：
+///
 /// - 成功执行，返回读取的字节数。当到目录结尾，则返回0。
 /// - 失败，则返回-1。
 ///
@@ -320,7 +331,6 @@ pub fn sys_close(fd: usize) -> isize {
 /// int ret = syscall(SYS_getdents64, fd, buf, len);
 /// ```
 pub fn sys_getdents64(fd: isize, buf: *mut u8, len: usize) -> isize {
-    // println!("[DEBUG] enter sys_getdents64: fd:{}, buf:{}, len:{}", fd, buf as usize, len);
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.lock();
@@ -375,15 +385,18 @@ pub fn sys_getdents64(fd: isize, buf: *mut u8, len: usize) -> isize {
     }
 }
 
-/// ### #define SYS_read 63
+/// #define SYS_read 63
+///
 /// 功能：从一个文件描述符中读取；
 ///
 /// 输入：
+///
 /// - fd：要读取文件的文件描述符。
 /// - buf：一个缓存区，用于存放读取的内容。
 /// - count：要读取的字节数。
 ///
 /// 返回值：
+///
 /// - 成功执行，返回读取的字节数。如为0，表示文件结束。
 /// - 错误，则返回-1。
 ///
@@ -392,13 +405,10 @@ pub fn sys_getdents64(fd: isize, buf: *mut u8, len: usize) -> isize {
 /// ssize_t ret = syscall(SYS_read, fd, buf, count);
 /// ```
 pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
-    // println!(
-    //     "[DEBUG] enter sys_read: fd:{}, buffer address:0x{:x}, len:{}",
-    //     fd, buf as usize, len
-    // );
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.lock();
+
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
         warn!("[WARNING] sys_read: fd >= inner.fd_table.len, return -1");
@@ -438,7 +448,8 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
     }
 }
 
-/// ### #define SYS_write 64
+/// #define SYS_write 64
+///
 /// 功能：从一个文件描述符中写入；
 ///
 /// 输入：
@@ -454,13 +465,6 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
 /// ssize_t ret = syscall(SYS_write, fd, buf, count);
 /// ```
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
-    // println!(
-    //     "[DEBUG] pid {} enter sys_write: fd:{}, buffer address:0x{:x}, len:{}",
-    //     current_task().unwrap().getpid(),
-    //     fd,
-    //     buf as usize,
-    //     len
-    // );
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.lock();
@@ -493,18 +497,18 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
 
         let write_size =
             file.write(UserBuffer::wrap(translated_bytes_buffer(token, buf, len))) as isize;
-        // debug!("[DEBUG] sys_write: return write_size: {}",write_size);
+
         write_size
     } else {
-        // warn!("[WARNING] sys_write: fd {} is none, return -1", fd);
         -1
     }
 }
 
-/// ### #define SYS_linkat 37
+/// #define SYS_linkat 37
 /// 功能：创建文件的链接；
 ///
 /// 输入：
+///
 /// - olddirfd：原来的文件所在目录的文件描述符。
 /// - oldpath：文件原来的名字。如果oldpath是相对路径，则它是相对于olddirfd目录而言的。如果oldpath是相对路径，且olddirfd的值为AT_FDCWD，则它是相对于当前路径而言的。如果oldpath是绝对路径，则olddirfd被忽略。
 /// - newdirfd：新文件名所在的目录。
@@ -527,19 +531,22 @@ pub fn sys_linkat(
     todo!()
 }
 
-/// ### #define SYS_unlinkat 35
+/// #define SYS_unlinkat 35
+///
 /// 功能：移除指定文件的链接(可用于删除文件)；
 ///
 /// 输入：
+///
 /// - dirfd：要删除的链接所在的目录。
 /// - path：要删除的链接的名字。如果path是相对路径，则它是相对于dirfd目录而言的。如果path是相对路径，且dirfd的值为AT_FDCWD，则它是相对于当前路径而言的。如果path是绝对路径，则dirfd被忽略。
 /// - flags：可设置为0或AT_REMOVEDIR。
 ///
 /// 返回值：
+///
 /// - 成功执行，返回0。
 /// - 失败，返回-1。
 ///
-/// ```
+/// ```c
 /// int dirfd, char *path, unsigned int flags;
 /// syscall(SYS_unlinkat, dirfd, path, flags);
 /// ```
@@ -551,7 +558,6 @@ pub fn sys_unlinkat(fd: isize, path: *const u8, flags: u32) -> isize {
     _ = flags;
 
     let path = translated_str(token, path);
-    // println!("[DEBUG] enter sys_unlinkat: fd:{}, path:{}, flags:{}",fd,path,flags);
     if fd == AT_FDCWD {
         if let Some(file) = open(
             inner.get_work_path(),
@@ -569,15 +575,18 @@ pub fn sys_unlinkat(fd: isize, path: *const u8, flags: u32) -> isize {
     }
 }
 
-/// ### #define SYS_mkdirat 34
+/// #define SYS_mkdirat 34
+///
 /// 功能：创建目录；
 ///
 /// 输入：
+///
 /// - dirfd：要创建的目录所在的目录的文件描述符。
 /// - path：要创建的目录的名称。如果path是相对路径，则它是相对于dirfd目录而言的。如果path是相对路径，且dirfd的值为AT_FDCWD，则它是相对于当前路径而言的。如果path是绝对路径，则dirfd被忽略。
 /// - mode：文件的所有权描述。详见`man 7 inode `。
 ///
 /// 返回值：
+///
 /// - 成功执行，返回0。
 /// - 失败，返回-1。
 ///
@@ -626,13 +635,15 @@ pub fn sys_mkdirat(dirfd: isize, path: *const u8, _mode: u32) -> isize {
     }
 }
 
-/// ### #define SYS_umount2 39
+/// #define SYS_umount2 39
+///
 /// 功能：卸载文件系统；
 ///
 /// 输入：指定卸载目录，卸载参数；
+///
 /// 返回值：成功返回0，失败返回-1；
 ///
-/// ```
+/// ```c
 /// const char *special, int flags;
 /// int ret = syscall(SYS_umount2, special, flags);
 /// ```
@@ -643,10 +654,12 @@ pub fn sys_umount2(p_special: *const u8, flags: usize) -> isize {
     MNT_TABLE.lock().umount(special, flags as u32)
 }
 
-/// ### #define SYS_mount 40
+/// #define SYS_mount 40
+///
 /// 功能：挂载文件系统；
 ///
 /// 输入：
+///
 /// - special: 挂载设备；
 /// - dir: 挂载点；
 /// - fstype: 挂载的文件系统类型；
@@ -676,11 +689,14 @@ pub fn sys_mount(
     MNT_TABLE.lock().mount(special, dir, fstype, flags as u32)
 }
 
-/// ### #define SYS_fstat 80
+/// #define SYS_fstat 80
+///
 /// 功能：获取文件状态；
+///
 /// 输入：
-///     - fd: 文件句柄；
-///     - kst: 接收保存文件状态的指针；
+///
+/// - fd: 文件句柄；
+/// - kst: 接收保存文件状态的指针；
 ///
 /// ```c
 /// struct kstat {
@@ -714,7 +730,6 @@ pub fn sys_mount(
 /// int ret = syscall(SYS_fstat, fd, &kst);
 /// ```
 pub fn sys_fstat(fd: isize, buf: *mut u8) -> isize {
-    // info!("[DEBUG] enter sys_fstat: fd:{}, buf:0x{:x}", fd, buf as usize);
     let token = current_user_token();
     let task = current_task().unwrap();
     let buf_vec = translated_bytes_buffer(token, buf, size_of::<Kstat>());
@@ -729,8 +744,8 @@ pub fn sys_fstat(fd: isize, buf: *mut u8) -> isize {
     }
     if let Some(file) = &inner.fd_table[dirfd] {
         file.fstat(&mut kstat);
-        // println!("kstat:{:?}",kstat);
         userbuf.write(kstat.as_bytes());
+
         0
     } else {
         -1

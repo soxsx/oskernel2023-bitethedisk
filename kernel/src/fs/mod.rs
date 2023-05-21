@@ -1,4 +1,3 @@
-mod default_files;
 mod dirent;
 mod inode;
 mod mount;
@@ -24,7 +23,6 @@ pub use stat::*;
 pub use stdio::{Stdin, Stdout};
 
 pub fn init() {
-    default_files::pre_init(false);
     println!("===+ Files Loaded +===");
     list_apps(ROOT_INODE.clone());
     println!("===+==============+===");
