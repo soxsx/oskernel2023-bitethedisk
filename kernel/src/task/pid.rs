@@ -1,6 +1,4 @@
-//!
 //! 进程标识符
-//!
 
 use alloc::vec::Vec;
 use spin::Mutex;

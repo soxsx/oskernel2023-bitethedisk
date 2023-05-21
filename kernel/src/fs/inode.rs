@@ -1,3 +1,5 @@
+//! Index Node
+
 use super::{
     open_flags::CreateMode,
     stat::{S_IFCHR, S_IFDIR, S_IFREG},

@@ -1,5 +1,4 @@
-//! 
-
+//! 系统时间相关模块
 
 #![allow(unused)]
 
@@ -12,7 +11,8 @@ pub const MSEC_PER_SEC: usize = 1000;
 pub const USEC_PER_SEC: usize = 1000_000;
 pub const NSEC_PER_SEC: usize = 1000_000_000;
 
-/// ### Linux 时间格式
+/// Linux 时间格式
+/// 
 /// - `sec`：秒
 /// - `usec`：微秒
 /// - 两个值相加的结果是结构体表示的时间
@@ -78,10 +78,10 @@ impl TimeVal {
 
 /// Linux 间隔计数
 ///
-/// * `tms_utime`：用户态时间
-/// * `tms_stime`：内核态时间
-/// * `tms_cutime`：已回收子进程的用户态时间
-/// * `tms_cstime`：已回收子进程的内核态时间
+/// - `tms_utime`：用户态时间
+/// - `tms_stime`：内核态时间
+/// - `tms_cutime`：已回收子进程的用户态时间
+/// - `tms_cstime`：已回收子进程的内核态时间
 #[allow(non_camel_case_types)]
 pub struct tms {
     /// 用户态时间

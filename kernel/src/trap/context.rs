@@ -1,3 +1,5 @@
+//! trap 上下文
+
 use riscv::register::sstatus::{self, Sstatus, SPP};
 
 #[repr(C)]

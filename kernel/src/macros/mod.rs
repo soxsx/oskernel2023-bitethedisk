@@ -1,3 +1,5 @@
+//! 几个方便使用的宏
+
 #![allow(unused)]
 
 #[macro_use]

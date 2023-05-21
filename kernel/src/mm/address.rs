@@ -1,16 +1,11 @@
-//! # 地址数据类型
-//! `os/src/mm/address.rs`
-//! ## 实现功能
-//! ```
-//! pub struct PhysAddr(pub usize);     // 物理地址 56bit
-//! pub struct PhysPageNum(pub usize);  // 物理页号 44bit
-//! pub struct VirtAddr(pub usize);     // 虚拟地址 39bit
-//! pub struct VirtPageNum(pub usize);  // 虚拟页号 27bit
-//! ```
+//! 虚实地址抽象
 
 use super::PageTableEntry;
-use crate::consts::{IN_PAGE_OFFSET, PAGE_SIZE};
-use core::fmt::{self, Debug, Formatter};
+use crate::consts::PAGE_SIZE;
+use core::fmt::Debug;
+
+/// 页内偏移：12bit
+pub const IN_PAGE_OFFSET: usize = 0xc;
 
 /// 物理地址宽度：56bit
 const PA_WIDTH_SV39: usize = 56;
@@ -21,111 +16,83 @@ const PPN_WIDTH_SV39: usize = PA_WIDTH_SV39 - IN_PAGE_OFFSET;
 /// 虚拟页号宽度：27bit
 const VPN_WIDTH_SV39: usize = VA_WIDTH_SV39 - IN_PAGE_OFFSET;
 
-/// ### 物理地址 56bit
-/// ```
-/// PhysAddr::floor(&self) -> PhysPageNum
-/// PhysAddr::ceil(&self) -> PhysPageNum
-/// PhysAddr::page_offset(&self) -> usize
-/// PhysAddr::aligned(&self) -> bool
-/// PhysAddr::get_mut<T>(&self) -> &'static mut T
-/// ```
-#[repr(C)]
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub struct PhysAddr(pub usize);
-
-/// ### 虚拟地址 39bit
-/// ```
-/// VirtAddr::floor(&self) -> PhysPageNum
-/// VirtAddr::ceil(&self) -> PhysPageNum
-/// VirtAddr::page_offset(&self) -> usize
-/// VirtAddr::aligned(&self) -> bool
-/// ```
-#[repr(C)]
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub struct VirtAddr(pub usize);
-
-/// ### 物理页号 44bit
-/// ```
-/// PhysPageNum::get_pte_array(&self) -> &'static mut [PageTableEntry]
-/// PhysPageNum::get_bytes_array(&self) -> &'static mut [u8]
-/// PhysPageNum::get_mut<T>(&self) -> &'static mut T
-/// ```
-#[repr(C)]
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub struct PhysPageNum(pub usize);
-
-/// ### 虚拟页号 27bit
-/// ```
-/// VirtPageNum::indexes(&self) -> [usize; 3]
-/// ```
-#[repr(C)]
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub struct VirtPageNum(pub usize);
-
-impl Debug for VirtAddr {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!("VA:{:#x}", self.0))
-    }
-}
-impl Debug for VirtPageNum {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!("VPN:{:#x}", self.0))
-    }
-}
-impl Debug for PhysAddr {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!("PA:{:#x}", self.0))
-    }
-}
-impl Debug for PhysPageNum {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!("PPN:{:#x}", self.0))
-    }
+macro_rules! derive_wrap {
+    ($($type_def:item)*) => {
+        $(
+            #[repr(C)]
+            #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
+            $type_def
+        )*
+    };
 }
 
-impl From<usize> for PhysAddr {
-    /// 取 `usize` 的低56位作为物理地址
-    fn from(v: usize) -> Self {
-        Self(v & ((1 << PA_WIDTH_SV39) - 1))
-    }
+derive_wrap! {
+    pub struct PhysAddr(pub usize);
+    pub struct VirtAddr(pub usize);
+    pub struct PhysPageNum(pub usize);
+    pub struct VirtPageNum(pub usize);
 }
-impl From<usize> for PhysPageNum {
-    /// 取 `usize` 的低44位作为物理页号
-    fn from(v: usize) -> Self {
-        Self(v & ((1 << PPN_WIDTH_SV39) - 1))
-    }
+
+macro_rules! gen_into_usize {
+    ($($addr_type:ident)*) => {
+        $(
+            impl From<$addr_type> for usize {
+                fn from(value: $addr_type) -> Self {
+                    value.0
+                }
+            }
+        )*
+    };
 }
-impl From<usize> for VirtAddr {
-    /// 取 `usize` 的低39位作为虚拟地址
-    fn from(v: usize) -> Self {
-        Self(v & ((1 << VA_WIDTH_SV39) - 1))
-    }
+
+gen_into_usize! {
+    PhysAddr
+    VirtAddr
+    PhysPageNum
+    VirtPageNum
 }
-impl From<usize> for VirtPageNum {
-    /// 取 `usize` 的低27位作为虚拟页号
-    fn from(v: usize) -> Self {
-        Self(v & ((1 << VPN_WIDTH_SV39) - 1))
-    }
+
+macro_rules! gen_from_usize {
+    ($($addr_type:ident, $offset:expr)*) => {
+        $(
+            impl From<usize> for $addr_type {
+                fn from(value: usize) -> Self {
+                    Self(value & ((1 << $offset) - 1))
+                }
+            }
+        )*
+    };
 }
-impl From<PhysAddr> for usize {
-    fn from(v: PhysAddr) -> Self {
-        v.0
-    }
+
+gen_from_usize! {
+    PhysAddr,    PA_WIDTH_SV39
+    PhysPageNum, PPN_WIDTH_SV39
+    VirtAddr,    VA_WIDTH_SV39
+    VirtPageNum, VPN_WIDTH_SV39
 }
-impl From<PhysPageNum> for usize {
-    fn from(v: PhysPageNum) -> Self {
-        v.0
-    }
+
+macro_rules! mk_convertion_bridge {
+    ($($from:ident <=> $into:ident)*) => {
+        $(
+            impl From<$from> for $into {
+                fn from(value: $from) -> Self {
+                    assert!(value.is_aligned(), "{:?} is not page aligned", value);
+                    value.floor()
+                }
+            }
+
+            impl From<$into> for $from {
+                fn from(value: $into) -> Self {
+                    Self(value.0 << IN_PAGE_OFFSET)
+                }
+            }
+        )*
+    };
 }
-impl From<VirtAddr> for usize {
-    fn from(v: VirtAddr) -> Self {
-        v.0
-    }
-}
-impl From<VirtPageNum> for usize {
-    fn from(v: VirtPageNum) -> Self {
-        v.0
-    }
+
+mk_convertion_bridge! {
+    PhysAddr <=> PhysPageNum
+    VirtAddr <=> VirtPageNum
 }
 
 impl VirtAddr {
@@ -142,59 +109,40 @@ impl VirtAddr {
         self.0 & (PAGE_SIZE - 1)
     }
     /// 判断虚拟地址是否与页面大小对齐
-    pub fn aligned(&self) -> bool {
+    pub fn is_aligned(&self) -> bool {
         self.page_offset() == 0
     }
 }
-impl From<VirtAddr> for VirtPageNum {
-    fn from(v: VirtAddr) -> Self {
-        assert_eq!(v.page_offset(), 0);
-        v.floor()
-    }
-}
-impl From<VirtPageNum> for VirtAddr {
-    fn from(v: VirtPageNum) -> Self {
-        Self(v.0 << IN_PAGE_OFFSET)
-    }
-}
+
 impl PhysAddr {
     /// 从物理地址计算物理页号（下取整）
     pub fn floor(&self) -> PhysPageNum {
         PhysPageNum(self.0 / PAGE_SIZE)
     }
+
     /// 从物理地址计算物理页号（上取整）
     pub fn ceil(&self) -> PhysPageNum {
         PhysPageNum((self.0 - 1 + PAGE_SIZE) / PAGE_SIZE)
     }
+
     /// 从物理地址获取页内偏移（物理地址的低12位）
     pub fn page_offset(&self) -> usize {
         self.0 & (PAGE_SIZE - 1)
     }
+
     /// 判断物理地址是否与页面大小对齐
-    pub fn aligned(&self) -> bool {
+    pub fn is_aligned(&self) -> bool {
         self.page_offset() == 0
     }
+
     /// 获取一个大小为 T 的不可变切片
     pub fn as_ref<T>(&self) -> &'static T {
         unsafe { (self.0 as *const T).as_ref().unwrap() }
     }
+
     /// 获取一个大小为 T 的可变切片
     pub fn as_mut<T>(&self) -> &'static mut T {
         unsafe { (self.0 as *mut T).as_mut().unwrap() }
-    }
-}
-impl From<PhysAddr> for PhysPageNum {
-    fn from(v: PhysAddr) -> Self {
-        // 对于物理地址与页面大小不对其的情况不能使用类型转换，panic
-        assert_eq!(v.page_offset(), 0);
-        v.floor()
-    }
-}
-
-// 从物理页号转换到物理地址只需左移 PAGE_SIZE_BITS 大小
-impl From<PhysPageNum> for PhysAddr {
-    fn from(v: PhysPageNum) -> Self {
-        Self(v.0 << IN_PAGE_OFFSET)
     }
 }
 
@@ -258,6 +206,7 @@ where
     l: T,
     r: T,
 }
+
 impl<T> SimpleRange<T>
 where
     T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
@@ -273,6 +222,7 @@ where
         self.r
     }
 }
+
 impl<T> IntoIterator for SimpleRange<T>
 where
     T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
@@ -283,6 +233,7 @@ where
         SimpleRangeIterator::new(self.l, self.r)
     }
 }
+
 pub struct SimpleRangeIterator<T>
 where
     T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
@@ -290,6 +241,7 @@ where
     current: T,
     end: T,
 }
+
 impl<T> SimpleRangeIterator<T>
 where
     T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
@@ -298,6 +250,7 @@ where
         Self { current: l, end: r }
     }
 }
+
 impl<T> Iterator for SimpleRangeIterator<T>
 where
     T: StepByOne + Copy + PartialEq + PartialOrd + Debug,

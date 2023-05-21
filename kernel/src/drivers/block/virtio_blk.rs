@@ -19,14 +19,11 @@ lazy_static! {
     static ref QUEUE_FRAMES: Mutex<Vec<FrameTracker>> = Mutex::new(Vec::new());
 }
 
-/// ### VirtIO 总线架构下的块设备
-/// 将 `virtio-drivers` crate 提供的 VirtIO 块设备抽象 `VirtIOBlk` 包装为我们自己的 `VirtIOBlock` ，
-/// 实质上只是加上了一层互斥锁，生成一个新的类型来实现 easy-fs 需要的 `BlockDevice` Trait
-/// ```
-/// fn read_block()
-/// fn write_block()
-/// pub fn new()
-/// ```
+/// VirtIO 总线架构下的块设备
+/// 
+/// 将 `virtio-drivers` crate 提供的 VirtIO 块设备抽象 `VirtIOBlk` 包装为我们自己的 `VirtIOBlock`
+/// 
+/// 实质上只是加上了一层互斥锁，生成一个新的类型来实现 fat32 需要的 `BlockDevice` Trait
 pub struct VirtIOBlock(Mutex<VirtIOBlk<'static>>);
 
 impl BlockDevice for VirtIOBlock {

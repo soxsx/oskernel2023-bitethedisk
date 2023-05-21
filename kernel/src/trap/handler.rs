@@ -1,3 +1,5 @@
+//! trap 处理模块
+
 use riscv::register::{
     scause::{self, Exception, Interrupt, Trap},
     stval,

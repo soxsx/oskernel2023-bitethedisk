@@ -1,9 +1,4 @@
-//! # 系统信息模块
-//! `os/src/task/info.rs`
-//! ```
-//! pub struct Utsname
-//! pub struct CloneFlags
-//! ```
+//! 系统信息模块
 
 use spin::Mutex;
 

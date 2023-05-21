@@ -1,6 +1,4 @@
-//!
-//! Task kernel stack 应用内核栈
-//!
+//! 进程内核栈
 
 use crate::{
     consts::{KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE},

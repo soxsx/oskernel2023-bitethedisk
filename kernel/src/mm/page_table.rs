@@ -1,12 +1,23 @@
-//! # 页表
-//! `os/src/mm/page_table.rs`
-//! ## 实现功能
-//! ```
-//! pub struct PTEFlags: u8
-//! pub struct PageTableEntry
-//! pub struct PageTable
+//! Sv39 页表
 //!
-//! pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&'static mut [u8]>
+//!
+//! ```text
+//!                    +--------+--------+--------+
+//!  stap      offset: | VPN[2] | VPN[1] | VPN[0] |
+//!    |               +--------+--------+--------+
+//!    |                    |       
+//!    +--> +--------+      |
+//!         |        |      |
+//!         +--------+ <----+
+//!         |  PTE   | -------> +--------+      +----------+
+//!         +--------+          |        |      |          |
+//!         |        |          +--------+      +----------+      +------------+
+//!         +--------+          |        |  ··· | leaf PTE | ---> |FrameTracker|
+//!         |        |          +--------+      +----------+      +------------+
+//!         +--------+          |        |      |          |
+//!            物理页            +--------+      +----------+
+//!                             |        |      |          |
+//!                             +--------+      +----------+
 //! ```
 
 use super::address::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
@@ -25,7 +36,6 @@ pub struct PageTable {
     frames: Vec<FrameTracker>,
 }
 
-/// Assume that it won't oom when creating/mapping.
 impl PageTable {
     /// 新建一个 `PageTable`
     pub fn new() -> Self {
@@ -36,7 +46,18 @@ impl PageTable {
         }
     }
 
-    /// 临时通过 `satp` 获取对应的多级页表
+    /// 通过 `satp` 获取对应的多级页表
+    ///
+    /// `satp` 寄存器在 x64 上的布局：
+    /// ```text
+    ///    64     60             44                   0
+    ///     +------+--------------+-------------------+
+    ///     | MODE |     ASID     |        PPN        |
+    ///     +------+--------------+-------------------+
+    ///         4         16                44
+    /// ```
+    ///
+    /// **hint**: 物理页号位宽 44 bits
     pub fn from_token(satp: usize) -> Self {
         Self {
             // 取satp的前44位作为物理页号
@@ -94,7 +115,8 @@ impl PageTable {
         result
     }
 
-    /// ### 建立一个虚拟页号到物理页号的映射
+    /// 建立一个虚拟页号到物理页号的映射
+    /// 
     /// 根据VPN找到第三级页表中的对应项，将 `PPN` 和 `flags` 写入到页表项
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
         let pte = self.find_pte_create(vpn).unwrap();
@@ -103,7 +125,8 @@ impl PageTable {
         *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
     }
 
-    /// ### 删除一个虚拟页号到物理页号的映射
+    /// 删除一个虚拟页号到物理页号的映射
+    /// 
     /// 只需根据虚拟页号找到页表项，然后修改或者直接清空其内容即可
     pub fn unmap(&mut self, vpn: VirtPageNum) {
         let pte = self.find_pte(vpn).unwrap();
@@ -111,7 +134,8 @@ impl PageTable {
         *pte = PageTableEntry::empty();
     }
 
-    /// ### 根据 vpn 查找页表项
+    /// 根据 vpn 查找页表项
+    /// 
     /// 调用 `find_pte` 来实现，如果能够找到页表项，那么它会将页表项拷贝一份并返回，否则就返回一个 `None`
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.find_pte(vpn).map(|pte| *pte)

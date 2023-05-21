@@ -105,7 +105,7 @@ pub use lang_items::*;
 
 pub mod lang_items {
 
-    use crate::{consts::KERNEL_HEAP_SIZE, sbi::shutdown};
+    use crate::sbi::shutdown;
     use core::panic::PanicInfo;
     use linked_list_allocator::LockedHeap;
 
@@ -139,6 +139,8 @@ pub mod lang_items {
         heap_usage();
         panic!("Heap allocation error, layout = {:?}", layout);
     }
+
+    const KERNEL_HEAP_SIZE: usize = 4096 * 256; // 1M
 
     // 给全局分配器用于分配的一块内存，位于内核的 .bss 段中
     static mut KERNEL_HEAP: [u8; KERNEL_HEAP_SIZE] = [0; KERNEL_HEAP_SIZE];
