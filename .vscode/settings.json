@@ -11,5 +11,4 @@
         "stdio.h": "c"
     },
     "rust-analyzer.showUnlinkedFileNotification": false,
-    "cmake.configureOnOpen": false
 }
