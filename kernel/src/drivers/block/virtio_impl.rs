@@ -1,15 +1,12 @@
-use core::{
-    ptr::NonNull,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use core::ptr::NonNull;
 use lazy_static::lazy_static;
-use virtio_drivers::{BufferDirection, Hal, PhysAddr, PAGE_SIZE};
+use virtio_drivers::{BufferDirection, Hal, PhysAddr};
 
 use crate::{
     kernel_token,
     mm::{
         alloc_frame, dealloc_frame, FrameTracker, PageTable, PhysAddr as KPhysAddr, PhysPageNum,
-        StepByOne, VirtAddr,
+        StepByOne,
     },
 };
 use alloc::vec::Vec;

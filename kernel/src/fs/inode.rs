@@ -12,6 +12,7 @@ use alloc::{
     vec::Vec,
 };
 use fat32::{create_root_vfile, FAT32Manager, VFile, ATTR_ARCHIVE, ATTR_DIRECTORY};
+use log::info;
 use spin::Mutex;
 
 /// 表示进程中一个被打开的常规文件或目录

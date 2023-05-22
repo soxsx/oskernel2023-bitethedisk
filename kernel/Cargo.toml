@@ -13,18 +13,8 @@ bitflags = "2.0.0"
 xmas-elf = "0.9.0"
 spin = "0.9.6"
 riscv = "0.10.1"
-# virtio-drivers = { git = "https://github.com/rcore-riscv-hypervisor-dev/virtio-drivers", rev = "1201a0b" }
 virtio-drivers= "0.4.0"
 linked_list_allocator = "0.10.5"
+log = "0.4"
 
 fat32 = { path = "../fat32" }
-
-[source.crates-io]
-replace-with = "vendored-sources"
-
-[source."git+https://github.com/rcore-os/riscv"]
-git = "https://github.com/rcore-os/riscv"
-replace-with = "vendored-sources"
-
-[source.vendored-sources]
-directory = "vendor"

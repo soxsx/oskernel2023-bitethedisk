@@ -32,35 +32,3 @@ macro_rules! println {
         $crate::console::print(format_args!(concat!($fmt, "\n") $(, $($arg)+)?));
     }
 }
-
-// 红色 91
-#[macro_export]
-macro_rules! error {
-    ($fmt: literal $(, $($arg: tt)+)?) => {
-        $crate::console::print(format_args!("\x1b[91m{}\x1b[0m",format_args!(concat!($fmt, "\n") $(, $($arg)+)?)));
-    }
-}
-
-// 绿色 92
-#[macro_export]
-macro_rules! debug {
-    ($fmt: literal $(, $($arg: tt)+)?) => {
-        $crate::console::print(format_args!("\x1b[92m{}\x1b[0m",format_args!(concat!($fmt, "\n") $(, $($arg)+)?)));
-    }
-}
-
-// 黄色 93
-#[macro_export]
-macro_rules! warn {
-    ($fmt: literal $(, $($arg: tt)+)?) => {
-        $crate::console::print(format_args!("\x1b[93m{}\x1b[0m",format_args!(concat!($fmt, "\n") $(, $($arg)+)?)));
-    }
-}
-
-// 蓝色 94
-#[macro_export]
-macro_rules! info {
-    ($fmt: literal $(, $($arg: tt)+)?) => {
-        $crate::console::print(format_args!("\x1b[94m{}\x1b[0m",format_args!(concat!($fmt, "\n") $(, $($arg)+)?)));
-    }
-}

@@ -18,6 +18,9 @@ mod macros;
 #[macro_use]
 mod console; // 控制台模块
 
+#[macro_use]
+mod logging;
+
 #[path = "boards/qemu.rs"]
 mod board; // 与虚拟机相关的参数
 
@@ -43,6 +46,7 @@ pub fn meow() -> ! {
         init_bss();
         unsafe { set_fs(FS::Dirty) }
         lang_items::setup();
+        logging::init();
         mm::init();
         trap::init();
         trap::enable_stimer_interrupt();
