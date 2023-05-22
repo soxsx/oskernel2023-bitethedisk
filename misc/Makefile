@@ -9,7 +9,8 @@ else
 endif
 
 tests:
-	@find ./user/build/riscv64 || (cd ./user && $(SH) ./build-oscomp.sh)
+	# @find ./user/build/riscv64 || (cd ./user && $(SH) ./build-oscomp.sh)
+	@cd ./user && $(SH) ./build-oscomp.sh
 
 initproc:
 	@cd tests_booter && make initproc
