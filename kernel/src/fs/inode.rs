@@ -263,24 +263,41 @@ pub fn open(
 }
 
 // display debug todo
+// work_path 绝对路径
 pub fn chdir(work_path: &str, path: &str) -> Option<String> {
+    let mut current_work_path_vec: Vec<&str> = work_path.split('/').collect();
+    if work_path.chars().nth(0).unwrap() == '/' {
+        current_work_path_vec.remove(0); // 移除一个多余的 ""
+    }
+    let path_vec: Vec<&str> = path.split('/').collect();
+
     let current_inode = {
         if path.chars().nth(0).unwrap() == '/' {
             // 传入路径是绝对路径
             ROOT_INODE.clone()
         } else {
             // 传入路径是相对路径
-            let current_work_pathv: Vec<&str> = work_path.split('/').collect();
-            ROOT_INODE.find_vfile_bypath(current_work_pathv).unwrap()
+            ROOT_INODE
+                .find_vfile_bypath(current_work_path_vec.clone())
+                .unwrap()
         }
     };
-    let pathv: Vec<&str> = path.split('/').collect();
-    if let Some(_) = current_inode.find_vfile_bypath(pathv) {
-        let new_current_path = String::from_str("/").unwrap() + &String::from_str(path).unwrap();
-        if current_inode.name() == "/" {
-            Some(new_current_path)
+    if let Some(_) = current_inode.find_vfile_bypath(path_vec.clone()) {
+        if path.chars().nth(0).unwrap() == '/' {
+            Some(path.to_string())
         } else {
-            Some(String::from_str(current_inode.name()).unwrap() + &new_current_path)
+            // 将 work_path 和 path 拼接, work_path 为绝对路径, path 为相对路径
+            for i in 0..path_vec.len() {
+                if path_vec[i] == "." || path_vec[i] == "" {
+                    continue;
+                } else if path_vec[i] == ".." {
+                    current_work_path_vec.pop();
+                } else {
+                    current_work_path_vec.push(path_vec[i]);
+                }
+            }
+
+            Some(current_work_path_vec.join("/"))
         }
     } else {
         None
