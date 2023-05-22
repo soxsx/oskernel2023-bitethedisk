@@ -21,11 +21,11 @@ initproc:
 	@cd ../misc && make initproc
 
 kernel: initproc
-	@cargo build --release
-	# @cargo build --release --features "multi_harts"
+	@cargo build --release --offline
+	# @cargo build --release --features "multi_harts" --offline
 
-	# @cargo build
-	# @cargo build --features "multi_harts"
+	# @cargo build --offline
+	# @cargo build --features "multi_harts" --offline
 
 fat32img:
 	@echo Build all syscall tests...
