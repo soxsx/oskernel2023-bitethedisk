@@ -1,8 +1,8 @@
 //! 内存管理系统调用
 
 use crate::{
-    mm::{translated_bytes_buffer, MmapFlags, MmapProts, UserBuffer},
-    task::{current_task, current_user_token},
+    mm::{MmapFlags, MmapProts},
+    task::current_task,
 };
 
 /// #define SYS_brk 214

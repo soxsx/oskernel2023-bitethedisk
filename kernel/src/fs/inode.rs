@@ -11,7 +11,6 @@ use alloc::{
     sync::Arc,
     vec::Vec,
 };
-use core::str::FromStr;
 use fat32::{create_root_vfile, FAT32Manager, VFile, ATTR_ARCHIVE, ATTR_DIRECTORY};
 use spin::Mutex;
 

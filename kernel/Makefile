@@ -17,25 +17,17 @@ NCPU = 2
 #                        Run straightly                          #
 ##################################################################
 initproc:
-	@echo Build initproc...
 	@cd ../misc && make initproc
 
 kernel: initproc
 	@cargo build --release --offline
-	# @cargo build --release --features "multi_harts" --offline
-
-	# @cargo build --offline
-	# @cargo build --features "multi_harts" --offline
 
 fat32img:
-	@echo Build all syscall tests...
 	@cd ../misc && make tests
 
-	@echo Move all tests to workspace...
 	@cd ../workspace && mkdir -p tests/
 	@cd ../misc && cp -r ./user/build/riscv64/* ../workspace/tests
 
-	@echo Build a fat32 image sized 300MiB...
 	@cd ../workspace && make image
 
 run: kernel fat32img
