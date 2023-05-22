@@ -361,6 +361,7 @@ impl TaskControlBlock {
         let pte = self.lock().enquire_pte_via_vpn(vpn);
         if pte.is_some() && pte.unwrap().is_cow() {
             let former_ppn = pte.unwrap().ppn();
+            // crate::debug!("cow lazy alloc");
             return self.lock().cow_alloc(vpn, former_ppn);
         } else {
             if let Some(pte1) = pte {
@@ -372,6 +373,7 @@ impl TaskControlBlock {
         if va >= heap_start && va <= heap_end {
             self.lock().lazy_alloc_heap(va.floor())
         } else if va >= mmap_start && va < mmap_end {
+            // crate::debug!("mmap lazy alloc");
             self.lazy_mmap(va, is_load)
         } else {
             println!("[check_lazy] {:?}", va);
@@ -439,11 +441,20 @@ impl TaskControlBlock {
                 end_va = VirtAddr::from(addr + length);
             }
         } else {
+            // crate::debug!("mmap: addr == 0");
             start_va = inner.mmap_area.get_mmap_top();
             end_va = VirtAddr::from(start_va.0 + length);
         }
 
+        // TODO mmap
         inner.memory_set.insert_mmap_area(
+            start_va,
+            end_va,
+            MapPermission::from_bits(map_flags).unwrap(),
+        );
+
+        // TODO mmap
+        inner.memory_set.insert_framed_area(
             start_va,
             end_va,
             MapPermission::from_bits(map_flags).unwrap(),
@@ -459,6 +470,7 @@ impl TaskControlBlock {
             fd_table,
             token,
         );
+
         drop(inner);
 
         start_va.0
@@ -470,6 +482,7 @@ impl TaskControlBlock {
         // println!("[Kernel munmap] start munmap start: 0x{:x} len: 0x{:x};", start, len);
         // inner.memory_set.debug_show_layout();
 
+        // crate::debug!("addr: 0x{:x} length: 0x{:x}", addr, length);
         inner
             .memory_set
             .remove_area_with_start_vpn(VirtAddr::from(addr).into());

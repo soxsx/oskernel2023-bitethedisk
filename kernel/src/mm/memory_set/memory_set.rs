@@ -2,6 +2,7 @@ use super::chunk_area::ChunkArea;
 use super::{MapArea, MapPermission, MapType};
 use crate::consts::{PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE, USER_STACK_SIZE};
 use crate::fs::OSInode;
+use crate::mm::address::VPNRange;
 use crate::mm::frame_allocator::{enquire_refcount, frame_add_ref};
 use crate::mm::page_table::PTEFlags;
 use crate::mm::{
@@ -27,7 +28,7 @@ use alloc::{sync::Arc, vec::Vec};
 /// ```
 pub struct MemorySet {
     /// 挂着所有多级页表的节点所在的物理页帧
-    page_table: PageTable,
+    pub page_table: PageTable,
     /// 挂着对应逻辑段中的数据所在的物理页帧
     areas: Vec<MapArea>,
     heap_chunk: ChunkArea,
@@ -441,7 +442,15 @@ impl MemorySet {
         end_va: VirtAddr,
         permission: MapPermission,
     ) {
-        let new_chunk_area = ChunkArea::new(MapType::Framed, permission, start_va, end_va);
+        let mut new_chunk_area = ChunkArea::new(MapType::Framed, permission, start_va, end_va);
+
+        // let start_vpn = start_va.floor();
+        // let end_vpn = end_va.ceil();
+        // let vpn_range = VPNRange::new(start_vpn, end_vpn);
+        // for vpn in vpn_range.into_iter() {
+        //     new_chunk_area.push_vpn(vpn, &mut self.page_table);
+        // }
+
         self.mmap_chunks.push(new_chunk_area);
     }
 

@@ -2,6 +2,7 @@ use super::address::VirtAddr;
 use super::{translated_bytes_buffer, UserBuffer};
 use crate::consts::PAGE_SIZE;
 use crate::fs::File;
+use crate::task::context;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 // use core::fmt::{self, Debug, Formatter};
@@ -93,8 +94,9 @@ impl MmapArea {
     ) -> usize {
         let start_addr = start.into();
 
-        let mmap_space = MmapSpace::new(start_addr, len, prot, flags, 0, fd, offset);
-        // mmap_space.map_file(start_addr, PAGE_SIZE, offset, _fd_table, _token);
+        let mut mmap_space = MmapSpace::new(start_addr, len, prot, flags, 0, fd, offset);
+        // TODO mmap
+        mmap_space.map_file(start_addr, PAGE_SIZE, offset, _fd_table, _token);
 
         self.mmap_set.push(mmap_space);
 
@@ -204,13 +206,13 @@ impl MmapSpace {
 
     pub fn lazy_map_page(
         &mut self,
-        page_start: VirtAddr,
+        va: VirtAddr,
         fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
         token: usize,
     ) {
-        let offset: usize = self.offset - self.oaddr.0 + page_start.0;
+        let offset: usize = self.offset - self.oaddr.0 + va.0;
         // println!("[Kernel mmap] map_file 0x{:X} = 0x{:X} - 0x{:X} + 0x{:X}", offset, self.offset, self.oaddr.0, page_start.0);
-        self.map_file(page_start, PAGE_SIZE, offset, fd_table, token);
+        self.map_file(va, PAGE_SIZE, offset, fd_table, token);
     }
 
     pub fn map_file(
@@ -241,6 +243,7 @@ impl MmapSpace {
             if !f.readable() {
                 return -1;
             }
+            // crate::debug!("map_file: offset: 0x{:X}", offset);
             // println!{"The va_start is 0x{:X}, offset of file is {}", va_start.0, offset};
             let _read_len = f.read(UserBuffer::wrap(translated_bytes_buffer(
                 token,
@@ -248,7 +251,15 @@ impl MmapSpace {
                 len,
             )));
             // println!{"[kernel map_file] read {} bytes", _read_len};
-            // println!("[kernel] {:?}",va_start);
+            // println!("va: {:x?}", va_start.0);
+
+            // let content = translated_bytes_buffer(token, va_start.0 as *const u8, len);
+            // // 将 Vec<&mut [u8]> 转化为 string 打印
+            // let content = content
+            //     .iter()
+            //     .map(|x| unsafe { core::str::from_utf8_unchecked(x) })
+            //     .collect::<alloc::string::String>();
+            // debug!("content: {}", content);
         } else {
             return -1;
         };

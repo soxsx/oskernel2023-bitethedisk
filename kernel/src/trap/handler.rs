@@ -60,6 +60,7 @@ pub fn user_trap_handler() -> ! {
                 current_add_signal(SignalFlags::SIGSEGV);
             }
             let task = current_task().unwrap();
+            // crate::debug!("pid:{}, Mem Fault trapped, lazy map", task.pid.0);
             let lazy = task.check_lazy(va, is_load);
 
             if lazy != 0 {
