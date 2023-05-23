@@ -365,7 +365,7 @@ impl MemorySet {
         for area in self.areas.iter_mut() {
             let head_vpn = area.vpn_range.get_start();
             let tail_vpn = area.vpn_range.get_end();
-            if vpn <= tail_vpn && vpn >= head_vpn {
+            if vpn < tail_vpn && vpn >= head_vpn {
                 area.data_frames.push(frame);
                 return 0;
             }
@@ -373,14 +373,14 @@ impl MemorySet {
         for chunk in self.mmap_chunks.iter_mut() {
             let head_vpn = VirtPageNum::from(chunk.start_va);
             let tail_vpn = VirtPageNum::from(chunk.end_va);
-            if vpn <= tail_vpn && vpn >= head_vpn {
+            if vpn < tail_vpn && vpn >= head_vpn {
                 chunk.data_frames.push(frame);
                 return 0;
             }
         }
         let head_vpn = VirtPageNum::from(self.heap_chunk.start_va);
         let tail_vpn = VirtPageNum::from(self.heap_chunk.end_va);
-        if vpn <= tail_vpn && vpn >= head_vpn {
+        if vpn < tail_vpn && vpn >= head_vpn {
             self.heap_chunk.data_frames.push(frame);
             return 0;
         }
@@ -462,7 +462,7 @@ impl MemorySet {
             }
         }
         for chunk in self.mmap_chunks.iter() {
-            if start_va <= chunk.start_va && end_va <= chunk.start_va {
+            if start_va <= chunk.start_va && end_va <= chunk.end_va {
                 return true;
             }
         }
