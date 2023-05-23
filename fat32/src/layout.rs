@@ -437,7 +437,7 @@ impl ShortDirEntry {
     /// 为相应的长文件名计算校验和
     pub fn checksum(&self) -> u8 {
         let mut name_buff: [u8; 11] = [0u8; 11];
-        let mut sum: u8 = 0;
+        let mut sum: usize = 0;
         for i in 0..8 {
             name_buff[i] = self.dir_name[i];
         }
@@ -446,12 +446,13 @@ impl ShortDirEntry {
         }
         for i in 0..11 {
             if (sum & 1) != 0 {
-                sum = 0x80 + (sum >> 1) + name_buff[i];
+                sum = 0x80 + (sum >> 1) + name_buff[i] as usize;
             } else {
-                sum = (sum >> 1) + name_buff[i];
+                sum = (sum >> 1) + name_buff[i] as usize;
             }
+	    sum = sum & 0xFF;
         }
-        sum
+        sum as u8
     }
 
     pub fn as_bytes_mut(&mut self) -> &mut [u8] {
