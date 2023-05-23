@@ -22,6 +22,9 @@ initproc:
 kernel: initproc
 	@cargo build --release --offline
 
+kernel-dbg: initproc
+	@LOG_LV=debug cargo build --release --offline
+
 fat32img:
 	@cd ../misc && make tests
 
@@ -30,7 +33,7 @@ fat32img:
 
 	@cd ../workspace && make image
 
-run: kernel fat32img
+run: kernel-dbg fat32img
 	@$(QEMU) \
 	 	-machine virt \
 		-kernel $(KERNEL_ELF) \

@@ -1,5 +1,8 @@
 //! trap 处理模块
+//!
+//! 根据 trap 发生的原因进行分发处理
 
+use log::{debug, error};
 use riscv::register::{
     scause::{self, Exception, Interrupt, Trap},
     stval,
@@ -18,7 +21,7 @@ use crate::{
 
 use super::{set_kernel_trap_entry, trap_return};
 
-/// `trap` 处理函数
+/// 用户态 trap 发生时的处理函数
 #[no_mangle]
 pub fn user_trap_handler() -> ! {
     set_kernel_trap_entry();
@@ -31,11 +34,14 @@ pub fn user_trap_handler() -> ! {
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
             let mut cx = current_trap_cx();
+
             cx.sepc += 4;
+
             let result = syscall(
-                cx.x[17],
-                [cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]],
+                cx.a7(),
+                [cx.a0(), cx.a1(), cx.a2(), cx.a3(), cx.a4(), cx.a5()],
             );
+
             // cx is changed during sys_exec, so we have to call it again
             cx = current_trap_cx();
             cx.x[10] = result as usize;
@@ -45,7 +51,13 @@ pub fn user_trap_handler() -> ! {
         | Trap::Exception(Exception::StorePageFault)
         | Trap::Exception(Exception::LoadFault)
         | Trap::Exception(Exception::LoadPageFault) => {
-            // println!("[Kernel trap] pid:{}, Mem Fault trapped, {:?}, {:?}", current_task().unwrap().getpid(), VirtAddr::from(stval as usize), VirtAddr::from(stval as usize).floor());
+            debug!(
+                "user_trap_handler: memory fault, task: {} at {:?}, {:?}",
+                current_task().unwrap().pid(),
+                VirtAddr::from(stval as usize),
+                VirtAddr::from(stval as usize).floor(),
+            );
+
             let is_load: bool;
             if scause.cause() == Trap::Exception(Exception::LoadFault)
                 || scause.cause() == Trap::Exception(Exception::LoadPageFault)
@@ -54,13 +66,16 @@ pub fn user_trap_handler() -> ! {
             } else {
                 is_load = false;
             }
+
             let va: VirtAddr = (stval as usize).into();
             if va > TRAMPOLINE.into() {
                 println!("[kernel trap] VirtAddr out of range!");
                 current_add_signal(SignalFlags::SIGSEGV);
             }
             let task = current_task().unwrap();
-            // crate::debug!("pid:{}, Mem Fault trapped, lazy map", task.pid.0);
+
+            debug!("user_trap_handler: lazy mapping, task: {:?}", task.pid());
+
             let lazy = task.check_lazy(va, is_load);
 
             if lazy != 0 {
@@ -71,8 +86,8 @@ pub fn user_trap_handler() -> ! {
         Trap::Exception(Exception::InstructionFault)
         | Trap::Exception(Exception::InstructionPageFault) => {
             let task = current_task().unwrap();
-            println!(
-                "[kernel] {:?} in application {}, bad addr = {:#x}, bad instruction = {:#x}.",
+            debug!(
+                "{:?} in application {}, bad addr = {:#x}, bad instruction = {:#x}.",
                 scause.cause(),
                 task.pid.0,
                 stval,
@@ -84,13 +99,11 @@ pub fn user_trap_handler() -> ! {
         }
 
         Trap::Exception(Exception::IllegalInstruction) => {
-            // println!("[kernel] IllegalInstruction in application, kernel killed it.");
-            // // illegal instruction exit code
-            // exit_current_and_run_next(-3);
             println!("stval:{}", stval);
+
             let sepc = riscv::register::sepc::read();
             println!("sepc:0x{:x}", sepc);
-            // current_task().unwrap().inner_exclusive_access().memory_set.debug_show_data(sepc.into());
+
             current_add_signal(SignalFlags::SIGILL);
         }
 
@@ -100,22 +113,26 @@ pub fn user_trap_handler() -> ! {
             suspend_current_and_run_next();
         }
 
-        _ => {
-            panic!(
-                "Unsupported trap {:?}, stval = {:#x}!",
-                scause.cause(),
-                stval
-            );
-        }
+        _ => panic!(
+            "trap {:?} is unsupported, stval = {:#x}!",
+            scause.cause(),
+            stval
+        ),
     }
 
     trap_return();
 }
 
-/// 在内核触发Trap后会转到这里引发Panic
+/// 内核态 trap 发生时的处理函数
 #[no_mangle]
 pub fn kernel_trap_handler() -> ! {
     use riscv::register::sepc;
-    println!("stval = {:#x}, sepc = {:#x}", stval::read(), sepc::read());
+
+    error!(
+        "kernel_trap_handler: stval = {:#x}, sepc = {:#x}",
+        stval::read(),
+        sepc::read()
+    );
+
     panic!("a trap {:?} from kernel!", scause::read().cause());
 }

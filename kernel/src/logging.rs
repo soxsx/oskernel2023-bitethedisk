@@ -23,10 +23,11 @@ impl Log for SimpleLogger {
         };
 
         println!(
-            "\u{1B}[{}m[{:>5}] {}: {}\u{1B}[0m",
+            "\u{1B}[{}m[{:>5}] {}:{} {}\u{1B}[0m",
             color,
             record.level(),
-            record.module_path().unwrap(),
+            record.file().unwrap(),
+            record.line().unwrap(),
             record.args(),
         );
     }

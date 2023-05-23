@@ -65,17 +65,22 @@ impl TaskControlBlockInner {
     pub fn trap_context(&self) -> &'static mut TrapContext {
         self.trap_cx_ppn.as_mut()
     }
+
     /// 获取用户地址空间的 token (符合 satp CSR 格式要求的多级页表的根节点所在的物理页号)
     pub fn get_user_token(&self) -> usize {
         self.memory_set.token()
     }
-    fn get_status(&self) -> TaskStatus {
+
+    fn status(&self) -> TaskStatus {
         self.task_status
     }
+
     pub fn is_zombie(&self) -> bool {
-        self.get_status() == TaskStatus::Zombie
+        self.status() == TaskStatus::Zombie
     }
-    /// ### 查找空闲文件描述符下标
+
+    /// 查找空闲文件描述符下标
+    ///
     /// 从文件描述符表中 **由低到高** 查找空位，返回向量下标，没有空位则在最后插入一个空位
     pub fn alloc_fd(&mut self) -> usize {
         if let Some(fd) = (0..self.fd_table.len()).find(|fd| self.fd_table[*fd].is_none()) {
@@ -104,9 +109,6 @@ impl TaskControlBlockInner {
     pub fn lazy_alloc_heap(&mut self, vpn: VirtPageNum) -> isize {
         self.memory_set.lazy_alloc_heap(vpn)
     }
-    // pub fn lazy_alloc_stack(&mut self, vpn: VirtPageNum) -> isize {
-    //     self.memory_set.lazy_alloc_stack(vpn)
-    // }
 }
 
 impl TaskControlBlock {

@@ -89,13 +89,5 @@ pub fn sys_mmap(
     let task = current_task().unwrap();
     let result_addr = task.mmap(addr, length, prot, flags, fd, offset);
 
-    // crate::debug!("result_addr: 0x{:X}", result_addr);
-    // let buf = translated_bytes_buffer(current_user_token(), result_addr as *const u8, length);
-    // let content = buf
-    //     .iter()
-    //     .map(|x| unsafe { core::str::from_utf8_unchecked(x) })
-    //     .collect::<alloc::string::String>();
-    // debug!("content: {}", content);
-
     result_addr as isize
 }

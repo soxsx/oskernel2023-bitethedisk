@@ -1,34 +1,40 @@
+# kernel/trap/trampoline.S
+
+	# TrapContext 内存布局:
+	#   0 - 通用寄存器
+	# 256 - sstatus
+	# 264 - sepc
+	# 272 - kernel_satp
+	# 280 - kernel_sp
+	# 288 - trap_handler
+
 .altmacro
-.macro SAVE_GP n
+.macro STORE_X n
     sd x\n, \n*8(sp)
 .endm
-.macro LOAD_GP n
+.macro LOAD_X n
     ld x\n, \n*8(sp)
 .endm
 
 .section .text.trampoline
-.globl __alltraps
-.globl __restore
+.globl user_trapvec
 .align 2
-__alltraps:
+user_trapvec:
+	# sscratch 中存放着 trap 的虚拟地址 TRAP_CONTEXT
 	csrrw sp, sscratch, sp
 
-	# now sp->*TrapContext in user space, sscratch->user stack
-	# save other general purpose registers
-	sd x1, 1*8(sp)
+	# 保存除了 x0, sp, tp 的其他通用寄存器
+	sd ra, 1*8(sp)
+	sd gp, 3*8(sp)
 
-	# skip sp(x2), we will save it later
-	sd x3, 3*8(sp)
-
-	# skip tp(x4), application does not use it
-	# save x5~x31
+	# 跳过 tp(x4)，tp 中保存着当前的 hart id
 	.set n, 5
 	.rept 27
-		SAVE_GP %n
+		STORE_X %n
 		.set n, n+1
 	.endr
 
-	# we can use t0/t1/t2 freely, because they have been saved in TrapContext
+	# t0, t1 因为前面已经存到内存了，现在可以随便使用
 	csrr t0, sstatus
 	csrr t1, sepc
 	sd t0, 32*8(sp)
@@ -38,49 +44,58 @@ __alltraps:
 	csrr t2, sscratch
 	sd t2, 2*8(sp)
 
-	# load kernel_satp into t0
+	# 将 kernel_satp 装载到 t0
 	ld t0, 34*8(sp)
 
-	# load trap_handler into t1
+	# 将 trap_handler 的入口地址装载到 t1
 	ld t1, 36*8(sp)
 
-	# move to kernel_sp
+	# 将 sp 设置到内核栈
 	ld sp, 35*8(sp)
 
-	# switch to kernel space
+	# 切换到内核地址空间
 	csrw satp, t0
 
 	sfence.vma
 
-	# jump to trap_handler
+	# 跳转到 trap 处理函数
 	jr t1
 
-__restore:
-	# a0: *TrapContext in user space(Constant); a1: user space token
-	# switch to user space
+.globl user_trapret
+user_trapret:
+	# 进到当前代码前由 Rust 代码设置:
+	# a0 = TRAP_CONTEXT;         // TrapContext 在用户地址空间中的虚拟地址
+	# a1 = current_user_token(); // 当前任务的 satp
+
+	# 切换到应用地址空间
 	csrw satp, a1
 
+	# 刷新 MMU 的 TLB
 	sfence.vma
 
+	# 将 TrapContext 的值存入 sscratch，供 user_trapvec 使用
 	csrw sscratch, a0
+	# 将 a0 的值转存到 sp，是为了使用宏
 	mv sp, a0
 
-	# now sp points to TrapContext in user space, start restoring based on it
-	# restore sstatus/sepc
+	# 在恢复所有通用寄存器前，通用寄存器中大部分可以随意使用，这里选择
+	# t0, t1 两个寄存器，用来将内存中的 sstatus 和 sepc 恢复到相应寄存器
 	ld t0, 32*8(sp)
 	ld t1, 33*8(sp)
-
 	csrw sstatus, t0
 	csrw sepc, t1
 
-	# restore general purpose registers except x0/sp/tp
-	ld x1, 1*8(sp)
-	ld x3, 3*8(sp)
+	# 开始恢复除了 x0 和 sp 以外的通用寄存器
+	# 因为 sp 在宏中是作为偏移的基址使用的，所以现在不能从内存中恢复它的值
+	ld ra, 1*8(sp)
+	ld gp, 3*8(sp)
 	.set n, 5
 	.rept 27
-		LOAD_GP %n
+		LOAD_X %n
 		.set n, n+1
 	.endr
-	# back to user stack
+
+	# 其他通用寄存器(除 x0 外)，已全部恢复，恢复 sp
 	ld sp, 2*8(sp)
+
 	sret

@@ -159,11 +159,6 @@ impl VirtPageNum {
     }
 }
 
-// 在实现方面，都是先把物理页号转为物理地址 PhysAddr ，然后再转成 usize 形式的物理地址。
-// 接着，我们直接将它转为裸指针用来访问物理地址指向的物理内存。
-// 在返回值类型上附加了静态生命周期泛型 'static ，这是为了绕过 Rust 编译器的借用检查，
-// 实质上可以将返回的类型也看成一个裸指针，因为它也只是标识数据存放的位置以及类型。
-// 但与裸指针不同的是，无需通过 unsafe 的解引用访问它指向的数据，而是可以像一个正常的可变引用一样直接访问
 impl PhysPageNum {
     /// 根据自己的PPN取出当前节点的页表项数组
     pub fn as_pte_array(&self) -> &'static mut [PageTableEntry] {
@@ -197,6 +192,8 @@ impl StepByOne for PhysPageNum {
         self.0 += 1;
     }
 }
+
+pub type VPNRange = SimpleRange<VirtPageNum>;
 
 #[derive(Copy, Clone, Debug)]
 pub struct SimpleRange<T>
@@ -266,5 +263,3 @@ where
         }
     }
 }
-
-pub type VPNRange = SimpleRange<VirtPageNum>;

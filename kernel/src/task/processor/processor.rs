@@ -6,6 +6,7 @@ use crate::task::{processor::cpu::Cpu, task::TaskControlBlock, TaskContext};
 
 /// - Processor 是描述 CPU执行状态 的数据结构。
 /// - 在单核CPU环境下，我们仅创建单个 Processor 的全局实例 PROCESSOR
+#[cfg(not(feature = "multi_harts"))]
 pub static mut PROCESSOR: Cpu = Cpu::new();
 
 #[cfg(feature = "multi_harts")]

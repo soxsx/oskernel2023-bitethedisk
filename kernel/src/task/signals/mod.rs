@@ -4,7 +4,7 @@ pub mod signal_flags;
 
 pub use signal_flags::SignalFlags;
 
-pub fn check_signals_of_current() -> Option<(i32, &'static str)> {
+pub fn check_current_signals() -> Option<(i32, &'static str)> {
     let task = current_task().unwrap();
     let task_inner = task.lock();
     match task_inner.signals {

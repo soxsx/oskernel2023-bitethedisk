@@ -205,18 +205,7 @@ pub fn sys_do_fork(
     let new_task = current_task.fork(false);
 
     // let tid = new_task.getpid();
-    let flags = CloneFlags::from_bits(flags).unwrap();
-    _ = flags;
-    // if flags.contains(CloneFlags::CLONE_CHILD_SETTID) && ctid != 0{
-    //     new_task.inner_exclusive_access().address.set_child_tid = ctid;
-    //     *translated_refmut(new_task.inner_exclusive_access().get_user_token(), ctid as *mut i32) = tid  as i32;
-    // }
-    // if flags.contains(CloneFlags::CLONE_CHILD_CLEARTID) && ctid != 0{
-    //     new_task.inner_exclusive_access().address.clear_child_tid = ctid;
-    // }
-    // if !flags.contains(CloneFlags::SIGCHLD) {
-    //     panic!("sys_fork: FLAG not supported!");
-    // }
+    let _flags = CloneFlags::from_bits(flags).unwrap();
 
     if stack_ptr != 0 {
         let trap_cx = new_task.lock().trap_context();

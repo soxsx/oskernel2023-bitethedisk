@@ -18,15 +18,13 @@ mod macros;
 #[macro_use]
 mod console; // 控制台模块
 
-#[macro_use]
-mod logging;
-
 #[path = "boards/qemu.rs"]
 mod board; // 与虚拟机相关的参数
 
 mod consts;
 mod drivers; // 设备驱动层
 mod fs;
+mod logging;
 mod mm;
 mod sbi;
 mod syscall;
