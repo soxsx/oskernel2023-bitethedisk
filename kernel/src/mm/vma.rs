@@ -94,8 +94,9 @@ impl MmapArea {
         let start_addr = start.into();
 
         let mut mmap_space = MmapSpace::new(start_addr, len, prot, flags, 0, fd, offset);
-        // TODO mmap
-        mmap_space.map_file(start_addr, PAGE_SIZE, offset, _fd_table, _token);
+        // mmap_space.map_file(start_addr, PAGE_SIZE, offset, _fd_table, _token);
+
+        // use lazy map
 
         self.mmap_set.push(mmap_space);
 

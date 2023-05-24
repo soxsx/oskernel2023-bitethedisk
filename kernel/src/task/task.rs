@@ -455,13 +455,6 @@ impl TaskControlBlock {
             MapPermission::from_bits(map_flags).unwrap(),
         );
 
-        // TODO mmap
-        inner.memory_set.insert_framed_area(
-            start_va,
-            end_va,
-            MapPermission::from_bits(map_flags).unwrap(),
-        );
-
         inner.mmap_area.push(
             start_va.0,
             length,

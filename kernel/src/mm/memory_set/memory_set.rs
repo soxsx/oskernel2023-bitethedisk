@@ -451,6 +451,8 @@ impl MemorySet {
         //     new_chunk_area.push_vpn(vpn, &mut self.page_table);
         // }
 
+        // use lazy map
+
         self.mmap_chunks.push(new_chunk_area);
     }
 
