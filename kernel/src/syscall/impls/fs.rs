@@ -523,11 +523,11 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
 /// int ret = syscall(SYS_linkat, olddirfd, oldpath, newdirfd, newpath, flags);
 /// ```
 pub fn sys_linkat(
-    old_dirfd: isize,
-    old_path: *const u8,
-    new_dirfd: isize,
-    new_path: *const u8,
-    flags: u32,
+    _old_dirfd: isize,
+    _old_path: *const u8,
+    _new_dirfd: isize,
+    _new_path: *const u8,
+    _flags: u32,
 ) -> isize {
     todo!()
 }

@@ -28,8 +28,37 @@ use alloc::{string::String, sync::Arc, vec::Vec};
 /// ```c
 /// pid_t ret = syscall(SYS_clone, flags, stack, ptid, tls, ctid)
 /// ```
-pub fn sys_clone(flags: usize, stack: usize, ptid: usize, tls: usize, ctid: usize) -> isize {
-    todo!()
+pub fn sys_do_fork(
+    flags: usize,
+    stack_ptr: usize,
+    _ptid: usize,
+    _tls: usize,
+    _ctid: usize,
+) -> isize {
+    let current_task = current_task().unwrap();
+    let new_task = current_task.fork(false);
+
+    // let tid = new_task.getpid();
+    let _flags = CloneFlags::from_bits(flags).unwrap();
+
+    if stack_ptr != 0 {
+        let trap_cx = new_task.lock().trap_context();
+        trap_cx.set_sp(stack_ptr);
+    }
+    let new_pid = new_task.pid.0;
+    // modify trap context of new_task, because it returns immediately after switching
+    let trap_cx = new_task.lock().trap_context();
+    // we do not have to move to next instruction since we have done it before
+    // trap_handler 已经将当前进程 Trap 上下文中的 sepc 向后移动了 4 字节，
+    // 使得它回到用户态之后，会从发出系统调用的 ecall 指令的下一条指令开始执行
+
+    trap_cx.x[10] = 0; // 对于子进程，返回值是0
+    add_task(new_task); // 将 fork 到的进程加入任务调度器
+    unsafe {
+        core::arch::asm!("sfence.vma");
+        core::arch::asm!("fence.i");
+    }
+    new_pid as isize // 对于父进程，返回值是子进程的 PID
 }
 
 /// #define SYS_execve 221
@@ -48,8 +77,57 @@ pub fn sys_clone(flags: usize, stack: usize, ptid: usize, tls: usize, ctid: usiz
 /// const char *path, char *const argv[], char *const envp[];
 /// int ret = syscall(SYS_execve, path, argv, envp);
 /// ```
-pub fn sys_execve(path: *const u8, argv: *const u8, envp: *const u8) -> isize {
-    todo!()
+pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const u8) -> isize {
+    let token = current_user_token();
+    // 读取到用户空间的应用程序名称（路径）
+    let path = translated_str(token, path);
+    let mut args_vec: Vec<String> = Vec::new();
+    if argv as usize != 0 {
+        loop {
+            let arg_str_ptr = *translated_ref(token, argv);
+            if arg_str_ptr == 0 {
+                // 读到下一参数地址为0表示参数结束
+                break;
+            } // 否则从用户空间取出参数，压入向量
+            args_vec.push(translated_str(token, arg_str_ptr as *const u8));
+            unsafe {
+                argv = argv.add(1);
+            }
+        }
+    }
+
+    // 环境变量
+    let mut envs_vec: Vec<String> = Vec::new();
+    if envp as usize != 0 {
+        loop {
+            let env_str_ptr = *translated_ref(token, envp);
+            if env_str_ptr == 0 {
+                // 读到下一参数地址为0表示参数结束
+                break;
+            } // 否则从用户空间取出参数，压入向量
+            envs_vec.push(translated_str(token, env_str_ptr as *const u8));
+            unsafe {
+                envp = envp.add(1);
+            }
+        }
+    }
+
+    let task = current_task().unwrap();
+
+    let inner = task.lock();
+    if let Some(app_inode) = open(
+        inner.current_path.as_str(),
+        path.as_str(),
+        OpenFlags::O_RDONLY,
+        CreateMode::empty(),
+    ) {
+        drop(inner);
+        task.exec(app_inode, args_vec, envs_vec);
+
+        0 as isize
+    } else {
+        -1
+    }
 }
 
 /// #define SYS_wait4 260
@@ -164,134 +242,4 @@ pub fn sys_getppid() -> isize {
 /// ```
 pub fn sys_getpid() -> isize {
     current_task().unwrap().pid.0 as isize
-}
-
-/// #define SYS_clone 220
-///
-/// 功能：创建一个子进程；
-///
-/// 输入：
-///
-/// - flags: 创建的标志，如SIGCHLD；
-/// - stack: 指定新进程的栈，可为0；
-/// - ptid: 父线程ID；
-/// - tls: TLS线程本地存储描述符；
-/// - ctid: 子线程ID；
-///
-/// 返回值：成功则返回子进程的线程ID，失败返回-1；
-///
-/// ```c
-/// pid_t ret = syscall(SYS_clone, flags, stack, ptid, tls, ctid)
-/// ```
-
-/// 当前进程 fork/clone 出来一个子进程。
-///
-/// - 参数：
-///     - `flags`:
-///     - `stack_ptr`
-///     - `ptid`
-///     - `ctid`
-///     - `newtls`
-/// - 返回值：对于子进程返回 0，对于当前进程则返回子进程的 PID 。
-/// - syscall ID：220
-pub fn sys_do_fork(
-    flags: usize,
-    stack_ptr: usize,
-    _ptid: usize,
-    _ctid: usize,
-    _newtls: usize,
-) -> isize {
-    let current_task = current_task().unwrap();
-    let new_task = current_task.fork(false);
-
-    // let tid = new_task.getpid();
-    let _flags = CloneFlags::from_bits(flags).unwrap();
-
-    if stack_ptr != 0 {
-        let trap_cx = new_task.lock().trap_context();
-        trap_cx.set_sp(stack_ptr);
-    }
-    let new_pid = new_task.pid.0;
-    // modify trap context of new_task, because it returns immediately after switching
-    let trap_cx = new_task.lock().trap_context();
-    // we do not have to move to next instruction since we have done it before
-    // trap_handler 已经将当前进程 Trap 上下文中的 sepc 向后移动了 4 字节，
-    // 使得它回到用户态之后，会从发出系统调用的 ecall 指令的下一条指令开始执行
-
-    trap_cx.x[10] = 0; // 对于子进程，返回值是0
-    add_task(new_task); // 将 fork 到的进程加入任务调度器
-    unsafe {
-        core::arch::asm!("sfence.vma");
-        core::arch::asm!("fence.i");
-    }
-    new_pid as isize // 对于父进程，返回值是子进程的 PID
-}
-
-/// #define SYS_execve 221
-///
-/// 功能：执行一个指定的程序；
-///
-/// 输入：
-///
-/// - path: 待执行程序路径名称，
-/// - argv: 程序的参数，
-/// - envp: 环境变量的数组指针
-///
-/// 返回值：成功不返回，失败返回-1；
-///
-/// ```c
-/// const char *path, char *const argv[], char *const envp[];
-/// int ret = syscall(SYS_execve, path, argv, envp);
-/// ```
-pub fn sys_exec(path: *const u8, mut args: *const usize, mut envs: *const u8) -> isize {
-    let token = current_user_token();
-    // 读取到用户空间的应用程序名称（路径）
-    let path = translated_str(token, path);
-    let mut args_vec: Vec<String> = Vec::new();
-    if args as usize != 0 {
-        loop {
-            let arg_str_ptr = *translated_ref(token, args);
-            if arg_str_ptr == 0 {
-                // 读到下一参数地址为0表示参数结束
-                break;
-            } // 否则从用户空间取出参数，压入向量
-            args_vec.push(translated_str(token, arg_str_ptr as *const u8));
-            unsafe {
-                args = args.add(1);
-            }
-        }
-    }
-
-    // 环境变量
-    let mut envs_vec: Vec<String> = Vec::new();
-    if envs as usize != 0 {
-        loop {
-            let env_str_ptr = *translated_ref(token, envs);
-            if env_str_ptr == 0 {
-                // 读到下一参数地址为0表示参数结束
-                break;
-            } // 否则从用户空间取出参数，压入向量
-            envs_vec.push(translated_str(token, env_str_ptr as *const u8));
-            unsafe {
-                envs = envs.add(1);
-            }
-        }
-    }
-
-    let task = current_task().unwrap();
-
-    let inner = task.lock();
-    if let Some(app_inode) = open(
-        inner.current_path.as_str(),
-        path.as_str(),
-        OpenFlags::O_RDONLY,
-        CreateMode::empty(),
-    ) {
-        drop(inner);
-        task.exec(app_inode, args_vec, envs_vec);
-
-        0 as isize
-    } else {
-        -1
-    }
 }
