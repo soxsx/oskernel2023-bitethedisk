@@ -464,7 +464,7 @@ impl MemorySet {
             }
         }
         for chunk in self.mmap_chunks.iter() {
-            if start_va <= chunk.start_va && end_va <= chunk.end_va {
+            if chunk.start_va <= start_va && end_va <= chunk.end_va {
                 return true;
             }
         }
