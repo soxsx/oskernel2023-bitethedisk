@@ -19,3 +19,9 @@ log = "0.4"
 paste = "1"
 
 fat32 = { path = "../fat32" }
+
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"
