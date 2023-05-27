@@ -1,19 +1,19 @@
 use alloc::vec::Vec;
 
 use crate::mm::{
-    alloc_frame, page_table::PTEFlags, FrameTracker, PageTable, PhysPageNum, VirtAddr, VirtPageNum,
+    address::VPNRange, alloc_frame, page_table::PTEFlags, FrameTracker, PageTable, PhysPageNum,
+    VirtAddr, VirtPageNum,
 };
 
 use super::map_flags::{MapPermission, MapType};
 
 /// 离散逻辑段
 pub struct ChunkArea {
+    pub vpn_range: VPNRange,
     pub(super) vpn_table: Vec<VirtPageNum>,
     pub(super) data_frames: Vec<FrameTracker>,
     pub(super) map_type: MapType,
     pub(super) map_perm: MapPermission,
-    pub(super) start_va: VirtAddr,
-    pub(super) end_va: VirtAddr,
 }
 
 impl ChunkArea {
@@ -23,8 +23,7 @@ impl ChunkArea {
             data_frames: Vec::new(),
             map_type,
             map_perm,
-            start_va: start,
-            end_va: end,
+            vpn_range: VPNRange::new(start.floor(), end.ceil()),
         }
     }
 
@@ -39,8 +38,7 @@ impl ChunkArea {
             data_frames: Vec::new(),
             map_type: another.map_type,
             map_perm: another.map_perm,
-            start_va: another.start_va,
-            end_va: another.end_va,
+            vpn_range: another.vpn_range,
         }
     }
 

@@ -64,7 +64,7 @@ impl MemorySet {
             .mmap_areas
             .iter_mut()
             .enumerate()
-            .find(|(_, chunk)| chunk.start_va.floor() == start_vpn)
+            .find(|(_, chunk)| chunk.vpn_range.get_start() == start_vpn)
         {
             chunk.unmap(&mut self.page_table);
             self.mmap_areas.remove(idx);
@@ -284,8 +284,8 @@ impl MemorySet {
         }
         for chunk in user_space.mmap_areas.iter() {
             let mut new_chunk = ChunkArea::from_another(chunk);
-            for _vpn in chunk.vpn_table.iter() {
-                let vpn = (*_vpn).clone();
+            for vpn in chunk.vpn_table.iter() {
+                let vpn = vpn.clone();
                 // change the map permission of both pagetable
                 // get the former flags and ppn
                 let pte = parent_page_table.translate(vpn).unwrap();
@@ -352,15 +352,15 @@ impl MemorySet {
             }
         }
         for chunk in self.mmap_areas.iter_mut() {
-            let head_vpn = VirtPageNum::from(chunk.start_va);
-            let tail_vpn = VirtPageNum::from(chunk.end_va);
+            let head_vpn = chunk.vpn_range.get_start();
+            let tail_vpn = chunk.vpn_range.get_end();
             if vpn < tail_vpn && vpn >= head_vpn {
                 chunk.data_frames.push(frame);
                 return 0;
             }
         }
-        let head_vpn = VirtPageNum::from(self.heap_areas.start_va);
-        let tail_vpn = VirtPageNum::from(self.heap_areas.end_va);
+        let head_vpn = self.heap_areas.vpn_range.get_start();
+        let tail_vpn = self.heap_areas.vpn_range.get_end();
         if vpn < tail_vpn && vpn >= head_vpn {
             self.heap_areas.data_frames.push(frame);
             return 0;
@@ -375,7 +375,9 @@ impl MemorySet {
     /// 为mmap缺页分配空页表
     pub fn lazy_mmap(&mut self, stval: VirtAddr) -> isize {
         for mmap_chunk in self.mmap_areas.iter_mut() {
-            if stval >= mmap_chunk.start_va && stval < mmap_chunk.end_va {
+            if stval >= mmap_chunk.vpn_range.get_start().into()
+                && stval < mmap_chunk.vpn_range.get_end().into()
+            {
                 mmap_chunk.push_vpn(stval.floor(), &mut self.page_table);
                 return 0;
             }
@@ -434,11 +436,15 @@ impl MemorySet {
             }
         }
         for chunk in self.mmap_areas.iter() {
-            if chunk.start_va <= start_va && end_va <= chunk.end_va {
+            if chunk.vpn_range.get_start() <= start_va.floor()
+                && end_va.ceil() <= chunk.vpn_range.get_end()
+            {
                 return true;
             }
         }
-        if self.heap_areas.start_va <= start_va && end_va <= self.heap_areas.end_va {
+        if self.heap_areas.vpn_range.get_start() <= start_va.floor()
+            && end_va.ceil() <= self.heap_areas.vpn_range.get_end()
+        {
             return true;
         }
         return false;
