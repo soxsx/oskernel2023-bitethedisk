@@ -4,6 +4,7 @@ use super::{pid_alloc, PidHandle, SignalFlags};
 use crate::consts::*;
 use crate::fs::{File, OSInode, Stdin, Stdout};
 use crate::mm::kernel_vmm::KERNEL_VMM;
+use crate::mm::memory_set::LoadedELF;
 use crate::mm::{
     translated_mut, MapPermission, MemorySet, MmapArea, MmapFlags, MmapProts, PageTableEntry,
     PhysPageNum, VirtAddr, VirtPageNum,
@@ -119,7 +120,11 @@ impl TaskControlBlock {
     /// 通过 elf 数据新建一个任务控制块，目前仅用于内核中手动创建唯一一个初始进程 initproc
     pub fn new(initproc: Arc<OSInode>) -> Self {
         // 解析传入的 ELF 格式数据构造应用的地址空间 memory_set 并获得其他信息
-        let (memory_set, user_sp, entry_point) = MemorySet::load_elf(initproc.clone());
+        let LoadedELF {
+            memory_set,
+            elf_entry: entry_point,
+            user_stack_top: user_sp,
+        } = MemorySet::load_elf(initproc.clone());
         initproc.delete();
         // 从地址空间 memory_set 中查多级页表找到应用地址空间中的 Trap 上下文实际被放在哪个物理页帧
         let trap_cx_ppn = memory_set
@@ -174,11 +179,17 @@ impl TaskControlBlock {
     /// 用来实现 exec 系统调用，即当前进程加载并执行另一个 ELF 格式可执行文件
     pub fn exec(&self, elf_file: Arc<OSInode>, args: Vec<String>, envs: Vec<String>) {
         // 从 ELF 文件生成一个全新的地址空间并直接替换
-        let (memory_set, mut user_sp, entry_point) = MemorySet::load_elf(elf_file);
+        let LoadedELF {
+            memory_set,
+            user_stack_top: mut user_sp,
+            elf_entry: entry_point,
+        } = MemorySet::load_elf(elf_file);
+
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT).into())
             .unwrap()
             .ppn();
+
 
         // 计算对齐位置
         let mut total_len = 0;

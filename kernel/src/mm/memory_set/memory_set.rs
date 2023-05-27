@@ -134,8 +134,8 @@ impl MemorySet {
         );
     }
 
-    /// ### 从 ELF 格式可执行文件解析出各数据段并对应生成应用的地址空间
-    pub fn load_elf(elf_file: Arc<OSInode>) -> (Self, usize, usize) {
+    /// 从 ELF 格式可执行文件解析出各数据段并对应生成应用的地址空间
+    pub fn load_elf(elf_file: Arc<OSInode>) -> LoadedELF {
         let mut memory_set = Self::new_bare();
 
         // 将跳板插入到应用地址空间
@@ -224,11 +224,11 @@ impl MemorySet {
         memory_set.brk = user_heap_bottom;
         memory_set.brk_start = user_heap_bottom;
 
-        (
+        LoadedELF {
             memory_set,
             user_stack_top,
-            elf.header.pt2.entry_point() as usize,
-        )
+            elf_entry: elf.header.pt2.entry_point() as usize,
+        }
     }
 
     /// 以COW的方式复制一个地址空间
@@ -449,4 +449,10 @@ impl MemorySet {
         }
         return false;
     }
+}
+
+pub struct LoadedELF {
+    pub memory_set: MemorySet,
+    pub user_stack_top: usize,
+    pub elf_entry: usize,
 }
