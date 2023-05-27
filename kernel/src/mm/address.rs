@@ -179,87 +179,80 @@ impl PhysPageNum {
     }
 }
 
-pub trait StepByOne {
-    fn step(&mut self);
-}
-impl StepByOne for VirtPageNum {
-    fn step(&mut self) {
-        self.0 += 1;
-    }
-}
-impl StepByOne for PhysPageNum {
-    fn step(&mut self) {
-        self.0 += 1;
-    }
-}
-
-pub type VPNRange = SimpleRange<VirtPageNum>;
-
+/// 虚拟页号范围，是个左闭右开的区间
 #[derive(Copy, Clone, Debug)]
-pub struct SimpleRange<T>
-where
-    T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
-{
-    l: T,
-    r: T,
+pub struct VPNRange {
+    start: VirtPageNum,
+    end: VirtPageNum,
 }
 
-impl<T> SimpleRange<T>
-where
-    T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
-{
-    pub fn new(start: T, end: T) -> Self {
-        assert!(start <= end, "start {:?} > end {:?}!", start, end);
-        Self { l: start, r: end }
-    }
-    pub fn get_start(&self) -> T {
-        self.l
-    }
-    pub fn get_end(&self) -> T {
-        self.r
-    }
-}
+impl IntoIterator for VPNRange {
+    type Item = VirtPageNum;
 
-impl<T> IntoIterator for SimpleRange<T>
-where
-    T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
-{
-    type Item = T;
-    type IntoIter = SimpleRangeIterator<T>;
+    type IntoIter = IntoIter<Self::Item>;
+
     fn into_iter(self) -> Self::IntoIter {
-        SimpleRangeIterator::new(self.l, self.r)
+        Self::IntoIter {
+            next: self.start,
+            end: self.end,
+        }
     }
 }
 
-pub struct SimpleRangeIterator<T>
-where
-    T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
-{
-    current: T,
+impl VPNRange {
+    pub fn new(start: VirtPageNum, end: VirtPageNum) -> Self {
+        assert!(start <= end, "start {:?} > end {:?}!", start, end);
+        Self { start, end }
+    }
+
+    pub fn get_start(&self) -> VirtPageNum {
+        self.start
+    }
+
+    pub fn get_end(&self) -> VirtPageNum {
+        self.end
+    }
+}
+
+pub struct IntoIter<T> {
+    next: T,
     end: T,
 }
 
-impl<T> SimpleRangeIterator<T>
+impl<T> Iterator for IntoIter<T>
 where
-    T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
+    T: PartialEq + Step,
 {
-    pub fn new(l: T, r: T) -> Self {
-        Self { current: l, end: r }
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.next == self.end {
+            None
+        } else {
+            Some(self.next.step())
+        }
     }
 }
 
-impl<T> Iterator for SimpleRangeIterator<T>
-where
-    T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
-{
-    type Item = T;
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current == self.end {
-            None
-        } else {
-            let t = self.current;
-            self.current.step();
-            Some(t)
-        }
+pub trait Step {
+    /// 返回当前值后步进 1
+    fn step(&mut self) -> Self;
+}
+
+impl Step for VirtPageNum {
+    fn step(&mut self) -> Self {
+        let current = self.clone();
+        self.0 += 1;
+
+        current
+    }
+}
+
+impl Step for PhysPageNum {
+    fn step(&mut self) -> Self {
+        let current = self.clone();
+        self.0 += 1;
+
+        current
     }
 }

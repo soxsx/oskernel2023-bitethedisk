@@ -1,4 +1,4 @@
-mod address; // 地址数据类型
+pub mod address; // 地址数据类型
 mod frame_allocator; // 物理页帧管理器
 pub mod kernel_vmm;
 pub mod memory_set; // 地址空间模块
@@ -8,7 +8,7 @@ mod vma; // 虚拟内存地址映射空间
 
 use core::mem::size_of;
 
-pub use address::{PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
+pub use address::*;
 use alloc::{string::String, vec::Vec};
 pub use frame_allocator::{alloc_frame, dealloc_frame, FrameTracker};
 pub use memory_set::{MapPermission, MemorySet};
@@ -18,6 +18,8 @@ pub use user_buffer::{UserBuffer, UserBufferIterator};
 pub use vma::*;
 
 use crate::{consts::PAGE_SIZE, kernel_token, task::current_task};
+
+use self::address::Step;
 
 /// 内存管理子系统的初始化
 pub fn init() {
@@ -35,7 +37,7 @@ pub fn enable_mmu() {
 }
 
 /// 以向量的形式返回一组可以在内存空间中直接访问的字节数组切片
-/// 
+///
 /// |参数|描述|
 /// |--|--|
 /// |`token`|某个应用地址空间的 token|
@@ -73,7 +75,7 @@ pub fn translated_bytes_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<
 }
 
 /// 从内核地址空间之外的某个应用的用户态地址空间中拿到一个字符串
-/// 
+///
 /// 针对应用的字符串中字符的用户态虚拟地址，查页表，找到对应的内核虚拟地址，逐字节地构造字符串，直到发现一个 \0 为止
 pub fn translated_str(token: usize, ptr: *const u8) -> String {
     let page_table = PageTable::from_token(token);

@@ -4,27 +4,29 @@ use crate::{
     consts::PAGE_SIZE,
     fs::OSInode,
     mm::{
-        address::VPNRange, alloc_frame, page_table::PTEFlags, FrameTracker, PageTable, PhysPageNum,
-        StepByOne, VirtAddr, VirtPageNum,
+        address::{Step, VPNRange},
+        alloc_frame,
+        page_table::PTEFlags,
+        FrameTracker, PageTable, PhysPageNum, VirtAddr, VirtPageNum,
     },
 };
 
 use super::map_flags::{MapPermission, MapType};
 
 pub struct MapArea {
-    /// 描述一段虚拟页号的连续区间，表示该逻辑段在地址区间中的位置和长度
-    pub(super) vpn_range: VPNRange,
-    /// 键值对容器 BTreeMap ,保存了该逻辑段内的每个虚拟页面的 VPN 和被映射到的物理页帧<br>
-    /// 这些物理页帧被用来存放实际内存数据而不是作为多级页表中的中间节点
-    pub(super) data_frames: Vec<FrameTracker>,
-    /// 描述该逻辑段内的所有虚拟页面映射到物理页帧的方式
-    pub(super) map_type: MapType,
-    /// 控制该逻辑段的访问方式，它是页表项标志位 PTEFlags 的一个子集，仅保留 `U` `R` `W` `X` 四个标志位
-    pub(super) map_perm: MapPermission,
+    pub vpn_range: VPNRange,
+
+    pub data_frames: Vec<FrameTracker>,
+
+    pub map_type: MapType,
+
+    pub map_perm: MapPermission,
 }
 
 impl MapArea {
-    /// 根据起始 *(会被下取整)* 和终止 *(会被上取整)* 虚拟地址生成一块逻辑段
+    /// 根据虚拟地址生成一块逻辑段
+    ///
+    /// 起始地址和结束地址会按页取整，起始地址向下，结束地址向上
     pub fn new(
         start_va: VirtAddr,
         end_va: VirtAddr,
@@ -53,30 +55,25 @@ impl MapArea {
         }
     }
 
-    /// 在多级页表中根据vpn分配空间
-    pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
-        let ppn: PhysPageNum;
-        match self.map_type {
-            MapType::Identical => {
-                ppn = PhysPageNum(vpn.0);
-            }
-            MapType::Framed => {
-                // 获取一个物理页帧
-                let frame = alloc_frame().expect("out of memory");
-                ppn = frame.ppn;
-                // 将物理页帧生命周期捆绑到data_frames中，从而进程结束时可以自动释放
-                self.data_frames.push(frame);
-            }
-        }
-        let pte_flags = PTEFlags::from_bits(self.map_perm.bits()).unwrap();
-        // 在多级页表中建立映射
-        page_table.map(vpn, ppn, pte_flags);
-    }
-
     /// 在多级页表中为逻辑块分配空间
     pub fn map(&mut self, page_table: &mut PageTable) {
-        for vpn in self.vpn_range {
-            self.map_one(page_table, vpn);
+        match self.map_type {
+            MapType::Identical => {
+                self.vpn_range.into_iter().for_each(|vpn| {
+                    let ppn = PhysPageNum(vpn.0);
+                    let flags = PTEFlags::from_bits(self.map_perm.bits()).unwrap();
+                    page_table.map(vpn, ppn, flags);
+                });
+            }
+            MapType::Framed => {
+                self.vpn_range.into_iter().for_each(|vpn| {
+                    let frame = alloc_frame().expect("out of memory");
+                    let ppn = frame.ppn;
+                    self.data_frames.push(frame);
+                    let flags = PTEFlags::from_bits(self.map_perm.bits()).unwrap();
+                    page_table.map(vpn, ppn, flags);
+                });
+            }
         }
     }
 

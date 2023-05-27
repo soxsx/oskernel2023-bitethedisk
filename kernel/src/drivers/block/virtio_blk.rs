@@ -1,29 +1,11 @@
-//! # VirtIO 总线架构下的块设备
-//! `os/src/drivers/block/virtio_blk.rs`
-//! ```
-//! pub struct VirtIOBlock
-//! pub fn virtio_dma_alloc ()
-//! pub fn virtio_dma_dealloc ()
-//! pub fn virtio_phys_to_virt ()
-//! pub fn virtio_virt_to_phys ()
-//! ```
-use crate::{
-    kernel_token,
-    mm::{
-        alloc_frame, dealloc_frame, FrameTracker, PageTable, PhysAddr as KPhysAddr, PhysPageNum,
-        StepByOne, VirtAddr,
-    },
-};
+//!  VirtIO 总线架构下的块设备
 
 use core::ptr::NonNull;
 use fat32::{BlockDevice, BlockDeviceError, BLOCK_SIZE};
 use spin::Mutex;
 use virtio_drivers::{
     device::blk::VirtIOBlk,
-    transport::{
-        self,
-        mmio::{MmioTransport, VirtIOHeader},
-    },
+    transport::mmio::{MmioTransport, VirtIOHeader},
 };
 
 use super::virtio_impl::HalImpl;
@@ -31,16 +13,10 @@ use super::virtio_impl::HalImpl;
 #[allow(unused)]
 const VIRTIO0: usize = 0x10001000;
 
-/// ### VirtIO 总线架构下的块设备
+/// VirtIO 总线架构下的块设备
+///
 /// 将 `virtio-drivers` crate 提供的 VirtIO 块设备抽象 `VirtIOBlk` 包装为我们自己的 `VirtIOBlock` ,
 /// 实质上只是加上了一层互斥锁, 生成一个新的类型来实现 easy-fs 需要的 `BlockDevice` Trait
-/// ```
-/// fn read_block()
-/// fn write_block()
-/// pub fn new()
-/// ```
-///
-
 pub struct VirtIOBlock(Mutex<VirtIOBlk<HalImpl, MmioTransport>>);
 
 unsafe impl Send for VirtIOBlock {}

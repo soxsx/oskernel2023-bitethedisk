@@ -10,10 +10,10 @@ use super::map_flags::{MapPermission, MapType};
 /// 离散逻辑段
 pub struct ChunkArea {
     pub vpn_range: VPNRange,
-    pub(super) vpn_table: Vec<VirtPageNum>,
-    pub(super) data_frames: Vec<FrameTracker>,
-    pub(super) map_type: MapType,
-    pub(super) map_perm: MapPermission,
+    pub vpn_table: Vec<VirtPageNum>,
+    pub data_frames: Vec<FrameTracker>,
+    pub map_type: MapType,
+    pub map_perm: MapPermission,
 }
 
 impl ChunkArea {

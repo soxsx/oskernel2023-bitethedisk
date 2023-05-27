@@ -4,7 +4,6 @@ use crate::consts::PAGE_SIZE;
 use crate::fs::File;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-// use core::fmt::{self, Debug, Formatter};
 
 bitflags! {
     pub struct MmapProts: usize {
@@ -42,10 +41,11 @@ bitflags! {
 
 }
 
-/// ### mmap 块管理器
+/// mmap 块管理器
+///
 /// - `mmap_start` : 地址空间中mmap区块起始虚地址
 /// - `mmap_top` : 地址空间中mmap区块当结束虚地址
-/// - `mmap_set` : mmap块 向量
+/// - `mmap_set` : mmap块向量
 #[derive(Clone, Debug)]
 pub struct MmapArea {
     pub mmap_start: VirtAddr,
@@ -93,7 +93,7 @@ impl MmapArea {
     ) -> usize {
         let start_addr = start.into();
 
-        let mut mmap_space = MmapSpace::new(start_addr, len, prot, flags, 0, fd, offset);
+        let mmap_space = MmapSpace::new(start_addr, len, prot, flags, 0, fd, offset);
         // mmap_space.map_file(start_addr, PAGE_SIZE, offset, _fd_table, _token);
 
         // use lazy map
@@ -124,36 +124,10 @@ impl MmapArea {
             panic! {"No matched Mmap Space!"}
         }
     }
-
-    #[allow(unused)]
-    pub fn debug_show(&self) {
-        println!("------------------MmapArea Layout-------------------");
-        println!(
-            "MmapArea: mmap_start: 0x{:x}  mmap_top: 0x{:x}",
-            self.mmap_start.0, self.mmap_top.0
-        );
-        for mmapspace in &self.mmap_set {
-            mmapspace.debug_show();
-        }
-        println!("----------------------------------------------------");
-    }
-
-    pub fn reduce_mmap_range(&mut self, addr: usize, len: usize) {
-        for space in self.mmap_set.iter_mut() {
-            // 实际上不止这一种情况，todo
-            if addr == space.oaddr.0 {
-                space.oaddr = VirtAddr::from(addr + len);
-                space.length = space.length - len;
-                if self.mmap_top.0 == space.oaddr.0 + space.length + len {
-                    self.mmap_top.0 -= len;
-                }
-                return;
-            }
-        }
-    }
 }
 
-/// ### mmap 块
+/// mmap 块
+///
 /// 用于记录 mmap 空间信息，mmap数据并不存放在此
 ///
 /// |成员变量|含义|
@@ -165,12 +139,6 @@ impl MmapArea {
 /// |`flags`|映射方式|
 /// |`fd`|文件描述符|
 /// |`offset`|映射文件偏移地址|
-///
-/// - 成员函数
-///     ```
-///     pub fn new()
-///     pub fn lazy_map_page()
-///     ```
 #[derive(Clone, Copy, Debug)]
 pub struct MmapSpace {
     // pub addr: VirtAddr,
@@ -224,14 +192,9 @@ impl MmapSpace {
         token: usize,
     ) -> isize {
         let flags = MmapFlags::from_bits(self.flags).unwrap();
-        // println!("[Kernel mmap] map_file: va_strat:0x{:X} flags:{:?}",va_start.0, flags);
         if flags.contains(MmapFlags::MAP_ANONYMOUS) && self.fd == -1 && offset == 0 {
-            // println!("[map_anonymous_file]");
             return 1;
         }
-
-        // println!("[Kernel mmap] fd_table.length() {}", fd_table.len());
-        // println!("[Kernel mmap] fd {}", self.fd);
 
         if self.fd as usize >= fd_table.len() {
             return -1;
@@ -250,16 +213,6 @@ impl MmapSpace {
                 va_start.0 as *const u8,
                 len,
             )));
-            // println!{"[kernel map_file] read {} bytes", _read_len};
-            // println!("va: {:x?}", va_start.0);
-
-            // let content = translated_bytes_buffer(token, va_start.0 as *const u8, len);
-            // // 将 Vec<&mut [u8]> 转化为 string 打印
-            // let content = content
-            //     .iter()
-            //     .map(|x| unsafe { core::str::from_utf8_unchecked(x) })
-            //     .collect::<alloc::string::String>();
-            // debug!("content: {}", content);
         } else {
             return -1;
         };

@@ -116,7 +116,7 @@ impl PageTable {
     }
 
     /// 建立一个虚拟页号到物理页号的映射
-    /// 
+    ///
     /// 根据VPN找到第三级页表中的对应项，将 `PPN` 和 `flags` 写入到页表项
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
         let pte = self.find_pte_create(vpn).unwrap();
@@ -126,16 +126,16 @@ impl PageTable {
     }
 
     /// 删除一个虚拟页号到物理页号的映射
-    /// 
+    ///
     /// 只需根据虚拟页号找到页表项，然后修改或者直接清空其内容即可
     pub fn unmap(&mut self, vpn: VirtPageNum) {
         let pte = self.find_pte(vpn).unwrap();
         assert!(pte.is_valid(), "{:?} is invalid before unmapping", vpn);
-        *pte = PageTableEntry::empty();
+        pte.clear();
     }
 
     /// 根据 vpn 查找页表项
-    /// 
+    ///
     /// 调用 `find_pte` 来实现，如果能够找到页表项，那么它会将页表项拷贝一份并返回，否则就返回一个 `None`
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.find_pte(vpn).map(|pte| *pte)
@@ -222,19 +222,6 @@ bitflags! {
     }
 }
 
-/// ### 页表项
-/// - `bits`
-/// ```
-/// PageTableEntry::new(ppn: PhysPageNum, flags: PTEFlags) -> Self
-/// PageTableEntry::empty() -> Self
-/// PageTableEntry::ppn(&self) -> PhysPageNum
-/// PageTableEntry::flags(&self) -> PTEFlags
-/// PageTableEntry::is_valid(&self) -> bool
-/// PageTableEntry::readable(&self) -> bool
-/// PageTableEntry::writable(&self) -> bool
-/// PageTableEntry::executable(&self) -> bool
-/// PageTableEntry::set_pte_flags(&mut self, flags: usize)
-/// ```
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct PageTableEntry {
@@ -249,8 +236,8 @@ impl PageTableEntry {
         }
     }
     /// 将页表项清零
-    pub fn empty() -> Self {
-        PageTableEntry { bits: 0 }
+    pub fn clear(&mut self) {
+        self.bits = 0;
     }
     /// 从页表项读取物理页号
     pub fn ppn(&self) -> PhysPageNum {

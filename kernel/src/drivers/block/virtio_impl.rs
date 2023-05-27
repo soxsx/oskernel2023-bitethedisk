@@ -5,8 +5,8 @@ use virtio_drivers::{BufferDirection, Hal, PhysAddr};
 use crate::{
     kernel_token,
     mm::{
-        alloc_frame, dealloc_frame, FrameTracker, PageTable, PhysAddr as KPhysAddr, PhysPageNum,
-        StepByOne, VirtAddr,
+        address::Step, alloc_frame, dealloc_frame, FrameTracker, PageTable, PhysAddr as KPhysAddr,
+        PhysPageNum,
     },
 };
 use alloc::vec::Vec;
