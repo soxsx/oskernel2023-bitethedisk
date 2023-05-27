@@ -11,16 +11,16 @@ use crate::mm::{
 use alloc::{sync::Arc, vec::Vec};
 
 pub struct MemorySet {
-    /// 挂着所有多级页表的节点所在的物理页帧
     pub page_table: PageTable,
-    /// 挂着对应逻辑段中的数据所在的物理页帧
-    areas: Vec<MapArea>,
-    heap_chunk: ChunkArea,
-    mmap_chunks: Vec<ChunkArea>,
 
-    pub heap_start: usize,
-    pub heap_pt: usize,
-    pub stack_top: usize,
+    vm_areas: Vec<MapArea>,
+
+    mmap_areas: Vec<ChunkArea>,
+
+    heap_areas: ChunkArea,
+
+    pub brk_start: usize,
+    pub brk: usize,
 }
 
 impl MemorySet {
@@ -28,17 +28,16 @@ impl MemorySet {
     pub fn new_bare() -> Self {
         Self {
             page_table: PageTable::new(),
-            areas: Vec::new(),
-            heap_chunk: ChunkArea::new(
+            vm_areas: Vec::new(),
+            heap_areas: ChunkArea::new(
                 MapType::Framed,
                 MapPermission::R | MapPermission::W | MapPermission::U,
                 0.into(),
                 0.into(),
             ),
-            mmap_chunks: Vec::new(),
-            heap_start: 0,
-            heap_pt: 0,
-            stack_top: 0,
+            mmap_areas: Vec::new(),
+            brk_start: 0,
+            brk: 0,
         }
     }
 
@@ -62,26 +61,26 @@ impl MemorySet {
 
     pub fn remove_mmap_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
         if let Some((idx, chunk)) = self
-            .mmap_chunks
+            .mmap_areas
             .iter_mut()
             .enumerate()
             .find(|(_, chunk)| chunk.start_va.floor() == start_vpn)
         {
             chunk.unmap(&mut self.page_table);
-            self.mmap_chunks.remove(idx);
+            self.mmap_areas.remove(idx);
         }
     }
 
     /// 通过起始虚拟页号删除对应的逻辑段（包括连续逻辑段和离散逻辑段）
     pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
         if let Some((idx, area)) = self
-            .areas
+            .vm_areas
             .iter_mut()
             .enumerate()
             .find(|(_, area)| area.vpn_range.get_start() == start_vpn)
         {
             area.unmap(&mut self.page_table);
-            self.areas.remove(idx);
+            self.vm_areas.remove(idx);
         }
     }
     /// 在当前地址空间插入一个新的连续逻辑段
@@ -101,14 +100,14 @@ impl MemorySet {
             // 写入初始化数据，如果数据存在
             map_area.copy_data(&mut self.page_table, data.0, data.1, data.2, data.3);
         }
-        self.areas.push(map_area); // 将生成的数据段压入 areas 使其生命周期由areas控制
+        self.vm_areas.push(map_area); // 将生成的数据段压入 areas 使其生命周期由areas控制
     }
 
     /// 在当前地址空间插入一段已被分配空间的连续逻辑段
     ///
     /// 主要用于 COW 创建时子进程空间连续逻辑段的插入，其要求指定物理页号
     fn push_mapped_area(&mut self, map_area: MapArea) {
-        self.areas.push(map_area);
+        self.vm_areas.push(map_area);
     }
 
     /// 映射跳板的虚拟页号和物理物理页号
@@ -215,16 +214,15 @@ impl MemorySet {
         let mut user_heap_bottom: usize = user_stack_top;
         user_heap_bottom += PAGE_SIZE; //放置一个保护页
         let user_heap_top: usize = user_heap_bottom + USER_HEAP_SIZE;
-        memory_set.heap_chunk = ChunkArea::new(
+        memory_set.heap_areas = ChunkArea::new(
             MapType::Framed,
             MapPermission::R | MapPermission::W | MapPermission::U,
             user_heap_bottom.into(),
             user_heap_top.into(),
         );
 
-        memory_set.heap_pt = user_heap_bottom;
-        memory_set.heap_start = user_heap_bottom;
-        memory_set.stack_top = user_stack_top;
+        memory_set.brk = user_heap_bottom;
+        memory_set.brk_start = user_heap_bottom;
 
         (
             memory_set,
@@ -241,7 +239,7 @@ impl MemorySet {
         // Including:   Trampoline
         //              Trap_Context
         new_memory_set.map_trampoline(); // use 2 pages (page_table create ptes)
-        for area in user_space.areas.iter() {
+        for area in user_space.vm_areas.iter() {
             // use 1 page
             let start_vpn = area.vpn_range.get_start();
             if start_vpn == VirtAddr::from(TRAP_CONTEXT).floor() {
@@ -259,7 +257,7 @@ impl MemorySet {
             break;
         }
         // This part is for copy on write
-        let parent_areas = &user_space.areas;
+        let parent_areas = &user_space.vm_areas;
         let parent_page_table = &mut user_space.page_table;
         for area in parent_areas.iter() {
             let start_vpn = area.vpn_range.get_start();
@@ -284,7 +282,7 @@ impl MemorySet {
                 new_memory_set.push_mapped_area(new_area);
             }
         }
-        for chunk in user_space.mmap_chunks.iter() {
+        for chunk in user_space.mmap_areas.iter() {
             let mut new_chunk = ChunkArea::from_another(chunk);
             for _vpn in chunk.vpn_table.iter() {
                 let vpn = (*_vpn).clone();
@@ -303,10 +301,10 @@ impl MemorySet {
                 new_chunk.vpn_table.push(vpn);
                 new_chunk.data_frames.push(FrameTracker::from_ppn(src_ppn));
             }
-            new_memory_set.mmap_chunks.push(new_chunk);
+            new_memory_set.mmap_areas.push(new_chunk);
         }
-        new_memory_set.heap_chunk = ChunkArea::from_another(&user_space.heap_chunk);
-        for _vpn in user_space.heap_chunk.vpn_table.iter() {
+        new_memory_set.heap_areas = ChunkArea::from_another(&user_space.heap_areas);
+        for _vpn in user_space.heap_areas.vpn_table.iter() {
             let vpn = (*_vpn).clone();
             // change the map permission of both pagetable
             // get the former flags and ppn
@@ -320,15 +318,14 @@ impl MemorySet {
             // map the cow page table to src_ppn
             new_memory_set.page_table.map(vpn, src_ppn, pte_flags);
             new_memory_set.page_table.set_cow(vpn);
-            new_memory_set.heap_chunk.vpn_table.push(vpn);
+            new_memory_set.heap_areas.vpn_table.push(vpn);
             new_memory_set
-                .heap_chunk
+                .heap_areas
                 .data_frames
                 .push(FrameTracker::from_ppn(src_ppn));
         }
-        new_memory_set.heap_start = user_space.heap_start;
-        new_memory_set.heap_pt = user_space.heap_pt;
-        new_memory_set.stack_top = user_space.stack_top;
+        new_memory_set.brk_start = user_space.brk_start;
+        new_memory_set.brk = user_space.brk;
         new_memory_set
     }
 
@@ -346,7 +343,7 @@ impl MemorySet {
         let frame = alloc_frame().unwrap();
         let ppn = frame.ppn;
         self.remap_cow(vpn, ppn, former_ppn);
-        for area in self.areas.iter_mut() {
+        for area in self.vm_areas.iter_mut() {
             let head_vpn = area.vpn_range.get_start();
             let tail_vpn = area.vpn_range.get_end();
             if vpn < tail_vpn && vpn >= head_vpn {
@@ -354,7 +351,7 @@ impl MemorySet {
                 return 0;
             }
         }
-        for chunk in self.mmap_chunks.iter_mut() {
+        for chunk in self.mmap_areas.iter_mut() {
             let head_vpn = VirtPageNum::from(chunk.start_va);
             let tail_vpn = VirtPageNum::from(chunk.end_va);
             if vpn < tail_vpn && vpn >= head_vpn {
@@ -362,10 +359,10 @@ impl MemorySet {
                 return 0;
             }
         }
-        let head_vpn = VirtPageNum::from(self.heap_chunk.start_va);
-        let tail_vpn = VirtPageNum::from(self.heap_chunk.end_va);
+        let head_vpn = VirtPageNum::from(self.heap_areas.start_va);
+        let tail_vpn = VirtPageNum::from(self.heap_areas.end_va);
         if vpn < tail_vpn && vpn >= head_vpn {
-            self.heap_chunk.data_frames.push(frame);
+            self.heap_areas.data_frames.push(frame);
             return 0;
         }
         0
@@ -377,7 +374,7 @@ impl MemorySet {
 
     /// 为mmap缺页分配空页表
     pub fn lazy_mmap(&mut self, stval: VirtAddr) -> isize {
-        for mmap_chunk in self.mmap_chunks.iter_mut() {
+        for mmap_chunk in self.mmap_areas.iter_mut() {
             if stval >= mmap_chunk.start_va && stval < mmap_chunk.end_va {
                 mmap_chunk.push_vpn(stval.floor(), &mut self.page_table);
                 return 0;
@@ -387,7 +384,7 @@ impl MemorySet {
     }
 
     pub fn lazy_alloc_heap(&mut self, vpn: VirtPageNum) -> isize {
-        self.heap_chunk.push_vpn(vpn, &mut self.page_table);
+        self.heap_areas.push_vpn(vpn, &mut self.page_table);
 
         0
     }
@@ -404,7 +401,7 @@ impl MemorySet {
     /// 但用来存放页表的那些物理页帧此时还不会被回收（会由父进程最后回收子进程剩余的占用资源）
     pub fn recycle_data_pages(&mut self) {
         //*self = Self::new_bare();
-        self.areas.clear();
+        self.vm_areas.clear();
     }
 
     /// 在地址空间中插入一个空的离散逻辑段
@@ -424,24 +421,24 @@ impl MemorySet {
     ) {
         let new_chunk_area = ChunkArea::new(MapType::Framed, permission, start_va, end_va);
 
-        self.mmap_chunks.push(new_chunk_area);
+        self.mmap_areas.push(new_chunk_area);
     }
 
     pub fn check_va_range(&self, start_va: VirtAddr, len: usize) -> bool {
         let end_va = VirtAddr::from(start_va.0 + len);
-        for area in self.areas.iter() {
+        for area in self.vm_areas.iter() {
             if area.vpn_range.get_start() <= start_va.floor()
                 && end_va.ceil() <= area.vpn_range.get_end()
             {
                 return true;
             }
         }
-        for chunk in self.mmap_chunks.iter() {
+        for chunk in self.mmap_areas.iter() {
             if chunk.start_va <= start_va && end_va <= chunk.end_va {
                 return true;
             }
         }
-        if self.heap_chunk.start_va <= start_va && end_va <= self.heap_chunk.end_va {
+        if self.heap_areas.start_va <= start_va && end_va <= self.heap_areas.end_va {
             return true;
         }
         return false;

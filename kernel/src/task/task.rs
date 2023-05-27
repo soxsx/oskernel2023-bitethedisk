@@ -355,8 +355,8 @@ impl TaskControlBlock {
         let inner = self.lock();
         let mmap_start = inner.mmap_area.mmap_start;
         let mmap_end = inner.mmap_area.mmap_top;
-        let heap_start = VirtAddr::from(inner.memory_set.heap_start);
-        let heap_end = VirtAddr::from(inner.memory_set.heap_start + USER_HEAP_SIZE);
+        let heap_start = VirtAddr::from(inner.memory_set.brk_start);
+        let heap_end = VirtAddr::from(inner.memory_set.brk_start + USER_HEAP_SIZE);
         drop(inner);
 
         let vpn: VirtPageNum = va.floor();
@@ -389,7 +389,7 @@ impl TaskControlBlock {
     }
 
     /// 用时加载mmap缺页
-    /// 
+    ///
     /// - 参数：
     ///     - `stval`：缺页中的虚拟地址
     ///     - `is_load`：加载(1)/写入(0)
@@ -475,26 +475,26 @@ impl TaskControlBlock {
 
     pub fn grow_proc(&self, grow_size: isize) -> usize {
         if grow_size > 0 {
-            let growed_addr: usize = self.inner.lock().memory_set.heap_pt + grow_size as usize;
-            let limit = self.inner.lock().memory_set.heap_start + USER_HEAP_SIZE;
+            let growed_addr: usize = self.inner.lock().memory_set.brk + grow_size as usize;
+            let limit = self.inner.lock().memory_set.brk_start + USER_HEAP_SIZE;
             if growed_addr > limit {
                 panic!(
                     "process doesn't have enough memsize to grow! limit:0x{:x}, heap_pt:0x{:x}, growed_addr:0x{:x}, pid:{}",
                     limit,
-                    self.inner.lock().memory_set.heap_pt,
+                    self.inner.lock().memory_set.brk,
                     growed_addr,
                     self.pid.0
                 );
             }
-            self.inner.lock().memory_set.heap_pt = growed_addr;
+            self.inner.lock().memory_set.brk = growed_addr;
         } else {
-            let shrinked_addr: usize = self.inner.lock().memory_set.heap_pt + grow_size as usize;
-            if shrinked_addr < self.inner.lock().memory_set.heap_start {
+            let shrinked_addr: usize = self.inner.lock().memory_set.brk + grow_size as usize;
+            if shrinked_addr < self.inner.lock().memory_set.brk_start {
                 panic!("Memory shrinked to the lowest boundary!")
             }
-            self.inner.lock().memory_set.heap_pt = shrinked_addr;
+            self.inner.lock().memory_set.brk = shrinked_addr;
         }
-        return self.inner.lock().memory_set.heap_pt;
+        return self.inner.lock().memory_set.brk;
     }
 }
 
