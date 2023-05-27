@@ -24,8 +24,7 @@ pub struct MapArea {
 }
 
 impl MapArea {
-    /// ### 根据起始 *(会被下取整)* 和终止 *(会被上取整)* 虚拟地址生成一块逻辑段
-    /// - 逻辑段大于等于虚拟地址范围
+    /// 根据起始 *(会被下取整)* 和终止 *(会被上取整)* 虚拟地址生成一块逻辑段
     pub fn new(
         start_va: VirtAddr,
         end_va: VirtAddr,

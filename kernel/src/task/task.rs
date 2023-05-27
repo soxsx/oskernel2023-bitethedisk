@@ -473,16 +473,9 @@ impl TaskControlBlock {
     pub fn munmap(&self, addr: usize, length: usize) -> isize {
         let mut inner = self.lock();
 
-        // println!("[Kernel munmap] start munmap start: 0x{:x} len: 0x{:x};", start, len);
-        // inner.memory_set.debug_show_layout();
-
-        // crate::debug!("addr: 0x{:x} length: 0x{:x}", addr, length);
         inner
             .memory_set
-            .remove_area_with_start_vpn(VirtAddr::from(addr).into());
-
-        // println!("[Kernel munmap] after munmap;");
-        // inner.memory_set.debug_show_layout();
+            .remove_mmap_area_with_start_vpn(VirtAddr::from(addr).into());
 
         inner.mmap_area.remove(addr, length)
     }
@@ -490,11 +483,6 @@ impl TaskControlBlock {
     pub fn pid(&self) -> usize {
         self.pid.0
     }
-
-    // pub fn get_parent(&self) -> Option<Arc<TaskControlBlock>> {
-    //     let inner = self.inner.exclusive_access();
-    //     inner.parent.as_ref().unwrap().upgrade()
-    // }
 
     pub fn grow_proc(&self, grow_size: isize) -> usize {
         if grow_size > 0 {

@@ -75,13 +75,6 @@ impl ChunkArea {
         page_table.map(vpn, ppn, pte_flags);
     }
 
-    // Alloc and map all pages
-    // pub fn map(&mut self, page_table: &mut PageTable) {
-    //     for vpn in self.vpn_table {
-    //         self.map_one(page_table, vpn);
-    //     }
-    // }
-
     pub fn unmap(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_table.clone() {
             page_table.unmap(vpn);

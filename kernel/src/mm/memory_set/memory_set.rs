@@ -11,21 +11,6 @@ use crate::mm::{
 };
 use alloc::{sync::Arc, vec::Vec};
 
-/// ### 地址空间
-/// - 符合RAII风格
-/// - 一系列有关联的**不一定**连续的逻辑段，这种关联一般是指这些逻辑段组成的虚拟内存空间与一个运行的程序绑定,
-/// 即这个运行的程序对代码和数据的直接访问范围限制在它关联的虚拟地址空间之内。
-///
-/// |参数|描述|
-/// |--|--|
-/// |`page_table`|挂着所有多级页表的节点所在的物理页帧|
-/// |`areas`|挂着对应逻辑段中的数据所在的物理页帧|
-///
-/// ```
-/// MemorySet::new_bare() -> Self
-/// MemorySet::insert_framed_area(&mut self, start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission)
-/// MemorySet::new_kernel() -> Self
-/// ```
 pub struct MemorySet {
     /// 挂着所有多级页表的节点所在的物理页帧
     pub page_table: PageTable,
@@ -76,18 +61,7 @@ impl MemorySet {
         );
     }
 
-    /// 通过起始虚拟页号删除对应的逻辑段（包括连续逻辑段和离散逻辑段）
-    pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
-        if let Some((idx, area)) = self
-            .areas
-            .iter_mut()
-            .enumerate()
-            .find(|(_, area)| area.vpn_range.get_start() == start_vpn)
-        {
-            area.unmap(&mut self.page_table);
-            self.areas.remove(idx);
-        }
-
+    pub fn remove_mmap_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
         if let Some((idx, chunk)) = self
             .mmap_chunks
             .iter_mut()
@@ -99,7 +73,20 @@ impl MemorySet {
         }
     }
 
-    /// ### 在当前地址空间插入一个新的连续逻辑段
+    /// 通过起始虚拟页号删除对应的逻辑段（包括连续逻辑段和离散逻辑段）
+    pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
+        if let Some((idx, area)) = self
+            .areas
+            .iter_mut()
+            .enumerate()
+            .find(|(_, area)| area.vpn_range.get_start() == start_vpn)
+        {
+            area.unmap(&mut self.page_table);
+            self.areas.remove(idx);
+        }
+    }
+    /// 在当前地址空间插入一个新的连续逻辑段
+    ///
     /// - 物理页号是随机分配的
     /// - 如果是以 Framed 方式映射到物理内存,
     /// 还可以可选性地在那些被映射到的物理页帧上写入一些初始化数据
@@ -118,7 +105,8 @@ impl MemorySet {
         self.areas.push(map_area); // 将生成的数据段压入 areas 使其生命周期由areas控制
     }
 
-    /// ### 在当前地址空间插入一段已被分配空间的连续逻辑段
+    /// 在当前地址空间插入一段已被分配空间的连续逻辑段
+    ///
     /// 主要用于 COW 创建时子进程空间连续逻辑段的插入，其要求指定物理页号
     fn push_mapped_area(&mut self, map_area: MapArea) {
         self.areas.push(map_area);
@@ -182,19 +170,17 @@ impl MemorySet {
                 xmas_elf::program::Type::Load => {
                     let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
                     let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
-                    let map_perm =
-                        MapPermission::U | MapPermission::R | MapPermission::W | MapPermission::X;
-                    // let mut map_perm = MapPermission::U;
-                    // let ph_flags = ph.flags();
-                    // if ph_flags.is_read() {
-                    //     map_perm |= MapPermission::R;
-                    // }
-                    // if ph_flags.is_write() {
-                    //     map_perm |= MapPermission::W;
-                    // }
-                    // if ph_flags.is_execute() {
-                    //     map_perm |= MapPermission::X;
-                    // }
+                    let mut map_perm = MapPermission::U;
+                    let ph_flags = ph.flags();
+                    if ph_flags.is_read() {
+                        map_perm |= MapPermission::R;
+                    }
+                    if ph_flags.is_write() {
+                        map_perm |= MapPermission::W;
+                    }
+                    if ph_flags.is_execute() {
+                        map_perm |= MapPermission::X;
+                    }
                     let map_area = MapArea::new(start_va, end_va, MapType::Framed, map_perm);
                     max_end_vpn = map_area.vpn_range.get_end();
                     memory_set.push(
@@ -404,6 +390,7 @@ impl MemorySet {
 
     pub fn lazy_alloc_heap(&mut self, vpn: VirtPageNum) -> isize {
         self.heap_chunk.push_vpn(vpn, &mut self.page_table);
+
         0
     }
 
@@ -412,14 +399,8 @@ impl MemorySet {
         self.page_table.translate(vpn)
     }
 
-    // WARNING: This function causes inconsistency between pte flags and
-    //          map_area flags.
-    // return -1 if not found, 0 if found
-    // pub fn set_pte_flags(&mut self, vpn: VirtPageNum, flags: usize) -> isize {
-    //     self.page_table.set_pte_flags(vpn, flags)
-    // }
-
-    /// ### 回收应用地址空间
+    /// 回收应用地址空间
+    ///
     /// 将地址空间中的逻辑段列表 areas 清空（即执行 Vec 向量清空），
     /// 这将导致应用地址空间被回收（即进程的数据和代码对应的物理页帧都被回收），
     /// 但用来存放页表的那些物理页帧此时还不会被回收（会由父进程最后回收子进程剩余的占用资源）
@@ -428,7 +409,8 @@ impl MemorySet {
         self.areas.clear();
     }
 
-    /// ### 在地址空间中插入一个空的离散逻辑段
+    /// 在地址空间中插入一个空的离散逻辑段
+    ///
     /// - 已确定：
     ///     - 起止虚拟地址
     ///     - 映射方式：Framed
@@ -442,16 +424,7 @@ impl MemorySet {
         end_va: VirtAddr,
         permission: MapPermission,
     ) {
-        let mut new_chunk_area = ChunkArea::new(MapType::Framed, permission, start_va, end_va);
-
-        // let start_vpn = start_va.floor();
-        // let end_vpn = end_va.ceil();
-        // let vpn_range = VPNRange::new(start_vpn, end_vpn);
-        // for vpn in vpn_range.into_iter() {
-        //     new_chunk_area.push_vpn(vpn, &mut self.page_table);
-        // }
-
-        // use lazy map
+        let new_chunk_area = ChunkArea::new(MapType::Framed, permission, start_va, end_va);
 
         self.mmap_chunks.push(new_chunk_area);
     }
