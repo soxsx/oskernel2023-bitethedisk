@@ -3,7 +3,7 @@ use super::TaskContext;
 use super::{pid_alloc, PidHandle, SignalFlags};
 use crate::consts::*;
 use crate::fs::{File, OSInode, Stdin, Stdout};
-use crate::mm::kernel_vmm::KERNEL_VMM;
+use crate::mm::kernel_vmm::acquire_kvmm;
 use crate::mm::memory_set::LoadedELF;
 use crate::mm::{
     translated_mut, MapPermission, MemorySet, MmapArea, MmapFlags, MmapProts, PageTableEntry,
@@ -22,42 +22,43 @@ pub const FD_LIMIT: usize = 128;
 pub struct TaskControlBlock {
     /// 进程标识符
     pub pid: PidHandle,
+
     /// thread group id
     pub tgid: usize,
+
     /// 应用内核栈
     pub kernel_stack: KernelStack,
+
     inner: Mutex<TaskControlBlockInner>,
 }
 
 pub struct TaskControlBlockInner {
-    // 进程
     /// 应用地址空间中的 Trap 上下文所在的物理页帧的物理页号
     pub trap_cx_ppn: PhysPageNum,
+
     /// 任务上下文
     pub task_cx: TaskContext,
-    /// 维护当前进程的执行状态
+
     pub task_status: TaskStatus,
+
     /// 指向当前进程的父进程（如果存在的话）
     pub parent: Option<Weak<TaskControlBlock>>,
+
     /// 当前进程的所有子进程的任务控制块向量
     pub children: Vec<Arc<TaskControlBlock>>,
+
     /// 退出码
     pub exit_code: i32,
 
-    // 内存
-    /// 应用数据仅有可能出现在应用地址空间低于 base_size 字节的区域中。
-    /// 借助它我们可以清楚的知道应用有多少数据驻留在内存中
-    pub base_size: usize,
     /// 应用地址空间
     pub memory_set: MemorySet,
-    // 虚拟内存地址映射空间
-    pub mmap_area: MmapArea,
 
-    // 文件
+    /// 进程间共享的虚拟地址映射
+    pub shared_vm_areas: MmapArea,
+
     /// 文件描述符表
-    pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
+    pub fd_table: Vec<Option<Arc<dyn File>>>,
 
-    // 状态信息
     pub signals: SignalFlags,
     pub current_path: String,
 }
@@ -143,7 +144,6 @@ impl TaskControlBlock {
             kernel_stack,
             inner: Mutex::new(TaskControlBlockInner {
                 trap_cx_ppn,
-                base_size: user_sp,
                 task_cx: TaskContext::readied_for_switching(kernel_stack_top),
                 task_status: TaskStatus::Ready,
                 memory_set,
@@ -160,7 +160,10 @@ impl TaskControlBlock {
                 ],
                 signals: SignalFlags::empty(),
                 current_path: String::from("/"),
-                mmap_area: MmapArea::new(VirtAddr::from(MMAP_BASE), VirtAddr::from(MMAP_BASE)),
+                shared_vm_areas: MmapArea::new(
+                    VirtAddr::from(MMAP_BASE),
+                    VirtAddr::from(MMAP_BASE),
+                ),
             }),
         };
         // 初始化位于该进程应用地址空间中的 Trap 上下文，使得第一次进入用户态的时候时候能正
@@ -169,7 +172,7 @@ impl TaskControlBlock {
         *trap_cx = TrapContext::app_init_context(
             entry_point,
             user_sp,
-            KERNEL_VMM.lock().token(),
+            acquire_kvmm().token(),
             kernel_stack_top,
             user_trap_handler as usize,
         );
@@ -189,7 +192,6 @@ impl TaskControlBlock {
             .translate(VirtAddr::from(TRAP_CONTEXT).into())
             .unwrap()
             .ppn();
-
 
         // 计算对齐位置
         let mut total_len = 0;
@@ -285,7 +287,7 @@ impl TaskControlBlock {
         *trap_cx = TrapContext::app_init_context(
             entry_point,
             user_sp,
-            KERNEL_VMM.lock().token(),
+            acquire_kvmm().token(),
             self.kernel_stack.top(),
             user_trap_handler as usize,
         );
@@ -298,7 +300,7 @@ impl TaskControlBlock {
     pub fn fork(self: &Arc<TaskControlBlock>, is_create_thread: bool) -> Arc<TaskControlBlock> {
         let mut parent_inner = self.lock();
         // copy mmap_area
-        let mmap_area = parent_inner.mmap_area.clone();
+        let mmap_area = parent_inner.shared_vm_areas.clone();
         // mmap_area.debug_show();
         // 拷贝用户地址空间
         let memory_set = MemorySet::from_copy_on_write(&mut parent_inner.memory_set); // use 4 pages
@@ -319,7 +321,7 @@ impl TaskControlBlock {
         let kernel_stack = KernelStack::new(&pid_handle); // use 2 pages
         let kernel_stack_top = kernel_stack.top();
         // copy fd table
-        let mut new_fd_table: Vec<Option<Arc<dyn File + Send + Sync>>> = Vec::new();
+        let mut new_fd_table = Vec::new();
         for fd in parent_inner.fd_table.iter() {
             if let Some(file) = fd {
                 new_fd_table.push(Some(file.clone()));
@@ -333,7 +335,6 @@ impl TaskControlBlock {
             kernel_stack,
             inner: Mutex::new(TaskControlBlockInner {
                 trap_cx_ppn,
-                base_size: parent_inner.base_size,
                 task_cx: TaskContext::readied_for_switching(kernel_stack_top),
                 task_status: TaskStatus::Ready,
                 memory_set,
@@ -343,7 +344,7 @@ impl TaskControlBlock {
                 fd_table: new_fd_table,
                 signals: SignalFlags::empty(),
                 current_path: parent_inner.current_path.clone(),
-                mmap_area,
+                shared_vm_areas: mmap_area,
             }),
         });
         // 把新生成的进程加入到子进程向量中
@@ -364,8 +365,8 @@ impl TaskControlBlock {
     ///     - `-1`：加载缺页失败
     pub fn check_lazy(&self, va: VirtAddr, is_load: bool) -> isize {
         let inner = self.lock();
-        let mmap_start = inner.mmap_area.mmap_start;
-        let mmap_end = inner.mmap_area.mmap_top;
+        let mmap_start = inner.shared_vm_areas.mmap_start;
+        let mmap_end = inner.shared_vm_areas.mmap_top;
         let heap_start = VirtAddr::from(inner.memory_set.brk_start);
         let heap_end = VirtAddr::from(inner.memory_set.brk_start + USER_HEAP_SIZE);
         drop(inner);
@@ -386,7 +387,6 @@ impl TaskControlBlock {
         if va >= heap_start && va <= heap_end {
             self.lock().lazy_alloc_heap(va.floor())
         } else if va >= mmap_start && va < mmap_end {
-            // crate::debug!("mmap lazy alloc");
             self.lazy_mmap(va, is_load)
         } else {
             println!("[check_lazy] {:?}", va);
@@ -395,6 +395,7 @@ impl TaskControlBlock {
             println!("[check_lazy] heap_start: 0x{:x}", heap_start.0);
             println!("[check_lazy] heap_end: 0x{:x}", heap_end.0);
             println!("[check_lazy] current vma layout:");
+
             -2
         }
     }
@@ -414,7 +415,7 @@ impl TaskControlBlock {
         let lazy_result = inner.memory_set.lazy_mmap(va.into());
 
         if lazy_result == 0 && is_load {
-            inner.mmap_area.lazy_map_page(va, fd_table, token);
+            inner.shared_vm_areas.lazy_map_page(va, fd_table, token);
         }
         return lazy_result;
     }
@@ -441,10 +442,10 @@ impl TaskControlBlock {
         let mut end_va = VirtAddr::from(0);
         // "prot<<1" 右移一位以符合 MapPermission 的权限定义
         // "1<<4" 增加 MapPermission::U 权限
-        let map_flags = (((prot.bits() & 0b111) << 1) + (1 << 4)) as u8;
+        let map_flags = (((prot.bits() & 0b111) << 1) + (1 << 4)) as u16;
 
         if addr == 0 {
-            start_va = inner.mmap_area.get_mmap_top();
+            start_va = inner.shared_vm_areas.get_mmap_top();
             end_va = VirtAddr::from(start_va.0 + length);
         }
 
@@ -454,7 +455,7 @@ impl TaskControlBlock {
             MapPermission::from_bits(map_flags).unwrap(),
         );
 
-        inner.mmap_area.push(
+        inner.shared_vm_areas.push(
             start_va.0,
             length,
             prot.bits(),
@@ -477,7 +478,7 @@ impl TaskControlBlock {
             .memory_set
             .remove_mmap_area_with_start_vpn(VirtAddr::from(addr).into());
 
-        inner.mmap_area.remove(addr, length)
+        inner.shared_vm_areas.remove(addr, length)
     }
 
     pub fn pid(&self) -> usize {

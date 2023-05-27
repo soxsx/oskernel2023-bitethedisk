@@ -4,64 +4,59 @@ use crate::{
     consts::PAGE_SIZE,
     fs::OSInode,
     mm::{
-        address::{Step, VPNRange},
-        alloc_frame,
-        page_table::PTEFlags,
-        FrameTracker, PageTable, PhysPageNum, VirtAddr, VirtPageNum,
+        address::Step, alloc_frame, page_table::PTEFlags, FrameTracker, PageTable, PhysPageNum,
+        VPNRange, VirtAddr, VirtPageNum,
     },
 };
 
-use super::map_flags::{MapPermission, MapType};
+use super::{MapPermission, MapType};
 
-pub struct MapArea {
+pub struct VmArea {
     pub vpn_range: VPNRange,
 
-    pub data_frames: Vec<FrameTracker>,
+    pub vpn_table: Vec<VirtPageNum>,
 
     pub map_type: MapType,
+    pub permission: MapPermission,
 
-    pub map_perm: MapPermission,
+    pub frame_trackers: Vec<FrameTracker>,
+
+    // TODO: handle this
+    // pub related_file: Option<Arc<dyn File>>,
 }
 
-impl MapArea {
-    /// 根据虚拟地址生成一块逻辑段
-    ///
-    /// 起始地址和结束地址会按页取整，起始地址向下，结束地址向上
+impl VmArea {
     pub fn new(
         start_va: VirtAddr,
         end_va: VirtAddr,
         map_type: MapType,
-        map_perm: MapPermission,
+        permission: MapPermission,
     ) -> Self {
-        let start_vpn: VirtPageNum = start_va.floor();
-        let end_vpn: VirtPageNum = end_va.ceil();
         Self {
-            vpn_range: VPNRange::new(start_vpn, end_vpn),
-            data_frames: Vec::new(),
+            vpn_range: VPNRange::from_va(start_va, end_va),
+            vpn_table: Vec::new(),
             map_type,
-            map_perm,
+            permission,
+            frame_trackers: Vec::new(),
         }
     }
 
-    /// 从一个逻辑段复制得到一个虚拟地址区间、映射方式和权限控制均相同的逻辑段
-    ///
-    /// 不同的是由于它还没有真正被映射到物理页帧上，所以 data_frames 字段为空
-    pub fn from_another(another: &MapArea) -> Self {
+    pub fn from_another(another: &Self) -> Self {
         Self {
-            vpn_range: VPNRange::new(another.vpn_range.get_start(), another.vpn_range.get_end()),
-            data_frames: Vec::new(),
+            vpn_range: another.vpn_range,
+            vpn_table: Vec::new(),
             map_type: another.map_type,
-            map_perm: another.map_perm,
+            permission: another.permission,
+            frame_trackers: Vec::new(),
         }
     }
 
-    /// 在多级页表中为逻辑块分配空间
-    pub fn map(&mut self, page_table: &mut PageTable) {
+    pub fn inflate_pagetable(&mut self, page_table: &mut PageTable) {
         match self.map_type {
             MapType::Identical => {
                 self.vpn_range.into_iter().for_each(|vpn| {
                     let ppn = PhysPageNum(vpn.0);
-                    let flags = PTEFlags::from_bits(self.map_perm.bits()).unwrap();
+                    let flags = PTEFlags::from_bits(self.permission.bits()).unwrap();
                     page_table.map(vpn, ppn, flags);
                 });
             }
@@ -69,8 +64,8 @@ impl MapArea {
                 self.vpn_range.into_iter().for_each(|vpn| {
                     let frame = alloc_frame().expect("out of memory");
                     let ppn = frame.ppn;
-                    self.data_frames.push(frame);
-                    let flags = PTEFlags::from_bits(self.map_perm.bits()).unwrap();
+                    self.frame_trackers.push(frame);
+                    let flags = PTEFlags::from_bits(self.permission.bits()).unwrap();
                     page_table.map(vpn, ppn, flags);
                 });
             }
@@ -78,7 +73,7 @@ impl MapArea {
     }
 
     /// 将当前逻辑段到物理内存的映射从传入的该逻辑段所属的地址空间的多级页表中删除
-    pub fn unmap(&mut self, page_table: &mut PageTable) {
+    pub fn erase_pagetable(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
             page_table.unmap(vpn);
         }
@@ -120,5 +115,29 @@ impl MapArea {
             }
             current_vpn.step();
         }
+    }
+
+    pub fn push_vpn(&mut self, vpn: VirtPageNum, page_table: &mut PageTable) {
+        self.vpn_table.push(vpn);
+        self.map_one(page_table, vpn);
+    }
+
+    fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
+        let ppn: PhysPageNum;
+        match self.map_type {
+            MapType::Identical => {
+                ppn = PhysPageNum(vpn.0);
+            }
+            MapType::Framed => {
+                if let Some(frame) = alloc_frame() {
+                    ppn = frame.ppn;
+                    self.frame_trackers.push(frame);
+                } else {
+                    panic!("No more memory!");
+                }
+            }
+        }
+        let pte_flags = PTEFlags::from_bits(self.permission.bits()).unwrap();
+        page_table.map(vpn, ppn, pte_flags);
     }
 }

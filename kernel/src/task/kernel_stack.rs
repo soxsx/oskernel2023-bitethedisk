@@ -2,7 +2,7 @@
 
 use crate::{
     consts::{KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE},
-    mm::{kernel_vmm::KERNEL_VMM, MapPermission, VirtAddr},
+    mm::{kernel_vmm::acquire_kvmm, MapPermission, VirtAddr},
 };
 
 use super::PidHandle;
@@ -25,7 +25,7 @@ impl KernelStack {
     pub fn new(pid_handle: &PidHandle) -> Self {
         let pid = pid_handle.0;
         let (kernel_stack_bottom, kernel_stack_top) = kernel_stack_position(pid);
-        KERNEL_VMM.lock().insert_framed_area(
+        acquire_kvmm().insert_framed_area(
             kernel_stack_bottom.into(),
             kernel_stack_top.into(),
             MapPermission::R | MapPermission::W,
@@ -45,8 +45,6 @@ impl Drop for KernelStack {
     fn drop(&mut self) {
         let (kernel_stack_bottom, _) = kernel_stack_position(self.pid);
         let kernel_stack_bottom_va: VirtAddr = kernel_stack_bottom.into();
-        KERNEL_VMM
-            .lock()
-            .remove_area_with_start_vpn(kernel_stack_bottom_va.into());
+        acquire_kvmm().remove_area_with_start_vpn(kernel_stack_bottom_va.into());
     }
 }

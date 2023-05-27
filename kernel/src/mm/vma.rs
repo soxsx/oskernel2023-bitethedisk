@@ -17,14 +17,11 @@ bitflags! {
 }
 
 bitflags! {
-    /// |名称|值|映射方式|
-    /// |--|--|--|
-    /// |MAP_FILE|0|文件映射，使用文件内容初始化内存|
-    /// |MAP_SHARED|0x01|共享映射，修改对所有进程可见，多进程读写同一个文件需要调用者提供互斥机制|
-    /// |MAP_PRIVATE|0x02|私有映射，进程A的修改对进程B不可见的，利用 COW 机制，修改只会存在于内存中，不会同步到外部的磁盘文件上|
-    /// |MAP_FIXED|0x10|| 将mmap空间放在addr指定的内存地址上，若与现有映射页面重叠，则丢弃重叠部分。如果指定的地址不能使用，mmap将失败。
-    /// |MAP_ANONYMOUS|0x20|匿名映射，初始化全为0的内存空间|
-
+    /// - MAP_FILE: 文件映射，使用文件内容初始化内存
+    /// - MAP_SHARED: 共享映射，修改对所有进程可见，多进程读写同一个文件需要调用者提供互斥机制
+    /// - MAP_PRIVATE: 私有映射，进程A的修改对进程B不可见的，利用 COW 机制，修改只会存在于内存中，不会同步到外部的磁盘文件上
+    /// - MAP_FIXED: 将mmap空间放在addr指定的内存地址上，若与现有映射页面重叠，则丢弃重叠部分。如果指定的地址不能使用，mmap将失败。
+    /// - MAP_ANONYMOU: 匿名映射，初始化全为0的内存空间
     pub struct MmapFlags: usize {
         const MAP_FILE = 0;
         const MAP_SHARED= 0x01;
@@ -69,7 +66,7 @@ impl MmapArea {
     pub fn lazy_map_page(
         &mut self,
         va: VirtAddr,
-        fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
+        fd_table: Vec<Option<Arc<dyn File>>>,
         token: usize,
     ) {
         for mmap_space in self.mmap_set.iter_mut() {
@@ -88,13 +85,12 @@ impl MmapArea {
         flags: usize,
         fd: isize,
         offset: usize,
-        _fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
+        _fd_table: Vec<Option<Arc<dyn File>>>,
         _token: usize,
     ) -> usize {
         let start_addr = start.into();
 
         let mmap_space = MmapSpace::new(start_addr, len, prot, flags, 0, fd, offset);
-        // mmap_space.map_file(start_addr, PAGE_SIZE, offset, _fd_table, _token);
 
         // use lazy map
 
@@ -175,11 +171,10 @@ impl MmapSpace {
     pub fn lazy_map_page(
         &mut self,
         va: VirtAddr,
-        fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
+        fd_table: Vec<Option<Arc<dyn File>>>,
         token: usize,
     ) {
         let offset: usize = self.offset - self.oaddr.0 + va.0;
-        // println!("[Kernel mmap] map_file 0x{:X} = 0x{:X} - 0x{:X} + 0x{:X}", offset, self.offset, self.oaddr.0, page_start.0);
         self.map_file(va, PAGE_SIZE, offset, fd_table, token);
     }
 
@@ -188,7 +183,7 @@ impl MmapSpace {
         va_start: VirtAddr,
         len: usize,
         offset: usize,
-        fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
+        fd_table: Vec<Option<Arc<dyn File>>>,
         token: usize,
     ) -> isize {
         let flags = MmapFlags::from_bits(self.flags).unwrap();
@@ -206,8 +201,6 @@ impl MmapSpace {
             if !f.readable() {
                 return -1;
             }
-            // crate::debug!("map_file: offset: 0x{:X}", offset);
-            // println!{"The va_start is 0x{:X}, offset of file is {}", va_start.0, offset};
             let _read_len = f.read(UserBuffer::wrap(translated_bytes_buffer(
                 token,
                 va_start.0 as *const u8,
@@ -217,9 +210,5 @@ impl MmapSpace {
             return -1;
         };
         return 1;
-    }
-
-    pub fn debug_show(&self) {
-        println!("MmapSpace: {:x} ", self.oaddr.0);
     }
 }

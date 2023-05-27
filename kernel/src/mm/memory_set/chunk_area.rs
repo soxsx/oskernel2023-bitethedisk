@@ -5,7 +5,7 @@ use crate::mm::{
     VirtAddr, VirtPageNum,
 };
 
-use super::map_flags::{MapPermission, MapType};
+use super::flags::{MapPermission, MapType};
 
 /// 离散逻辑段
 pub struct ChunkArea {
@@ -27,11 +27,6 @@ impl ChunkArea {
         }
     }
 
-    pub fn push_vpn(&mut self, vpn: VirtPageNum, page_table: &mut PageTable) {
-        self.vpn_table.push(vpn);
-        self.map_one(page_table, vpn);
-    }
-
     pub fn from_another(another: &ChunkArea) -> Self {
         Self {
             vpn_table: Vec::new(),
@@ -42,8 +37,12 @@ impl ChunkArea {
         }
     }
 
-    // Alloc and map one page
-    pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
+    pub fn push_vpn(&mut self, vpn: VirtPageNum, page_table: &mut PageTable) {
+        self.vpn_table.push(vpn);
+        self.map_one(page_table, vpn);
+    }
+
+    fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         let ppn: PhysPageNum;
         match self.map_type {
             MapType::Identical => {

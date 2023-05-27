@@ -177,48 +177,38 @@ impl PageTable {
         ppn.as_bytes_array()
             .copy_from_slice(former_ppn.as_bytes_array());
     }
-
-    // only X+W+R can be set
-    // return -1 if find no such pte
-    // pub fn set_pte_flags(&mut self, vpn: VirtPageNum, flags: usize) -> isize {
-    //     let idxs = vpn.indexes();
-    //     let mut ppn = self.root_ppn;
-    //     for i in 0..3 {
-    //         let pte = &mut ppn.get_pte_array()[idxs[i]];
-    //         if i == 2 {
-    //             pte.set_pte_flags(flags);
-    //             break;
-    //         }
-    //         if !pte.is_valid() {
-    //             return -1;
-    //         }
-    //         ppn = pte.ppn();
-    //     }
-    //     0
-    // }
 }
 
 // 可以将一个 u8 封装成一个标志位的集合类型，支持一些常见的集合运算
 bitflags! {
-    /// ### 页表项标志位
-    /// |标志位|描述|
-    /// |--|--|
-    /// |`V(Valid)`|仅当位 V 为 1 时，页表项才是合法的；
-    /// |`R(Read)` `W(Write)` `X(eXecute)`|分别控制索引到这个页表项的对应虚拟页面是否允许读/写/执行；
-    /// |`U(User)`|控制索引到这个页表项的对应虚拟页面是否在 CPU 处于 U 特权级的情况下是否被允许访问；
-    /// |`G`|暂且不理会；
-    /// |`A(Accessed)`|处理器记录自从页表项上的这一位被清零之后，页表项的对应虚拟页面是否被访问过；
-    /// |`D(Dirty)`|处理器记录自从页表项上的这一位被清零之后，页表项的对应虚拟页面是否被修改过
-    #[derive(Copy, Clone, PartialEq, Eq)]
-    pub struct PTEFlags: u8 {
+    /// PTEFlags 一共 10 bits
+    #[derive(Clone, Copy)]
+    pub struct PTEFlags: u16 {
+        /// 如果该位置零，则当前 [`PTE`] 的其他位将失去其应有的意义，具体意义由软件决定
+        ///
+        /// 换言之，如果 MMU 转换过程中遇到 `!contains(PTEFlags::V)` 的情况，则会引发 Page Fault
+        ///
+        /// [`PTE`]: PageTableEntry
         const V = 1 << 0;
+
         const R = 1 << 1;
         const W = 1 << 2;
+        /// 该 [`PTE`] 指向的物理页是否可执行
+        ///
+        /// [`PTE`]: PageTableEntry
         const X = 1 << 3;
+
+        /// 该 [`PTE`] 指向的物理页在用户态是否可以访问
+        ///
+        /// [`PTE`]: PageTableEntry
         const U = 1 << 4;
+
         const G = 1 << 5;
         const A = 1 << 6;
         const D = 1 << 7;
+
+        /// 页表项指向的物理页帧是否需要写时复制
+        const COW = 1 << 8;
     }
 }
 
@@ -241,46 +231,43 @@ impl PageTableEntry {
     }
     /// 从页表项读取物理页号
     pub fn ppn(&self) -> PhysPageNum {
-        (self.bits >> 10 & ((1usize << 44) - 1)).into()
+        (self.bits >> 10 & ((1_usize << 44) - 1)).into()
     }
+
     pub fn flags(&self) -> PTEFlags {
-        PTEFlags::from_bits(self.bits as u8).unwrap()
+        PTEFlags::from_bits((self.bits & 0b11111_11111) as u16).unwrap()
     }
-    /// 验证页表项是否合法（V标志位是否为1）
+
     pub fn is_valid(&self) -> bool {
-        (self.flags() & PTEFlags::V) != PTEFlags::empty()
+        self.flags().contains(PTEFlags::V)
     }
-    /// 验证页表项是否可读（R标志位是否为1）
+
     pub fn readable(&self) -> bool {
-        (self.flags() & PTEFlags::R) != PTEFlags::empty()
+        self.flags().contains(PTEFlags::R)
     }
-    /// 验证页表项是否可写（W标志位是否为1）
+
     pub fn writable(&self) -> bool {
-        (self.flags() & PTEFlags::W) != PTEFlags::empty()
+        self.flags().contains(PTEFlags::W)
     }
-    /// 验证页表项是否可执行（X标志位是否为1）
+
     pub fn executable(&self) -> bool {
-        (self.flags() & PTEFlags::X) != PTEFlags::empty()
-    }
-    // only X+W+R can be set
-    pub fn set_pte_flags(&mut self, flags: usize) {
-        self.bits = (self.bits & !(0b1110 as usize)) | (flags & (0b1110 as usize));
+        self.flags().contains(PTEFlags::X)
     }
 
     pub fn set_flags(&mut self, flags: PTEFlags) {
-        let new_flags: u8 = flags.bits().clone();
+        let new_flags = flags.bits().clone();
         self.bits = (self.bits & 0xFFFF_FFFF_FFFF_FF00) | (new_flags as usize);
     }
 
     pub fn set_cow(&mut self) {
-        (*self).bits = self.bits | (1 << 9);
+        (*self).bits = self.bits | (1 << 8);
     }
 
     pub fn reset_cow(&mut self) {
-        (*self).bits = self.bits & !(1 << 9);
+        (*self).bits = self.bits & !(1 << 8);
     }
 
     pub fn is_cow(&self) -> bool {
-        self.bits & (1 << 9) != 0
+        self.bits & (1 << 8) != 0
     }
 }

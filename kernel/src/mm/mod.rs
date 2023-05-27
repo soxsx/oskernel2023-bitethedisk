@@ -17,9 +17,9 @@ use riscv::register::satp;
 pub use user_buffer::{UserBuffer, UserBufferIterator};
 pub use vma::*;
 
-use crate::{consts::PAGE_SIZE, kernel_token, task::current_task};
+use crate::{consts::PAGE_SIZE, task::current_task};
 
-use self::address::Step;
+use self::{address::Step, kernel_vmm::acquire_kvmm};
 
 /// 内存管理子系统的初始化
 pub fn init() {
@@ -32,7 +32,7 @@ pub fn init_frame_allocator() {
 }
 
 pub fn enable_mmu() {
-    satp::write(kernel_token!());
+    satp::write(acquire_kvmm().token());
     unsafe { core::arch::asm!("sfence.vma") } // 刷新 MMU 的 TLB
 }
 

@@ -1,5 +1,6 @@
 use super::chunk_area::ChunkArea;
-use super::{MapArea, MapPermission, MapType};
+use super::vm_area::VmArea;
+use super::{MapPermission, MapType};
 use crate::consts::{PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE, USER_STACK_SIZE};
 use crate::fs::OSInode;
 use crate::mm::frame_allocator::{enquire_refcount, frame_add_ref};
@@ -13,11 +14,11 @@ use alloc::{sync::Arc, vec::Vec};
 pub struct MemorySet {
     pub page_table: PageTable,
 
-    vm_areas: Vec<MapArea>,
+    vm_areas: Vec<VmArea>,
 
     mmap_areas: Vec<ChunkArea>,
 
-    heap_areas: ChunkArea,
+    heap_areas: VmArea,
 
     pub brk_start: usize,
     pub brk: usize,
@@ -29,11 +30,11 @@ impl MemorySet {
         Self {
             page_table: PageTable::new(),
             vm_areas: Vec::new(),
-            heap_areas: ChunkArea::new(
+            heap_areas: VmArea::new(
+                0.into(),
+                0.into(),
                 MapType::Framed,
                 MapPermission::R | MapPermission::W | MapPermission::U,
-                0.into(),
-                0.into(),
             ),
             mmap_areas: Vec::new(),
             brk_start: 0,
@@ -53,8 +54,8 @@ impl MemorySet {
         end_va: VirtAddr,
         permission: MapPermission,
     ) {
-        self.push(
-            MapArea::new(start_va, end_va, MapType::Framed, permission),
+        self.insert(
+            VmArea::new(start_va, end_va, MapType::Framed, permission),
             None,
         );
     }
@@ -79,23 +80,24 @@ impl MemorySet {
             .enumerate()
             .find(|(_, area)| area.vpn_range.get_start() == start_vpn)
         {
-            area.unmap(&mut self.page_table);
+            area.erase_pagetable(&mut self.page_table);
             self.vm_areas.remove(idx);
         }
     }
+
     /// 在当前地址空间插入一个新的连续逻辑段
     ///
     /// - 物理页号是随机分配的
     /// - 如果是以 Framed 方式映射到物理内存,
     /// 还可以可选性地在那些被映射到的物理页帧上写入一些初始化数据
     /// - data:(osinode,offset,len,page_offset)
-    pub fn push(
+    pub fn insert(
         &mut self,
-        mut map_area: MapArea,
+        mut map_area: VmArea,
         data: Option<(Arc<OSInode>, usize, usize, usize)>,
     ) {
         // println!("[KERNEL] push maparea start {:?}", map_area.start_va);
-        map_area.map(&mut self.page_table);
+        map_area.inflate_pagetable(&mut self.page_table);
         if let Some(data) = data {
             // 写入初始化数据，如果数据存在
             map_area.copy_data(&mut self.page_table, data.0, data.1, data.2, data.3);
@@ -106,7 +108,7 @@ impl MemorySet {
     /// 在当前地址空间插入一段已被分配空间的连续逻辑段
     ///
     /// 主要用于 COW 创建时子进程空间连续逻辑段的插入，其要求指定物理页号
-    fn push_mapped_area(&mut self, map_area: MapArea) {
+    fn push_mapped_area(&mut self, map_area: VmArea) {
         self.vm_areas.push(map_area);
     }
 
@@ -123,8 +125,8 @@ impl MemorySet {
     }
 
     fn map_trap_context(&mut self) {
-        self.push(
-            MapArea::new(
+        self.insert(
+            VmArea::new(
                 TRAP_CONTEXT.into(),
                 TRAMPOLINE.into(),
                 MapType::Framed,
@@ -179,9 +181,9 @@ impl MemorySet {
                     if ph_flags.is_execute() {
                         map_perm |= MapPermission::X;
                     }
-                    let map_area = MapArea::new(start_va, end_va, MapType::Framed, map_perm);
+                    let map_area = VmArea::new(start_va, end_va, MapType::Framed, map_perm);
                     max_end_vpn = map_area.vpn_range.get_end();
-                    memory_set.push(
+                    memory_set.insert(
                         map_area,
                         Some((
                             elf_file.clone(),
@@ -200,8 +202,8 @@ impl MemorySet {
         let mut user_stack_bottom: usize = max_end_va.into(); // 栈底
         user_stack_bottom += PAGE_SIZE; // 在已用最大虚拟页之上放置一个保护页
         let user_stack_top = user_stack_bottom + USER_STACK_SIZE; // 栈顶地址
-        memory_set.push(
-            MapArea::new(
+        memory_set.insert(
+            VmArea::new(
                 user_stack_bottom.into(),
                 user_stack_top.into(),
                 MapType::Framed,
@@ -214,11 +216,11 @@ impl MemorySet {
         let mut user_heap_bottom: usize = user_stack_top;
         user_heap_bottom += PAGE_SIZE; //放置一个保护页
         let user_heap_top: usize = user_heap_bottom + USER_HEAP_SIZE;
-        memory_set.heap_areas = ChunkArea::new(
-            MapType::Framed,
-            MapPermission::R | MapPermission::W | MapPermission::U,
+        memory_set.heap_areas = VmArea::new(
             user_heap_bottom.into(),
             user_heap_top.into(),
+            MapType::Framed,
+            MapPermission::R | MapPermission::W | MapPermission::U,
         );
 
         memory_set.brk = user_heap_bottom;
@@ -243,8 +245,8 @@ impl MemorySet {
             // use 1 page
             let start_vpn = area.vpn_range.get_start();
             if start_vpn == VirtAddr::from(TRAP_CONTEXT).floor() {
-                let new_area = MapArea::from_another(area);
-                new_memory_set.push(new_area, None);
+                let new_area = VmArea::from_another(area);
+                new_memory_set.insert(new_area, None);
                 for vpn in area.vpn_range {
                     let src_ppn = user_space.translate(vpn).unwrap().ppn();
                     let dst_ppn = new_memory_set.translate(vpn).unwrap().ppn();
@@ -262,7 +264,7 @@ impl MemorySet {
         for area in parent_areas.iter() {
             let start_vpn = area.vpn_range.get_start();
             if start_vpn != VirtAddr::from(TRAP_CONTEXT).floor() {
-                let mut new_area = MapArea::from_another(area);
+                let mut new_area = VmArea::from_another(area);
                 // map the former physical address
                 for vpn in area.vpn_range {
                     // change the map permission of both pagetable
@@ -277,7 +279,9 @@ impl MemorySet {
                     // map the cow page table to src_ppn
                     new_memory_set.page_table.map(vpn, src_ppn, pte_flags);
                     new_memory_set.page_table.set_cow(vpn);
-                    new_area.data_frames.push(FrameTracker::from_ppn(src_ppn));
+                    new_area
+                        .frame_trackers
+                        .push(FrameTracker::from_ppn(src_ppn));
                 }
                 new_memory_set.push_mapped_area(new_area);
             }
@@ -299,11 +303,13 @@ impl MemorySet {
                 new_memory_set.page_table.map(vpn, src_ppn, pte_flags);
                 new_memory_set.page_table.set_cow(vpn);
                 new_chunk.vpn_table.push(vpn);
-                new_chunk.data_frames.push(FrameTracker::from_ppn(src_ppn));
+                new_chunk
+                    .data_frames
+                    .push(FrameTracker::from_ppn(src_ppn));
             }
             new_memory_set.mmap_areas.push(new_chunk);
         }
-        new_memory_set.heap_areas = ChunkArea::from_another(&user_space.heap_areas);
+        new_memory_set.heap_areas = VmArea::from_another(&user_space.heap_areas);
         for _vpn in user_space.heap_areas.vpn_table.iter() {
             let vpn = (*_vpn).clone();
             // change the map permission of both pagetable
@@ -321,7 +327,7 @@ impl MemorySet {
             new_memory_set.heap_areas.vpn_table.push(vpn);
             new_memory_set
                 .heap_areas
-                .data_frames
+                .frame_trackers
                 .push(FrameTracker::from_ppn(src_ppn));
         }
         new_memory_set.brk_start = user_space.brk_start;
@@ -347,7 +353,7 @@ impl MemorySet {
             let head_vpn = area.vpn_range.get_start();
             let tail_vpn = area.vpn_range.get_end();
             if vpn < tail_vpn && vpn >= head_vpn {
-                area.data_frames.push(frame);
+                area.frame_trackers.push(frame);
                 return 0;
             }
         }
@@ -362,7 +368,7 @@ impl MemorySet {
         let head_vpn = self.heap_areas.vpn_range.get_start();
         let tail_vpn = self.heap_areas.vpn_range.get_end();
         if vpn < tail_vpn && vpn >= head_vpn {
-            self.heap_areas.data_frames.push(frame);
+            self.heap_areas.frame_trackers.push(frame);
             return 0;
         }
         0

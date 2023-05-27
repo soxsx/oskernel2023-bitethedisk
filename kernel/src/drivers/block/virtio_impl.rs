@@ -2,12 +2,9 @@ use core::ptr::NonNull;
 use lazy_static::lazy_static;
 use virtio_drivers::{BufferDirection, Hal, PhysAddr};
 
-use crate::{
-    kernel_token,
-    mm::{
-        address::Step, alloc_frame, dealloc_frame, FrameTracker, PageTable, PhysAddr as KPhysAddr,
-        PhysPageNum,
-    },
+use crate::mm::{
+    address::Step, alloc_frame, dealloc_frame, FrameTracker, PageTable, PhysAddr as KPhysAddr,
+    PhysPageNum, kernel_vmm::acquire_kvmm,
 };
 use alloc::vec::Vec;
 use spin::Mutex;
@@ -70,7 +67,7 @@ unsafe impl Hal for HalImpl {
 }
 
 fn virt_to_phys(vaddr: usize) -> PhysAddr {
-    PageTable::from_token(kernel_token!())
+    PageTable::from_token(acquire_kvmm().token())
         .translate_va(vaddr.into())
         .unwrap()
         .0

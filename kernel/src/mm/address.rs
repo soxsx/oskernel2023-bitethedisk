@@ -186,6 +186,38 @@ pub struct VPNRange {
     end: VirtPageNum,
 }
 
+impl VPNRange {
+    pub fn new(start: VirtPageNum, end: VirtPageNum) -> Self {
+        assert!(start <= end, "start {:?} > end {:?}!", start, end);
+
+        Self { start, end }
+    }
+
+    pub fn from_va(start_va: VirtAddr, end_va: VirtAddr) -> Self {
+        let start = start_va.floor();
+        let end = end_va.ceil();
+        assert!(start <= end, "start {:?} > end {:?}!", start, end);
+
+        Self { start, end }
+    }
+
+    pub fn get_start(&self) -> VirtPageNum {
+        self.start
+    }
+
+    pub fn get_end(&self) -> VirtPageNum {
+        self.end
+    }
+
+    pub fn start_va(&self) -> VirtAddr {
+        self.start.into()
+    }
+
+    pub fn end_va(&self) -> VirtAddr {
+        self.end.into()
+    }
+}
+
 impl IntoIterator for VPNRange {
     type Item = VirtPageNum;
 
@@ -196,21 +228,6 @@ impl IntoIterator for VPNRange {
             next: self.start,
             end: self.end,
         }
-    }
-}
-
-impl VPNRange {
-    pub fn new(start: VirtPageNum, end: VirtPageNum) -> Self {
-        assert!(start <= end, "start {:?} > end {:?}!", start, end);
-        Self { start, end }
-    }
-
-    pub fn get_start(&self) -> VirtPageNum {
-        self.start
-    }
-
-    pub fn get_end(&self) -> VirtPageNum {
-        self.end
     }
 }
 
