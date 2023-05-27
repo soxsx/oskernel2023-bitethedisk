@@ -6,7 +6,7 @@ use crate::mm::{
 
 use super::map_flags::{MapPermission, MapType};
 
-/// ### 离散逻辑段
+/// 离散逻辑段
 pub struct ChunkArea {
     pub(super) vpn_table: Vec<VirtPageNum>,
     pub(super) data_frames: Vec<FrameTracker>,

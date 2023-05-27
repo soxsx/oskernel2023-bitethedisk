@@ -459,7 +459,9 @@ impl MemorySet {
     pub fn check_va_range(&self, start_va: VirtAddr, len: usize) -> bool {
         let end_va = VirtAddr::from(start_va.0 + len);
         for area in self.areas.iter() {
-            if area.start_va <= start_va && end_va <= area.end_va {
+            if area.vpn_range.get_start() <= start_va.floor()
+                && end_va.ceil() <= area.vpn_range.get_end()
+            {
                 return true;
             }
         }
@@ -490,143 +492,5 @@ impl MemorySet {
                 chunk.set_mmap_range(chunk.start_va.into(), (chunk.end_va.0 - new_len).into());
             }
         }
-    }
-}
-
-// For debug usage.
-impl MemorySet {
-    #[allow(unused)]
-    pub fn debug_show_data(&self, va: VirtAddr) {
-        println!("-----------------------PTE Data-----------------------");
-        println!("MemorySet token: 0x{:x}", self.token());
-        let findpte = self.translate(va.floor());
-        if let Some(pte) = findpte {
-            println!("VirtAddr 0x{:x} ", va.0);
-            println!("ppn:     0x{:x}---", pte.ppn().0);
-            println!("pte_raw: 0b{:b}", pte.bits);
-            println!("valid   :   {}", pte.is_valid());
-            println!("executable: {}", pte.executable());
-            println!("readable:   {}", pte.readable());
-            println!("writable:   {}", pte.writable());
-            println!("COW     :   {}", pte.is_cow());
-        } else {
-            println!("VirtAddr 0x{:x} is not valied", va.0);
-            println!("------------------------------------------------------");
-            return;
-        }
-        println!("------------------------------------------------------");
-
-        if let Some(pte) = findpte {
-            if pte.is_valid() {
-                unsafe {
-                    let pa = findpte.unwrap().ppn().0 << 12;
-                    let raw_data = core::slice::from_raw_parts(pa as *const usize, 512);
-                    let mut i = 0;
-                    while i < 512 {
-                        print!("offset:{:03x}\t0x{:016x}", (i) * 8, raw_data[i]);
-                        print!("\t");
-                        print!("offset:{:03x}\t0x{:016x}", (i + 1) * 8, raw_data[i + 1]);
-                        print!("\t");
-                        print!("offset:{:03x}\t0x{:016x}", (i + 2) * 8, raw_data[i + 2]);
-                        print!("\t");
-                        println!("offset:{:03x}\t0x{:016x}", (i + 3) * 8, raw_data[i + 3]);
-                        i += 4;
-                    }
-                }
-            } else {
-                println!("VirtAddr 0x{:x} is not valied", va.0);
-                println!("------------------------------------------------------");
-                return;
-            }
-        }
-    }
-
-    #[allow(unused)]
-    pub fn debug_show_layout(&self) {
-        println!("-----------------------MM Layout-----------------------");
-        println! {"PID:{}",crate::task::current_task().unwrap().pid.0};
-        for area in &self.areas {
-            print!(
-                "MapArea  : 0x{:010x}--0x{:010x} len:0x{:08x} ",
-                area.start_va.0,
-                area.end_va.0,
-                area.end_va.0 - area.start_va.0
-            );
-            if area.map_perm.is_user() {
-                print!("U");
-            } else {
-                print!("-");
-            };
-            if area.map_perm.is_read() {
-                print!("R");
-            } else {
-                print!("-");
-            };
-            if area.map_perm.is_write() {
-                print!("W");
-            } else {
-                print!("-");
-            };
-            if area.map_perm.is_execute() {
-                println!("X");
-            } else {
-                println!("-");
-            };
-        }
-        for mmap_chunk in &self.mmap_chunks {
-            print!(
-                "ChunkArea: 0x{:010x}--0x{:010x} len:0x{:08x} ",
-                mmap_chunk.start_va.0,
-                mmap_chunk.end_va.0,
-                mmap_chunk.end_va.0 - mmap_chunk.start_va.0
-            );
-            if mmap_chunk.map_perm.is_user() {
-                print!("U");
-            } else {
-                print!("-");
-            };
-            if mmap_chunk.map_perm.is_read() {
-                print!("R");
-            } else {
-                print!("-");
-            };
-            if mmap_chunk.map_perm.is_write() {
-                print!("W");
-            } else {
-                print!("-");
-            };
-            if mmap_chunk.map_perm.is_execute() {
-                println!("X");
-            } else {
-                println!("-");
-            };
-        }
-        print!(
-            "HeapArea : 0x{:010x}--0x{:010x} len:0x{:08x} ",
-            self.heap_chunk.start_va.0,
-            self.heap_chunk.end_va.0,
-            self.heap_chunk.end_va.0 - self.heap_chunk.start_va.0
-        );
-        if self.heap_chunk.map_perm.is_user() {
-            print!("U");
-        } else {
-            print!("-");
-        };
-        if self.heap_chunk.map_perm.is_read() {
-            print!("R");
-        } else {
-            print!("-");
-        };
-        if self.heap_chunk.map_perm.is_write() {
-            print!("W");
-        } else {
-            print!("-");
-        };
-        if self.heap_chunk.map_perm.is_execute() {
-            println!("X");
-        } else {
-            println!("-");
-        };
-        println!("-------------------------------------------------------");
     }
 }

@@ -13,6 +13,8 @@ GDB = riscv64-unknown-elf-gdb
 FAT32_IMAGE = ../workspace/fat32.img
 NCPU = 2
 
+LOG_LEVEL := info
+
 ##################################################################
 #                        Run straightly                          #
 ##################################################################
@@ -23,7 +25,7 @@ kernel: initproc
 	@cargo build --release --offline
 
 kernel-dbg: initproc
-	@LOG_LV=debug cargo build --release --offline
+	@LOG_LV=$(LOG_LEVEL) cargo build --release --offline
 
 fat32img:
 	@cd ../misc && make tests

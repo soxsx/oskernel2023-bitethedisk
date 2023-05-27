@@ -384,7 +384,6 @@ impl TaskControlBlock {
             println!("[check_lazy] heap_start: 0x{:x}", heap_start.0);
             println!("[check_lazy] heap_end: 0x{:x}", heap_end.0);
             println!("[check_lazy] current vma layout:");
-            self.lock().memory_set.debug_show_layout();
             -2
         }
     }

@@ -11,21 +11,6 @@ use crate::{
 
 use super::map_flags::{MapPermission, MapType};
 
-/// ### 连续逻辑段
-/// - 一段虚拟页号连续的区间
-///
-/// |参数|描述|
-/// |--|--|
-/// |`vpn_range`|描述一段虚拟页号的连续区间，表示该逻辑段在地址区间中的位置和长度
-/// |`data_frames`|键值对容器 BTreeMap ,保存了该逻辑段内的每个虚拟页面的 VPN 和被映射到的物理页帧<br>这些物理页帧被用来存放实际内存数据而不是作为多级页表中的中间节点
-/// |`map_type`|描述该逻辑段内的所有虚拟页面映射到物理页帧的方式
-/// |`map_perm`|控制该逻辑段的访问方式，它是页表项标志位 PTEFlags 的一个子集，仅保留 `U` `R` `W` `X` 四个标志位
-/// ```
-/// MapArea::new(start_va: VirtAddr, end_va: VirtAddr, map_type: MapType, map_perm: MapPermission) -> Self
-/// MapArea::map(&mut self, page_table: &mut PageTable)
-/// MapArea::unmap(&mut self, page_table: &mut PageTable)
-/// MapArea::copy_data(&mut self, page_table: &mut PageTable, data: &[u8])
-/// ```
 pub struct MapArea {
     /// 描述一段虚拟页号的连续区间，表示该逻辑段在地址区间中的位置和长度
     pub(super) vpn_range: VPNRange,
@@ -36,8 +21,6 @@ pub struct MapArea {
     pub(super) map_type: MapType,
     /// 控制该逻辑段的访问方式，它是页表项标志位 PTEFlags 的一个子集，仅保留 `U` `R` `W` `X` 四个标志位
     pub(super) map_perm: MapPermission,
-    pub(super) start_va: VirtAddr,
-    pub(super) end_va: VirtAddr,
 }
 
 impl MapArea {
@@ -56,12 +39,11 @@ impl MapArea {
             data_frames: Vec::new(),
             map_type,
             map_perm,
-            start_va,
-            end_va,
         }
     }
 
-    /// ### 从一个逻辑段复制得到一个虚拟地址区间、映射方式和权限控制均相同的逻辑段
+    /// 从一个逻辑段复制得到一个虚拟地址区间、映射方式和权限控制均相同的逻辑段
+    ///
     /// 不同的是由于它还没有真正被映射到物理页帧上，所以 data_frames 字段为空
     pub fn from_another(another: &MapArea) -> Self {
         Self {
@@ -69,8 +51,6 @@ impl MapArea {
             data_frames: Vec::new(),
             map_type: another.map_type,
             map_perm: another.map_perm,
-            start_va: another.start_va,
-            end_va: another.end_va,
         }
     }
 
