@@ -388,7 +388,8 @@ impl TaskControlBlock {
         }
     }
 
-    /// ### 用时加载mmap缺页
+    /// 用时加载mmap缺页
+    /// 
     /// - 参数：
     ///     - `stval`：缺页中的虚拟地址
     ///     - `is_load`：加载(1)/写入(0)
@@ -431,23 +432,11 @@ impl TaskControlBlock {
         // "1<<4" 增加 MapPermission::U 权限
         let map_flags = (((prot.bits() & 0b111) << 1) + (1 << 4)) as u8;
 
-        // inner.memory_set.debug_show_layout();
-
-        if addr != 0 {
-            if flags.contains(MmapFlags::MAP_FIXED) {
-                // 处理 MAP_FIXED
-                inner.memory_set.reduce_chunk_range(addr, length);
-                inner.mmap_area.reduce_mmap_range(addr, length);
-                start_va = VirtAddr::from(addr);
-                end_va = VirtAddr::from(addr + length);
-            }
-        } else {
-            // crate::debug!("mmap: addr == 0");
+        if addr == 0 {
             start_va = inner.mmap_area.get_mmap_top();
             end_va = VirtAddr::from(start_va.0 + length);
         }
 
-        // TODO mmap
         inner.memory_set.insert_mmap_area(
             start_va,
             end_va,

@@ -28,17 +28,6 @@ impl ChunkArea {
         }
     }
 
-    pub fn set_mmap_range(&mut self, start: VirtAddr, end: VirtAddr) {
-        self.start_va = start;
-        self.end_va = end;
-        for (idx, vpn) in self.vpn_table.clone().iter_mut().enumerate() {
-            if VirtAddr::from(*vpn) >= self.end_va {
-                self.vpn_table.remove(idx);
-                // todo:删除 data_frame 中超范围的物理页帧
-            }
-        }
-    }
-
     pub fn push_vpn(&mut self, vpn: VirtPageNum, page_table: &mut PageTable) {
         self.vpn_table.push(vpn);
         self.map_one(page_table, vpn);

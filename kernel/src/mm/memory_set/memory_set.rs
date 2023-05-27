@@ -2,7 +2,6 @@ use super::chunk_area::ChunkArea;
 use super::{MapArea, MapPermission, MapType};
 use crate::consts::{PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE, USER_STACK_SIZE};
 use crate::fs::OSInode;
-use crate::mm::address::VPNRange;
 use crate::mm::frame_allocator::{enquire_refcount, frame_add_ref};
 use crate::mm::page_table::PTEFlags;
 use crate::mm::{
@@ -327,7 +326,6 @@ impl MemorySet {
                 .data_frames
                 .push(FrameTracker::from_ppn(src_ppn));
         }
-        // new_memory_set.debug_show_layout();
         new_memory_set.heap_start = user_space.heap_start;
         new_memory_set.heap_pt = user_space.heap_pt;
         new_memory_set.stack_top = user_space.stack_top;
@@ -447,23 +445,5 @@ impl MemorySet {
             return true;
         }
         return false;
-    }
-
-    // 检查mmap是否有重叠区域
-    pub fn reduce_chunk_range(&mut self, addr: usize, new_len: usize) {
-        // 检查是否与堆空间重合
-        if self.heap_chunk.start_va.0 == addr {
-            self.heap_chunk.set_mmap_range(
-                VirtAddr::from(self.heap_chunk.start_va.0 + new_len),
-                self.heap_chunk.end_va,
-            );
-            self.heap_start = addr + new_len;
-        }
-        for chunk in self.mmap_chunks.iter_mut() {
-            // 实际上不止这一种情况，todo
-            if chunk.start_va.0 == addr || addr + new_len == chunk.end_va.0 {
-                chunk.set_mmap_range(chunk.start_va.into(), (chunk.end_va.0 - new_len).into());
-            }
-        }
     }
 }
