@@ -255,8 +255,7 @@ impl PageTableEntry {
     }
 
     pub fn set_flags(&mut self, flags: PTEFlags) {
-        let new_flags = flags.bits().clone();
-        self.bits = (self.bits & 0xFFFF_FFFF_FFFF_FF00) | (new_flags as usize);
+        self.bits = (self.bits & 0xFFFF_FFFF_FFFF_FC00) | (flags.bits() as usize);
     }
 
     pub fn set_cow(&mut self) {
@@ -268,6 +267,6 @@ impl PageTableEntry {
     }
 
     pub fn is_cow(&self) -> bool {
-        self.bits & (1 << 8) != 0
+        self.flags().contains(PTEFlags::COW)
     }
 }
