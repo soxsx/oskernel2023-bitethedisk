@@ -1,5 +1,3 @@
-//! Index Node
-
 use super::{
     open_flags::CreateMode,
     stat::{S_IFCHR, S_IFDIR, S_IFREG},
@@ -11,22 +9,24 @@ use alloc::{
     sync::Arc,
     vec::Vec,
 };
-use fat32::{create_root_vfile, FAT32Manager, VFile, ATTR_ARCHIVE, ATTR_DIRECTORY};
-use log::info;
+use fat32::{
+    dir::DirError, root, Dir as FatDir, File as FatFile, FileSystem, VirFile, VirFileType,
+    ATTR_ARCHIVE, ATTR_DIRECTORY,
+};
 use spin::Mutex;
 
 /// 表示进程中一个被打开的常规文件或目录
 pub struct OSInode {
     readable: bool, // 该文件是否允许通过 sys_read 进行读
     writable: bool, // 该文件是否允许通过 sys_write 进行写
-    inner: Mutex<OSInodeInner>,
-    path: String, // todo
+    pub inner: Mutex<OSInodeInner>,
+    path: String, // TODO
     name: String,
 }
 
 pub struct OSInodeInner {
     offset: usize, // 偏移量
-    inode: Arc<VFile>,
+    pub inode: Arc<VirFile>,
     flags: OpenFlags,
     available: bool,
 }
@@ -35,7 +35,7 @@ impl OSInode {
     pub fn new(
         readable: bool,
         writable: bool,
-        inode: Arc<VFile>,
+        inode: Arc<VirFile>,
         path: String,
         name: String,
     ) -> Self {
@@ -55,10 +55,12 @@ impl OSInode {
     }
 
     #[allow(unused)]
+    // TODO 根据文件大小
     pub fn read_all(&self) -> Vec<u8> {
         let mut buffer = [0u8; 512];
         let mut v: Vec<u8> = vec![];
         let mut inner = self.inner.lock();
+        let mut i = 0;
         loop {
             let len = inner.inode.read_at(inner.offset, &mut buffer);
             if len == 0 {
@@ -66,6 +68,7 @@ impl OSInode {
             }
             inner.offset += len;
             v.extend_from_slice(&buffer[..len]);
+            i += 1;
         }
         v
     }
@@ -79,7 +82,8 @@ impl OSInode {
         }
         let mut buffer = [0u8; 512];
         let mut v: Vec<u8> = Vec::new();
-        if len == 96 * 4096 {
+        // TODO
+        if len >= 96 * 4096 {
             // 防止 v 占用空间过度扩大
             v.reserve(96 * 4096);
         }
@@ -107,6 +111,7 @@ impl OSInode {
         let mut inner = self.inner.lock();
         let mut remain = str_vec.len();
         let mut base = 0;
+
         loop {
             let len = remain.min(512);
             inner
@@ -133,7 +138,7 @@ impl OSInode {
 
     pub fn delete(&self) -> usize {
         let inner = self.inner.lock();
-        inner.inode.remove()
+        inner.inode.clear()
     }
     pub fn file_size(&self) -> usize {
         let inner = self.inner.lock();
@@ -143,38 +148,38 @@ impl OSInode {
 
 // 这里在实例化的时候进行文件系统的打开
 lazy_static! {
-    pub static ref ROOT_INODE: Arc<VFile> = {
-        let fat32_manager = FAT32Manager::open(BLOCK_DEVICE.clone());
+    pub static ref ROOT_INODE: Arc<VirFile> = {
+        let fs = FileSystem::open(BLOCK_DEVICE.clone());
 
-        Arc::new(create_root_vfile(&fat32_manager)) // 返回根目录
+        // 返回根目录
+        Arc::new(root(fs.clone()))
     };
 }
 
-pub fn list_apps(dir: Arc<VFile>) {
-    let mut layer: usize = 0;
-    list_apps_helper(dir, &mut layer);
-}
+static mut LAYER: usize = 0;
 
-fn list_apps_helper(dir: Arc<VFile>, layer: &mut usize) {
-    for app in dir.ls().unwrap() {
-        // 不打印initproc，事实上它也在task::new之后删除了
-        if *layer == 0 && app.0 == "initproc" {
-            continue;
+pub fn list_apps(dir: Arc<VirFile>) {
+    for app in dir.ls_with_attr().unwrap() {
+        // 不打印initproc, 事实上它也在task::new之后删除了
+        unsafe {
+            if LAYER == 0 && app.0 == "initproc" {
+                continue;
+            }
         }
-
-        // 如果不是目录
         if app.1 & ATTR_DIRECTORY == 0 {
-            for _ in 0..*layer {
-                print!("----");
+            // 如果不是目录
+            unsafe {
+                for _ in 0..LAYER {
+                    print!("----");
+                }
             }
-            println!("{}", app.0);
-        }
-        // 是目录但排除 "." 和 ".."
-        else if app.0 != "." && app.0 != ".." {
-            for _ in 0..*layer {
-                print!("----");
+            crate::println!("{}", app.0);
+        } else if app.0 != "." && app.0 != ".." {
+            unsafe {
+                for _ in 0..LAYER {
+                    crate::print!("----");
+                }
             }
-            info!("{}/", app.0);
             let dir = open(
                 dir.name(),
                 app.0.as_str(),
@@ -184,15 +189,21 @@ fn list_apps_helper(dir: Arc<VFile>, layer: &mut usize) {
             .unwrap();
             let inner = dir.inner.lock();
             let inode = inner.inode.clone();
-            *layer += 1;
-            list_apps_helper(inode, layer);
+            unsafe {
+                LAYER += 1;
+            }
+            list_apps(inode);
         }
     }
-    if *layer > 0 {
-        *layer -= 1;
+    unsafe {
+        // fix: may overflow
+        if LAYER > 0 {
+            LAYER -= 1;
+        }
     }
 }
 
+// work_path 绝对路径
 pub fn open(
     work_path: &str,
     path: &str,
@@ -200,75 +211,119 @@ pub fn open(
     _mode: CreateMode,
 ) -> Option<Arc<OSInode>> {
     let mut pathv: Vec<&str> = path.split('/').collect();
+
+    // crate::println!(
+    //     "[fs::inode::open] pathv:{:?} work_path:{}",
+    //     pathv,
+    //     work_path
+    // );
+
     let cur_inode = {
         if work_path == "/" {
             ROOT_INODE.clone()
         } else {
             let wpath: Vec<&str> = work_path.split('/').collect();
-            ROOT_INODE.find_vfile_bypath(wpath).unwrap()
+            ROOT_INODE.find(wpath).unwrap()
         }
     };
 
+    // println!("[fs::inode::open] cur_inode.name: {}", cur_inode.name());
+
     let (readable, writable) = flags.read_write();
 
+    // 创建文件
     if flags.contains(OpenFlags::O_CREATE) {
-        if let Some(inode) = cur_inode.find_vfile_bypath(pathv.clone()) {
-            // 如果文件已存在则清空
-            let name = pathv.pop().unwrap();
-            inode.clear();
-            Some(Arc::new(OSInode::new(
-                readable,
-                writable,
-                inode,
-                work_path.to_string(),
-                name.to_string(),
-            )))
-        } else {
-            // 设置创建类型
-            let mut create_type = ATTR_ARCHIVE;
-            if flags.contains(OpenFlags::O_DIRECTROY) {
-                create_type = ATTR_DIRECTORY;
+        // match cur_inode.find(pathv.clone()) {
+        let res = cur_inode.find(pathv.clone());
+        match res {
+            Ok(inode) => {
+                // crate::info!("[fs::inode::open] File exist");
+                // 如果文件已存在则清空
+                let name = pathv.pop().unwrap();
+                inode.clear();
+                Some(Arc::new(OSInode::new(
+                    readable,
+                    writable,
+                    inode,
+                    work_path.to_string(),
+                    name.to_string(),
+                )))
             }
-            let name = pathv.pop().unwrap();
-            if let Some(temp_inode) = cur_inode.find_vfile_bypath(pathv.clone()) {
-                // println!("[DEBUG] create file: {}, type:0x{:x}",name,create_type);
-                temp_inode.create(name, create_type).map(|inode| {
-                    Arc::new(OSInode::new(
-                        readable,
-                        writable,
-                        inode,
-                        work_path.to_string(),
-                        name.to_string(),
-                    ))
-                })
-            } else {
-                None
+            Err(_) => {
+                // 设置创建类型
+                let mut create_type = VirFileType::File;
+                if flags.contains(OpenFlags::O_DIRECTROY) {
+                    create_type = VirFileType::Dir;
+                }
+
+                // println!("[fs::inode::open] pathv:{:?}", pathv);
+
+                // 找到父目录
+                let name = pathv.pop().unwrap();
+                match cur_inode.find(pathv.clone()) {
+                    Ok(parent) => {
+                        // crate::info!(
+                        //     "[fs::inode::open] Create file: {}, type:{:?}",
+                        //     name,
+                        //     create_type
+                        // );
+                        match parent.create(name, create_type as VirFileType) {
+                            Ok(inode) => Some(Arc::new(OSInode::new(
+                                readable,
+                                writable,
+                                Arc::new(inode),
+                                work_path.to_string(),
+                                name.to_string(),
+                            ))),
+                            Err(_) => {
+                                // crate::warn!("[fs::indoe::open] Create file failed");
+                                None
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        // crate::warn!("[fs::inode::open] Create file failed(find parent)");
+                        None
+                    }
+                }
             }
         }
     } else {
-        cur_inode.find_vfile_bypath(pathv).map(|inode| {
-            if flags.contains(OpenFlags::O_TRUNC) {
-                inode.clear();
+        // 查找文件
+        // crate::info!("[fs::inode::open] Find file");
+
+        match cur_inode.find(pathv.clone()) {
+            Ok(inode) => {
+                // 删除文件
+                if flags.contains(OpenFlags::O_TRUNC) {
+                    // crate::info!("[fs::inode::open] Clear file");
+
+                    inode.clear();
+                }
+
+                // crate::info!("[fs::inode::open] Find file success");
+
+                let name = inode.name().to_string();
+                Some(Arc::new(OSInode::new(
+                    readable,
+                    writable,
+                    inode,
+                    work_path.to_string(),
+                    name,
+                )))
             }
-            let name = inode.name().to_string();
-            Arc::new(OSInode::new(
-                readable,
-                writable,
-                inode,
-                work_path.to_string(),
-                name,
-            ))
-        })
+            Err(_) => {
+                // crate::warn!("[fs::inode::open] Find file failed");
+                None
+            }
+        }
     }
 }
 
 // display debug todo
-// work_path 绝对路径
+// TODO 返回值
 pub fn chdir(work_path: &str, path: &str) -> Option<String> {
     let mut current_work_path_vec: Vec<&str> = work_path.split('/').collect();
-    if work_path.chars().nth(0).unwrap() == '/' {
-        current_work_path_vec.remove(0); // 移除一个多余的 ""
-    }
     let path_vec: Vec<&str> = path.split('/').collect();
 
     let current_inode = {
@@ -277,30 +332,33 @@ pub fn chdir(work_path: &str, path: &str) -> Option<String> {
             ROOT_INODE.clone()
         } else {
             // 传入路径是相对路径
-            ROOT_INODE
-                .find_vfile_bypath(current_work_path_vec.clone())
-                .unwrap()
+            ROOT_INODE.find(current_work_path_vec.clone()).unwrap()
         }
     };
-    if let Some(_) = current_inode.find_vfile_bypath(path_vec.clone()) {
-        if path.chars().nth(0).unwrap() == '/' {
-            Some(path.to_string())
-        } else {
-            // 将 work_path 和 path 拼接, work_path 为绝对路径, path 为相对路径
-            for i in 0..path_vec.len() {
-                if path_vec[i] == "." || path_vec[i] == "" {
-                    continue;
-                } else if path_vec[i] == ".." {
-                    current_work_path_vec.pop();
-                } else {
-                    current_work_path_vec.push(path_vec[i]);
-                }
-            }
 
-            Some(current_work_path_vec.join("/"))
+    match current_inode.find(path_vec.clone()) {
+        Ok(_inode) => {
+            if current_inode.name() == "/" {
+                Some(path.to_string())
+            } else {
+                // 将 work_path 和 path 拼接, work_path 为绝对路径, path 为相对路径
+                for i in 0..path_vec.len() {
+                    if path_vec[i] == "." || path_vec[i] == "" {
+                        continue;
+                    } else if path_vec[i] == ".." {
+                        current_work_path_vec.pop();
+                    } else {
+                        current_work_path_vec.push(path_vec[i]);
+                    }
+                }
+
+                Some(current_work_path_vec.join("/"))
+            }
         }
-    } else {
-        None
+        Err(_) => {
+            // crate::warn!("[fs::inode::chdir] Path not found");
+            None
+        }
     }
 }
 
@@ -320,19 +378,18 @@ impl File for OSInode {
     }
 
     fn read(&self, mut buf: UserBuffer) -> usize {
-        // println!("osinode read, current offset:{}",self.inner.lock().offset);
         let offset = self.inner.lock().offset;
         let file_size = self.file_size();
         if file_size == 0 {
-            println!("[WARNING] OSinode read: file_size is zero!");
+            // crate::warn!("[fs::inode::OSInode::read] File size is zero!");
         }
-        if offset >= file_size {
+        if offset > file_size {
             return 0;
         }
         let mut inner = self.inner.lock();
         let mut total_read_size = 0usize;
 
-        // 这边要使用 iter_mut()，因为要将数据写入
+        // 这边要使用 iter_mut(), 因为要将数据写入
         for slice in buf.buffers.iter_mut() {
             let read_size = inner.inode.read_at(inner.offset, *slice);
             if read_size == 0 {
@@ -341,8 +398,6 @@ impl File for OSInode {
             inner.offset += read_size;
             total_read_size += read_size;
         }
-        // println!("return total_read_size:{}",total_read_size);
-        // println!("return userbuffer:{:?}",buf);
         total_read_size
     }
 
@@ -413,7 +468,7 @@ impl File for OSInode {
         let inner = self.inner.lock();
         let vfile = inner.inode.clone();
 
-        // 属于是针对测试用例了，待完善
+        // 属于是针对测试用例了, 待完善
         if tv_sec == 1 << 32 {
             vfile.set_time(tv_sec, tv_nsec);
         }
@@ -443,15 +498,17 @@ impl File for OSInode {
         inner.available = false;
     }
 
+    // set dir entry
     fn dirent(&self, dirent: &mut Dirent) -> isize {
         if !self.is_dir() {
             return -1;
         }
         let mut inner = self.inner.lock();
         let offset = inner.offset as u32;
-        if let Some((name, off, first_clu, _attr)) = inner.inode.dirent_info(offset as usize) {
-            dirent.init(name.as_str(), off as isize, first_clu as usize);
-            inner.offset = off as usize;
+        if let Some((name, offset, first_cluster, _attr)) = inner.inode.dir_info(offset as usize) {
+            dirent.init(name.as_str(), offset as isize, first_cluster as usize);
+            inner.offset = offset as usize;
+            // TODO + 8 * 4 是什么意思?
             let len = (name.len() + 8 * 4) as isize;
             len
         } else {
@@ -464,8 +521,8 @@ impl File for OSInode {
         let vfile = inner.inode.clone();
         let mut st_mode = 0;
         _ = st_mode;
-        // todo
         let (st_size, st_blksize, st_blocks, is_dir, time) = vfile.stat();
+
         if is_dir {
             st_mode = S_IFDIR;
         } else {
@@ -474,7 +531,13 @@ impl File for OSInode {
         if vfile.name() == "null" || vfile.name() == "zero" {
             st_mode = S_IFCHR;
         }
-        kstat.init(st_size, st_blksize as i32, st_blocks, st_mode, time);
+        kstat.init(
+            st_size as i64,
+            st_blksize as i32,
+            st_blocks as u64,
+            st_mode as u32,
+            time as u64,
+        );
     }
 
     fn file_size(&self) -> usize {
@@ -485,3 +548,5 @@ impl File for OSInode {
         self.path.as_str()
     }
 }
+
+// TODO sync file

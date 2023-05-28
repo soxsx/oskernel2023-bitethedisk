@@ -17,7 +17,7 @@ impl MountTable {
             return 0;
         }
 
-        // todo
+        // TODO
         _ = flags;
 
         self.mnt_list.push((special, dir, fstype));
@@ -28,12 +28,12 @@ impl MountTable {
     pub fn umount(&mut self, special: String, flags: u32) -> isize {
         let len = self.mnt_list.len();
 
-        // todo
+        // TODO
         _ = flags;
 
         for i in 0..len {
             // 根据系统调用规范应该是 self.mnt_list[i].0 == special
-            // 然而测试程序传的是 dir，因此这里加了一个或运算
+            // 然而测试程序传的是 dir, 因此这里加了一个或运算
             if self.mnt_list[i].0 == special || self.mnt_list[i].1 == special {
                 self.mnt_list.remove(i);
                 return 0;
@@ -45,7 +45,9 @@ impl MountTable {
 
 lazy_static! {
     pub static ref MNT_TABLE: Arc<Mutex<MountTable>> = {
-        let mnt_table = MountTable { mnt_list: Vec::new() };
+        let mnt_table = MountTable {
+            mnt_list: Vec::new(),
+        };
         Arc::new(Mutex::new(mnt_table))
     };
 }
