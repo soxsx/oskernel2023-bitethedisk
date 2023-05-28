@@ -12,6 +12,7 @@ extern crate alloc;
 extern crate bitflags;
 #[macro_use]
 extern crate lazy_static;
+extern crate log;
 
 #[macro_use]
 mod macros;

@@ -1,8 +1,6 @@
-pub mod chunk_area;
 pub mod flags;
 pub mod memory_set;
 pub mod vm_area;
 
-pub use chunk_area::*;
 pub use flags::*;
 pub use memory_set::*;

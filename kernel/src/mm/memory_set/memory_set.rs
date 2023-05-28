@@ -1,4 +1,3 @@
-use super::chunk_area::ChunkArea;
 use super::vm_area::VmArea;
 use super::{MapPermission, MapType};
 use crate::consts::{PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE, USER_STACK_SIZE};
@@ -16,7 +15,7 @@ pub struct MemorySet {
 
     vm_areas: Vec<VmArea>,
 
-    mmap_areas: Vec<ChunkArea>,
+    mmap_areas: Vec<VmArea>,
 
     heap_areas: VmArea,
 
@@ -67,7 +66,7 @@ impl MemorySet {
             .enumerate()
             .find(|(_, chunk)| chunk.vpn_range.get_start() == start_vpn)
         {
-            chunk.unmap(&mut self.page_table);
+            chunk.erase_pagetable(&mut self.page_table);
             self.mmap_areas.remove(idx);
         }
     }
@@ -287,7 +286,7 @@ impl MemorySet {
             }
         }
         for chunk in user_space.mmap_areas.iter() {
-            let mut new_chunk = ChunkArea::from_another(chunk);
+            let mut new_chunk = VmArea::from_another(chunk);
             for vpn in chunk.vpn_table.iter() {
                 let vpn = vpn.clone();
                 // change the map permission of both pagetable
@@ -304,7 +303,7 @@ impl MemorySet {
                 new_memory_set.page_table.set_cow(vpn);
                 new_chunk.vpn_table.push(vpn);
                 new_chunk
-                    .data_frames
+                    .frame_trackers
                     .push(FrameTracker::from_ppn(src_ppn));
             }
             new_memory_set.mmap_areas.push(new_chunk);
@@ -361,7 +360,7 @@ impl MemorySet {
             let head_vpn = chunk.vpn_range.get_start();
             let tail_vpn = chunk.vpn_range.get_end();
             if vpn < tail_vpn && vpn >= head_vpn {
-                chunk.data_frames.push(frame);
+                chunk.frame_trackers.push(frame);
                 return 0;
             }
         }
@@ -427,7 +426,7 @@ impl MemorySet {
         end_va: VirtAddr,
         permission: MapPermission,
     ) {
-        let new_chunk_area = ChunkArea::new(MapType::Framed, permission, start_va, end_va);
+        let new_chunk_area = VmArea::new(start_va, end_va, MapType::Framed, permission);
 
         self.mmap_areas.push(new_chunk_area);
     }
@@ -454,6 +453,10 @@ impl MemorySet {
             return true;
         }
         return false;
+    }
+
+    pub fn is_lazy_mapped(&self, addr_vpn: VirtPageNum) -> bool {
+        self.page_table.find_pte(addr_vpn).is_some()
     }
 }
 

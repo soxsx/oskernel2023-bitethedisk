@@ -97,7 +97,7 @@ impl PageTable {
     }
 
     /// 根据vpn查找对应页表项，如果在查找过程中发现无效页表则直接返回 None 即查找失败
-    fn find_pte(&self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
+    pub fn find_pte(&self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
         let idxs = vpn.indexes();
         let mut ppn = self.root_ppn;
         let mut result: Option<&mut PageTableEntry> = None;
