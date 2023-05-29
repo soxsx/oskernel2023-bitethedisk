@@ -4,7 +4,7 @@ use super::{pid_alloc, PidHandle, SignalFlags};
 use crate::consts::*;
 use crate::fs::{File, OSInode, Stdin, Stdout};
 use crate::mm::kernel_vmm::acquire_kvmm;
-use crate::mm::memory_set::LoadedELF;
+use crate::mm::memory_set::{LoadedELF, MMAP_BASE};
 use crate::mm::{
     translated_mut, MapPermission, MemorySet, MmapArea, MmapFlags, MmapProts, PageTableEntry,
     PhysPageNum, VirtAddr, VirtPageNum,
@@ -56,6 +56,8 @@ pub struct TaskControlBlockInner {
     /// 进程间共享的虚拟地址映射
     pub shared_vm_areas: MmapArea,
 
+    // /// 进程间共享的虚拟地址映射
+    // pub _shared_vm_areas: Vec<Arc<VmArea>>,
     /// 文件描述符表
     pub fd_table: Vec<Option<Arc<dyn File>>>,
 
@@ -275,12 +277,7 @@ impl TaskControlBlock {
         inner
             .fd_table
             .iter_mut()
-            .find(|fd| {
-                // if fd.is_some(){
-                //     println!("fd name:{}, available:{}",fd.as_ref().unwrap().get_name(),fd.as_ref().unwrap().available());
-                // }
-                fd.is_some() && !fd.as_ref().unwrap().available()
-            })
+            .find(|fd| fd.is_some() && !fd.as_ref().unwrap().available())
             .take();
 
         // 修改新的地址空间中的 Trap 上下文，将解析得到的应用入口点、用户栈位置以及一些内核的信息进行初始化
@@ -356,7 +353,8 @@ impl TaskControlBlock {
         task_control_block
     }
 
-    /// ### 尝试用时加载缺页，目前只支持mmap缺页
+    /// 尝试用时加载缺页，目前只支持mmap缺页
+    ///
     /// - 参数：
     ///     - `va`：缺页中的虚拟地址
     ///     - `is_load`：加载(1)/写入(0)

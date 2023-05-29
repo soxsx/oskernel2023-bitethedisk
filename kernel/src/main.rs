@@ -12,6 +12,7 @@ extern crate alloc;
 extern crate bitflags;
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
 extern crate log;
 
 #[macro_use]
@@ -108,9 +109,10 @@ pub use lang_items::*;
 
 pub mod lang_items {
 
+    use buddy_system_allocator::LockedHeap;
+
     use crate::sbi::shutdown;
     use core::panic::PanicInfo;
-    use linked_list_allocator::LockedHeap;
 
     pub fn setup() {
         init_heap();
@@ -134,13 +136,12 @@ pub mod lang_items {
     // 通过 `global_allocator` 注解将 HEAP_ALLOCATOR 标记为 Rust 的内存分配器
     // Rust 的相关数据结构，如 Vec, BTreeMap 等，依赖于该分配器
     #[global_allocator]
-    static HEAP_ALLOCATOR: LockedHeap = LockedHeap::empty();
+    static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::empty();
 
     // 用于处理动态内存分配失败的情形，直接 panic
     #[alloc_error_handler]
     pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
-        heap_usage();
-        panic!("Heap allocation error, layout = {:?}", layout);
+        panic!("Heap allocation error, layout = {:#x?}", layout);
     }
 
     const KERNEL_HEAP_SIZE: usize = 4096 * 256; // 1M
@@ -148,21 +149,11 @@ pub mod lang_items {
     // 给全局分配器用于分配的一块内存，位于内核的 .bss 段中
     static mut KERNEL_HEAP: [u8; KERNEL_HEAP_SIZE] = [0; KERNEL_HEAP_SIZE];
 
-    pub fn heap_usage() {
-        let used = HEAP_ALLOCATOR.lock().used();
-        let total_size = HEAP_ALLOCATOR.lock().size();
-        let usage = used as f64 / total_size as f64 * 100.0;
-        println!(
-            "[kernel] heap usage: {:.2}% ({}/{} bytes)",
-            usage, used as usize, total_size
-        );
-    }
-
     fn init_heap() {
         unsafe {
             HEAP_ALLOCATOR
                 .lock()
-                .init(KERNEL_HEAP.as_ptr() as *mut u8, KERNEL_HEAP_SIZE);
+                .init(KERNEL_HEAP.as_ptr() as usize, KERNEL_HEAP_SIZE);
         }
     }
 }

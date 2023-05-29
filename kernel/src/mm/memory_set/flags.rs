@@ -75,7 +75,7 @@ bitflags! {
         const MAP_PRIVATE = 0x02;
 
         /// mmap 失败时返回的值，严格来说并不是 [`VmFlags`] 的一部分
-        const MAP_FAILED= (usize::MAX - 1) as isize;
+        const MAP_FAILED = (usize::MAX - 1) as isize;
     }
 
     #[derive(Clone, Copy, Debug)]

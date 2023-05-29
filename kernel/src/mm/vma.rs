@@ -125,25 +125,26 @@ impl MmapArea {
 /// mmap 块
 ///
 /// 用于记录 mmap 空间信息，mmap数据并不存放在此
-///
-/// |成员变量|含义|
-/// |--|--|
-/// |`oaddr`|mmap 空间起始虚拟地址|
-/// |`length`|mmap 空间长度|
-/// |`valid`|mmap 空间有效性|
-/// |`prot`|mmap 空间权限|
-/// |`flags`|映射方式|
-/// |`fd`|文件描述符|
-/// |`offset`|映射文件偏移地址|
 #[derive(Clone, Copy, Debug)]
 pub struct MmapSpace {
-    // pub addr: VirtAddr,
+    /// mmap 空间起始虚拟地址
     pub oaddr: VirtAddr,
+
+    /// mmap 空间有效性
     pub valid: usize,
+
+    /// mmap 空间长度
     pub length: usize,
+
+    /// mmap 空间权限
     pub prot: usize,
+
+    /// 映射方式
     pub flags: usize,
+
+    /// 文件描述符
     pub fd: isize,
+    /// 映射文件偏移地址
     pub offset: usize,
 }
 
@@ -185,21 +186,21 @@ impl MmapSpace {
         offset: usize,
         fd_table: Vec<Option<Arc<dyn File>>>,
         token: usize,
-    ) -> isize {
+    ) {
         let flags = MmapFlags::from_bits(self.flags).unwrap();
         if flags.contains(MmapFlags::MAP_ANONYMOUS) && self.fd == -1 && offset == 0 {
-            return 1;
+            return;
         }
 
         if self.fd as usize >= fd_table.len() {
-            return -1;
+            return;
         }
 
         if let Some(file) = &fd_table[self.fd as usize] {
             let f = file.clone();
             f.set_offset(offset);
             if !f.readable() {
-                return -1;
+                return;
             }
             let _read_len = f.read(UserBuffer::wrap(translated_bytes_buffer(
                 token,
@@ -207,8 +208,8 @@ impl MmapSpace {
                 len,
             )));
         } else {
-            return -1;
+            return;
         };
-        return 1;
+        return;
     }
 }

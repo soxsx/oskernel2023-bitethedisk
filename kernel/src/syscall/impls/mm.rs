@@ -18,20 +18,20 @@ use crate::{
 /// uintptr_t ret = syscall(SYS_brk, brk);
 /// ```
 pub fn sys_brk(brk_addr: usize) -> isize {
-    let mut addr_new = 0;
-    _ = addr_new;
-    if brk_addr == 0 {
-        addr_new = {
-            let _is_shrink = 0;
-            current_task().unwrap().grow_proc(0)
-        };
-    } else {
-        let former_addr = current_task().unwrap().grow_proc(0);
-        let grow_size: isize = (brk_addr - former_addr) as isize;
-        addr_new = current_task().unwrap().grow_proc(grow_size);
-    }
+    let task = current_task().unwrap();
+    let inner = task.lock();
 
-    addr_new as isize
+    let brk_start = inner.memory_set.brk_start;
+    let brk = inner.memory_set.brk;
+    drop(inner);
+
+    if brk_addr == 0 {
+        brk as isize
+    } else {
+        let grow_size: isize = (brk_addr - brk_start) as isize;
+
+        current_task().unwrap().grow_proc(grow_size) as isize
+    }
 }
 
 /// #define SYS_munmap 215

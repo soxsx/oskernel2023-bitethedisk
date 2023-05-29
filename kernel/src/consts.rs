@@ -10,9 +10,9 @@ pub const PAGE_SIZE: usize = 0x1000;
 
 /// 跳板虚拟内存中的起始地址，虚拟内存最高页
 pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1;
+
 /// Trap 上下文在应用地址空间中的位置
 pub const TRAP_CONTEXT: usize = TRAMPOLINE - PAGE_SIZE;
 
 pub use crate::board::{CLOCK_FREQ, MMIO};
 
-pub const MMAP_BASE: usize = 0x60000000;

@@ -8,7 +8,6 @@ use crate::task::{current_task, current_user_token, FD_LIMIT};
 
 use alloc::{sync::Arc, vec::Vec};
 use core::mem::size_of;
-use log::warn;
 
 const AT_FDCWD: isize = -100;
 
@@ -469,9 +468,6 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.lock();
-    // if len != 8192 {
-    //     println!("buffer content:{:?}", UserBuffer::new(translated_byte_buffer(token, buf, len)));
-    // }
 
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
@@ -490,7 +486,7 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
         // 文件不可写
         if !file.writable() {
             warn!(
-                "[WARNING] sys_write: file can't write, return -1, filename: {}",
+                "sys_write: file can't write, return -1, filename: {}",
                 file.name()
             );
             return -1;

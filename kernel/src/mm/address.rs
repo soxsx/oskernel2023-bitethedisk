@@ -187,12 +187,6 @@ pub struct VPNRange {
 }
 
 impl VPNRange {
-    pub fn new(start: VirtPageNum, end: VirtPageNum) -> Self {
-        assert!(start <= end, "start {:?} > end {:?}!", start, end);
-
-        Self { start, end }
-    }
-
     pub fn from_va(start_va: VirtAddr, end_va: VirtAddr) -> Self {
         let start = start_va.floor();
         let end = end_va.ceil();
@@ -207,14 +201,6 @@ impl VPNRange {
 
     pub fn get_end(&self) -> VirtPageNum {
         self.end
-    }
-
-    pub fn start_va(&self) -> VirtAddr {
-        self.start.into()
-    }
-
-    pub fn end_va(&self) -> VirtAddr {
-        self.end.into()
     }
 }
 

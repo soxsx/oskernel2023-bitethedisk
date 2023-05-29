@@ -20,7 +20,6 @@ pub struct VmArea {
     pub permission: MapPermission,
 
     pub frame_trackers: Vec<FrameTracker>,
-
     // TODO: handle this
     // pub related_file: Option<Arc<dyn File>>,
 }
@@ -84,20 +83,15 @@ impl VmArea {
         page_table: &mut PageTable,
         elf_file: Arc<OSInode>,
         data_start: usize,
-        data_len: usize,
-        page_offset: usize,
+        mut data_len: usize,
+        mut page_offset: usize,
     ) {
         assert_eq!(self.map_type, MapType::Framed);
         let mut offset: usize = 0;
-        let mut page_offset: usize = page_offset;
         let mut current_vpn = self.vpn_range.get_start();
-        let mut data_len = data_len;
         loop {
-            let data;
-            let data_slice;
-
-            data = elf_file.read_vec((data_start + offset) as isize, data_len.min(PAGE_SIZE));
-            data_slice = data.as_slice();
+            let data = elf_file.read_vec((data_start + offset) as isize, data_len.min(PAGE_SIZE));
+            let data_slice = data.as_slice();
 
             let src = &data_slice[0..data_len.min(PAGE_SIZE - page_offset)];
             let dst = &mut page_table

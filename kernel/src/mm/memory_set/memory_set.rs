@@ -10,6 +10,46 @@ use crate::mm::{
 };
 use alloc::{sync::Arc, vec::Vec};
 
+pub const MMAP_BASE: usize = 0x60000000;
+pub const MMAP_END: usize = 0x68000000; // mmap 区大小为 128 MiB
+
+/// 虚拟地址空间抽象
+///
+/// 比如，用户进程的虚拟地址空间抽象:
+///
+/// ```text
+/// +--------------------+
+/// |     trampoline     |
+/// +--------------------+
+/// |      trap_cx       |
+/// +--------------------+
+/// |     Guard Page     | <-- 保护页
+/// +--------------------+
+/// |                    |
+/// |     User Stack     | <-- 用户虚拟地址空间(U-mode)中的用户栈
+/// |                    |
+/// +--------------------+
+/// |       Unused       |
+/// +--------------------+
+/// |                    |
+/// |     mmap Areas     | <-- mmap 区
+/// |                    |
+/// +--------------------+
+/// |                    |
+/// |        ...         |
+/// |                    |
+/// +--------------------+
+/// |                    |
+/// |                    |
+/// |     User Heap      |
+/// |                    |
+/// |                    |
+/// +--------------------+ <-- brk
+/// |                    |
+/// |    Data Segments   | <-- ELF 文件加载后所有 Segment 的集合
+/// |                    |
+/// +--------------------+ <-- brk_start
+/// ```
 pub struct MemorySet {
     pub page_table: PageTable,
 
@@ -135,15 +175,71 @@ impl MemorySet {
         );
     }
 
-    /// 从 ELF 格式可执行文件解析出各数据段并对应生成应用的地址空间
+    /// 中 ELF 文件中构建出一个 [`MemorySet`]
+    ///
+    /// *因为我们是加载 ELF 文件，所以我们只关心执行视图(Execution View)*
+    ///
+    /// *需要注意的是，无论是什么视图，对于 ELF 文件来说只是划分标准不同而已，布局基本没有差别*
+    ///
+    /// ELF 文件在 x64 的布局(Execution View):
+    ///
+    /// ```text
+    /// +----------------------+
+    /// |    Program Header    | <-- ELF Header 包含了 ELF 文件的各个段的长度等基本信息等
+    /// +----------------------+
+    /// | Program Header Table | <-- ph_* 包含了运行时加载所需的基本信息
+    /// +----------------------+
+    /// |       Segment1       |
+    /// +----------------------+
+    /// |       Segment2       |
+    /// +----------------------+
+    /// |         ...          |
+    /// +----------------------+
+    /// | Section Header Table |
+    /// |      (Optional)      |
+    /// +----------------------+
+    ///
+    /// ```
+    ///
+    /// 当前实现中，ELF 加载后在内存中的布局(进程的地址空间布局):
+    ///
+    /// ```text
+    /// +--------------------+
+    /// |     trampoline     |
+    /// +--------------------+
+    /// |      trap_cx       |
+    /// +--------------------+
+    /// |     Guard Page     | <-- 保护页
+    /// +--------------------+
+    /// |                    |
+    /// |     User Stack     | <-- 用户虚拟地址空间(U-mode)中的用户栈
+    /// |                    |
+    /// +--------------------+
+    /// |     Guard Page     |
+    /// +--------------------+
+    /// |                    |
+    /// |     mmap Areas     | <-- mmap 区
+    /// |                    |
+    /// +--------------------+
+    /// |                    |
+    /// |        ...         |
+    /// |                    |
+    /// +--------------------+
+    /// |                    |
+    /// |                    |
+    /// |     User Heap      |
+    /// |                    |
+    /// |                    |
+    /// +--------------------+ <-- brk
+    /// |                    |
+    /// |    Data Segments   | <-- ELF 文件加载后所有 Segment 的集合
+    /// |                    |
+    /// +--------------------+ <-- brk_start
+    /// ```
     pub fn load_elf(elf_file: Arc<OSInode>) -> LoadedELF {
         let mut memory_set = Self::new_bare();
 
-        // 将跳板插入到应用地址空间
         memory_set.map_trampoline();
-
-        // 在应用地址空间中映射次高页面来存放 Trap 上下文
-        // 将 TRAP_CONTEXT 段尽量放前，以节省 cow 时寻找时间
         memory_set.map_trap_context();
 
         // 第一次读取前64字节确定程序表的位置与大小
@@ -160,7 +256,7 @@ impl MemorySet {
         let elf = xmas_elf::ElfFile::new(elf_head_data.as_slice()).unwrap();
 
         // 记录目前涉及到的最大的虚拟页号
-        let mut max_end_vpn = VirtPageNum(0);
+        let mut brk_start_vpn = VirtPageNum(0);
 
         // 遍历程序段进行加载
         for i in 0..ph_count as u16 {
@@ -181,7 +277,7 @@ impl MemorySet {
                         map_perm |= MapPermission::X;
                     }
                     let map_area = VmArea::new(start_va, end_va, MapType::Framed, map_perm);
-                    max_end_vpn = map_area.vpn_range.get_end();
+                    brk_start_vpn = map_area.vpn_range.get_end();
                     memory_set.insert(
                         map_area,
                         Some((
@@ -197,10 +293,8 @@ impl MemorySet {
         }
 
         // 分配用户栈
-        let max_end_va: VirtAddr = max_end_vpn.into();
-        let mut user_stack_bottom: usize = max_end_va.into(); // 栈底
-        user_stack_bottom += PAGE_SIZE; // 在已用最大虚拟页之上放置一个保护页
-        let user_stack_top = user_stack_bottom + USER_STACK_SIZE; // 栈顶地址
+        let user_stack_top = TRAP_CONTEXT - PAGE_SIZE;
+        let user_stack_bottom = user_stack_top - USER_STACK_SIZE;
         memory_set.insert(
             VmArea::new(
                 user_stack_bottom.into(),
@@ -211,9 +305,8 @@ impl MemorySet {
             None,
         );
 
-        // 分配用户堆，lazy加载
-        let mut user_heap_bottom: usize = user_stack_top;
-        user_heap_bottom += PAGE_SIZE; //放置一个保护页
+        // 分配用户堆，懒加载
+        let user_heap_bottom: usize = usize::from(brk_start_vpn) + PAGE_SIZE;
         let user_heap_top: usize = user_heap_bottom + USER_HEAP_SIZE;
         memory_set.heap_areas = VmArea::new(
             user_heap_bottom.into(),

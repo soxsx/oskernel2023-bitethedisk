@@ -6,7 +6,7 @@ mod page_table; // 页表
 mod user_buffer;
 mod vma; // 虚拟内存地址映射空间
 
-use core::mem::size_of;
+use core::{cmp::min, mem::size_of};
 
 pub use address::*;
 use alloc::{string::String, vec::Vec};
@@ -38,39 +38,44 @@ pub fn enable_mmu() {
 
 /// 以向量的形式返回一组可以在内存空间中直接访问的字节数组切片
 ///
-/// |参数|描述|
-/// |--|--|
-/// |`token`|某个应用地址空间的 token|
-/// |`ptr`|应用地址空间中的一段缓冲区的起始地址
-/// |`len`|应用地址空间中的一段缓冲区的长度
+/// - `token`: 某个应用地址空间的 token
+/// - `ptr`: 应用地址空间中的一段缓冲区的起始地址
+/// - `len`: 应用地址空间中的一段缓冲区的长度
 pub fn translated_bytes_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&'static mut [u8]> {
     let page_table = PageTable::from_token(token);
-    let mut start = ptr as usize;
-    let end = start + len;
+
+    let mut start = VirtAddr::from(ptr as usize);
+    // TODO: 这里如果不按照虚拟地址处理可能会出错，具体表现为 end 的值很奇怪，
+    // 可能超出了 39 bit(512GiB) 的虚拟地址空间大小限制
+    let end = VirtAddr::from(start.0 + len);
+
     let mut v = Vec::new();
     while start < end {
-        let start_va = VirtAddr::from(start);
-        let mut vpn = start_va.floor();
-        let ppn: PhysPageNum;
-        match page_table.translate(vpn) {
-            Some(_ppn) => ppn = _ppn.ppn(),
+        let mut vpn = start.floor();
+
+        let ppn = match page_table.translate(vpn) {
+            Some(pte) => pte.ppn(),
             None => {
-                if current_task().unwrap().check_lazy(start_va, true) != 0 {
+                if current_task().unwrap().check_lazy(start, true) != 0 {
                     panic!("check lazy error");
                 }
-                ppn = page_table.translate(vpn).unwrap().ppn();
+                page_table.translate(vpn).unwrap().ppn()
             }
-        }
+        };
+
         vpn.step();
-        let mut end_va: VirtAddr = vpn.into();
-        end_va = end_va.min(VirtAddr::from(end));
-        if end_va.page_offset() == 0 {
-            v.push(&mut ppn.as_bytes_array()[start_va.page_offset()..]);
+
+        // 避免跨页
+        let in_page_end_va: VirtAddr = min(vpn.into(), end);
+        if in_page_end_va.page_offset() == 0 {
+            v.push(&mut ppn.as_bytes_array()[start.page_offset()..]);
         } else {
-            v.push(&mut ppn.as_bytes_array()[start_va.page_offset()..end_va.page_offset()]);
+            v.push(&mut ppn.as_bytes_array()[start.page_offset()..in_page_end_va.page_offset()]);
         }
-        start = end_va.into();
+
+        start = in_page_end_va.into();
     }
+
     v
 }
 
@@ -111,7 +116,6 @@ pub fn translated_ref<T>(token: usize, ptr: *const T) -> &'static T {
 pub fn translated_mut<T>(token: usize, ptr: *mut T) -> &'static mut T {
     let offset = ptr as usize % PAGE_SIZE;
     assert!(PAGE_SIZE - offset >= size_of::<T>(), "cross-page access");
-    //println!("into translated_refmut!");
     let page_table = PageTable::from_token(token);
     let va = ptr as usize;
     page_table

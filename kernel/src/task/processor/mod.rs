@@ -1,8 +1,3 @@
-//!
-//! 
-//! 
-//! 
-
 pub mod cpu;
 pub mod processor;
 pub mod schedule;
