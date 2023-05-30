@@ -1,8 +1,9 @@
-use alloc::{sync::Arc, vec::Vec};
+use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
 
 use crate::{
     consts::PAGE_SIZE,
-    fs::OSInode,
+    error::Error,
+    fs::{Fat32File, File},
     mm::{
         address::Step, alloc_frame, page_table::PTEFlags, FrameTracker, PageTable, PhysPageNum,
         VPNRange, VirtAddr, VirtPageNum,
@@ -13,43 +14,51 @@ use super::{MapPermission, MapType};
 
 pub struct VmArea {
     pub vpn_range: VPNRange,
-
-    pub vpn_table: Vec<VirtPageNum>,
-
     pub map_type: MapType,
     pub permission: MapPermission,
 
-    pub frame_trackers: Vec<FrameTracker>,
-    // TODO: handle this
-    // pub related_file: Option<Arc<dyn File>>,
+    // (lzm) 添加 file 和 page_offset
+    pub file: Option<Arc<dyn File>>, // 被映射的文件
+    pub file_offset: usize,          // 被映射的文件在文件中的偏移量
+
+    pub frame_map: BTreeMap<VirtPageNum, FrameTracker>, // vpn -> frame_tracker
+                                                        // pub start_va: VirtAddr,                                 // 该段的起始虚拟地址
+                                                        // pub end_va: VirtAddr,                                   // 该段的结束虚拟地址
 }
 
 impl VmArea {
+    //(lzm)
     pub fn new(
         start_va: VirtAddr,
         end_va: VirtAddr,
         map_type: MapType,
         permission: MapPermission,
+        file: Option<Arc<dyn File>>,
+        file_offset: usize,
     ) -> Self {
         Self {
             vpn_range: VPNRange::from_va(start_va, end_va),
-            vpn_table: Vec::new(),
             map_type,
             permission,
-            frame_trackers: Vec::new(),
+            frame_map: BTreeMap::new(),
+            file,
+            file_offset,
         }
     }
 
+    //(lzm)
     pub fn from_another(another: &Self) -> Self {
         Self {
             vpn_range: another.vpn_range,
-            vpn_table: Vec::new(),
+            frame_map: BTreeMap::new(),
             map_type: another.map_type,
             permission: another.permission,
-            frame_trackers: Vec::new(),
+            file: another.file.clone(),
+            file_offset: another.file_offset,
         }
     }
 
+    // (lzm) 懒加载
     pub fn inflate_pagetable(&mut self, page_table: &mut PageTable) {
         match self.map_type {
             MapType::Identical => {
@@ -63,7 +72,7 @@ impl VmArea {
                 self.vpn_range.into_iter().for_each(|vpn| {
                     let frame = alloc_frame().expect("out of memory");
                     let ppn = frame.ppn;
-                    self.frame_trackers.push(frame);
+                    self.frame_map.insert(vpn, frame);
                     let flags = PTEFlags::from_bits(self.permission.bits()).unwrap();
                     page_table.map(vpn, ppn, flags);
                 });
@@ -71,9 +80,42 @@ impl VmArea {
         }
     }
 
+    // (lzm) ummap 写回
+    /// 将当前逻辑段到物理内存的映射从传入的该逻辑段所属的地址空间的多级页表中删除
+    /// 写回文件(如果 map_perm 包含 W)
+    pub fn write_back(&self, page_table: &mut PageTable) -> Result<(), Error> {
+        if !self.permission.contains(MapPermission::W) {
+            return Ok(());
+        }
+        if self.file.is_none() {
+            return Ok(());
+        }
+        let file = self.file.as_ref().unwrap();
+        if !file.writable() {
+            return Ok(());
+        }
+        for vpn in self.vpn_range {
+            match page_table.translate(vpn) {
+                None => {}
+                Some(pte) => {
+                    if !pte.is_valid() {
+                        continue;
+                    }
+                    let data = pte.ppn().as_bytes_array();
+                    let offset =
+                        (vpn.0 - self.vpn_range.get_start().0) * PAGE_SIZE + self.file_offset;
+                    file.seek(offset);
+                    file.write_kernel_space(data.to_vec());
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// 将当前逻辑段到物理内存的映射从传入的该逻辑段所属的地址空间的多级页表中删除
     pub fn erase_pagetable(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
+            self.write_back(page_table).unwrap();
             page_table.unmap(vpn);
         }
     }
@@ -81,7 +123,6 @@ impl VmArea {
     pub fn copy_data(
         &mut self,
         page_table: &mut PageTable,
-        elf_file: Arc<OSInode>,
         data_start: usize,
         mut data_len: usize,
         mut page_offset: usize,
@@ -89,8 +130,9 @@ impl VmArea {
         assert_eq!(self.map_type, MapType::Framed);
         let mut offset: usize = 0;
         let mut current_vpn = self.vpn_range.get_start();
+        let file = self.file.as_ref().unwrap();
         loop {
-            let data = elf_file.read_vec((data_start + offset) as isize, data_len.min(PAGE_SIZE));
+            let data = file.read_to_vec((data_start + offset) as isize, data_len.min(PAGE_SIZE));
             let data_slice = data.as_slice();
 
             let src = &data_slice[0..data_len.min(PAGE_SIZE - page_offset)];
@@ -111,8 +153,7 @@ impl VmArea {
         }
     }
 
-    pub fn push_vpn(&mut self, vpn: VirtPageNum, page_table: &mut PageTable) {
-        self.vpn_table.push(vpn);
+    pub fn lazy_map_vpn(&mut self, vpn: VirtPageNum, page_table: &mut PageTable) {
         self.map_one(page_table, vpn);
     }
 
@@ -125,7 +166,7 @@ impl VmArea {
             MapType::Framed => {
                 if let Some(frame) = alloc_frame() {
                     ppn = frame.ppn;
-                    self.frame_trackers.push(frame);
+                    self.frame_map.insert(vpn, frame);
                 } else {
                     panic!("No more memory!");
                 }
@@ -133,5 +174,55 @@ impl VmArea {
         }
         let pte_flags = PTEFlags::from_bits(self.permission.bits()).unwrap();
         page_table.map(vpn, ppn, pte_flags);
+    }
+
+    // 将 map_area 分裂, 并返回高地址部分
+    pub fn split_right_pop(&mut self, split_vpn: VirtPageNum, new_perm: MapPermission) -> VmArea {
+        let mut new_data_map = BTreeMap::new();
+        let mut vpn = split_vpn;
+        let vpn_end = self.vpn_range.get_end();
+        while vpn < vpn_end {
+            let frame = self.frame_map.remove(&vpn).unwrap();
+            new_data_map.insert(vpn, frame);
+            vpn.step();
+        }
+
+        let new_area = VmArea {
+            vpn_range: VPNRange::new(split_vpn, self.vpn_range.get_end()),
+            frame_map: new_data_map,
+            map_type: self.map_type,
+            permission: new_perm,
+            file: self.file.clone(),
+            file_offset: self.file_offset
+                + (split_vpn.0 - self.vpn_range.get_start().0) * PAGE_SIZE,
+        };
+        self.vpn_range = VPNRange::new(self.vpn_range.get_start(), split_vpn);
+        new_area
+    }
+
+    // 将 map_area 分裂, 并返回低地址部分
+    pub fn split_left_pop(&mut self, split_vpn: VirtPageNum, new_perm: MapPermission) -> VmArea {
+        let mut new_data_frames = BTreeMap::new();
+        let mut vpn = self.vpn_range.get_start();
+        let vpn_end = split_vpn;
+        while vpn < vpn_end {
+            let frame = self.frame_map.remove(&vpn).unwrap();
+            new_data_frames.insert(vpn, frame);
+            vpn.step();
+        }
+
+        let new_area = VmArea {
+            vpn_range: VPNRange::new(self.vpn_range.get_start(), split_vpn),
+            frame_map: new_data_frames,
+            map_type: self.map_type,
+            permission: new_perm,
+            file: self.file.clone(),
+            file_offset: self.file_offset,
+        };
+
+        self.vpn_range = VPNRange::new(split_vpn, self.vpn_range.get_end());
+        self.file_offset =
+            self.file_offset + (split_vpn.0 - self.vpn_range.get_start().0) * PAGE_SIZE;
+        new_area
     }
 }

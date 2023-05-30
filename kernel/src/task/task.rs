@@ -2,7 +2,7 @@ use super::kernel_stack::KernelStack;
 use super::TaskContext;
 use super::{pid_alloc, PidHandle, SignalFlags};
 use crate::consts::*;
-use crate::fs::{File, OSInode, Stdin, Stdout};
+use crate::fs::{Fat32File, File, Stdin, Stdout};
 use crate::mm::kernel_vmm::acquire_kvmm;
 use crate::mm::memory_set::{LoadedELF, MMAP_BASE};
 use crate::mm::{
@@ -121,7 +121,7 @@ impl TaskControlBlock {
     }
 
     /// 通过 elf 数据新建一个任务控制块，目前仅用于内核中手动创建唯一一个初始进程 initproc
-    pub fn new(initproc: Arc<OSInode>) -> Self {
+    pub fn new(initproc: Arc<Fat32File>) -> Self {
         // 解析传入的 ELF 格式数据构造应用的地址空间 memory_set 并获得其他信息
         let LoadedELF {
             memory_set,
@@ -182,7 +182,7 @@ impl TaskControlBlock {
     }
 
     /// 用来实现 exec 系统调用，即当前进程加载并执行另一个 ELF 格式可执行文件
-    pub fn exec(&self, elf_file: Arc<OSInode>, args: Vec<String>, envs: Vec<String>) {
+    pub fn exec(&self, elf_file: Arc<Fat32File>, args: Vec<String>, envs: Vec<String>) {
         // 从 ELF 文件生成一个全新的地址空间并直接替换
         let LoadedELF {
             memory_set,

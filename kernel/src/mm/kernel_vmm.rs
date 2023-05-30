@@ -29,14 +29,16 @@ lazy_static! {
         // map trampoline
         memory_set.map_trampoline();
         macro_rules! insert_kernel_vm_areas {
-            ($kvmm:ident,$($start:expr, $end:expr, $permission:expr)*) => {
+            ($kvmm:ident,$($start:expr, $end:expr, $permission:expr, $file:expr, $page_offset:expr)*) => {
                 $(
                     $kvmm.insert(
                         VmArea::new(
                             ($start as usize).into(),
                             ($end as usize).into(),
                             MapType::Identical,
-                            $permission
+                            $permission,
+                            $file,
+                            $page_offset,
                         ),
                         None
                     );
@@ -44,17 +46,17 @@ lazy_static! {
             };
         }
         insert_kernel_vm_areas! { memory_set,
-            stext,   etext,    MapPermission::R | MapPermission::X
-            srodata, erodata,  MapPermission::R
-            sdata,   edata,    MapPermission::R | MapPermission::W
-            sbss,    ebss,     MapPermission::R | MapPermission::W
-            ekernel, PHYS_END, MapPermission::R | MapPermission::W
+            stext,   etext,    MapPermission::R | MapPermission::X, None, 0
+            srodata, erodata,  MapPermission::R, None, 0
+            sdata,   edata,    MapPermission::R | MapPermission::W, None, 0
+            sbss,    ebss,     MapPermission::R | MapPermission::W, None, 0
+            ekernel, PHYS_END, MapPermission::R | MapPermission::W, None, 0
         }
 
         // 恒等映射 内存映射 I/O (MMIO, Memory-Mapped I/O) 地址到内核地址空间
         for &pair in MMIO {
             insert_kernel_vm_areas!(memory_set,
-                pair.0, pair.0+pair.1, MapPermission::R | MapPermission::W);
+                pair.0, pair.0+pair.1, MapPermission::R | MapPermission::W, None, 0);
         }
 
         memory_set
