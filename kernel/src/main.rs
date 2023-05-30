@@ -25,6 +25,7 @@ mod board; // 与虚拟机相关的参数
 
 mod consts;
 mod drivers; // 设备驱动层
+mod error;
 mod fs;
 mod logging;
 mod mm;
