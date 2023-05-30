@@ -102,7 +102,7 @@ impl VirtAddr {
     }
     /// 从虚拟地址计算虚拟页号（下取整）
     pub fn ceil(&self) -> VirtPageNum {
-        VirtPageNum((self.0 - 1 + PAGE_SIZE) / PAGE_SIZE)
+        VirtPageNum((self.0 + PAGE_SIZE - 1) / PAGE_SIZE)
     }
     /// 从虚拟地址获取页内偏移（物理地址的低12位）
     pub fn page_offset(&self) -> usize {
@@ -122,7 +122,7 @@ impl PhysAddr {
 
     /// 从物理地址计算物理页号（上取整）
     pub fn ceil(&self) -> PhysPageNum {
-        PhysPageNum((self.0 - 1 + PAGE_SIZE) / PAGE_SIZE)
+        PhysPageNum((self.0 + PAGE_SIZE - 1) / PAGE_SIZE)
     }
 
     /// 从物理地址获取页内偏移（物理地址的低12位）
@@ -187,6 +187,11 @@ pub struct VPNRange {
 }
 
 impl VPNRange {
+    pub fn new(start: VirtPageNum, end: VirtPageNum) -> Self {
+        assert!(start <= end, "start {:?} > end {:?}!", start, end);
+        Self { start, end }
+    }
+
     pub fn from_va(start_va: VirtAddr, end_va: VirtAddr) -> Self {
         let start = start_va.floor();
         let end = end_va.ceil();
