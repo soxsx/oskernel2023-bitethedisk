@@ -1,23 +1,25 @@
 //! 内核 fs
 
 mod dirent;
-mod inode;
+mod fat32;
+// mod file;
 mod mount;
 pub mod open_flags;
+mod path;
 mod pipe;
 mod stat;
 mod stdio;
 
 use crate::{
-    fs::inode::{list_apps, ROOT_INODE},
+    fs::fat32::{list_apps, ROOT_INODE},
     mm::UserBuffer,
     timer::Timespec,
 };
 use alloc::vec::Vec;
 use core::fmt::{self, Debug, Formatter};
 
+pub use crate::fs::fat32::{chdir, open, Fat32File};
 pub use dirent::Dirent;
-pub use inode::{chdir, open, OSInode};
 pub use mount::MNT_TABLE;
 pub use open_flags::OpenFlags;
 pub use pipe::{make_pipe, Pipe};
@@ -38,6 +40,16 @@ pub trait File: Send + Sync {
     fn read(&self, buf: UserBuffer) -> usize;
     /// 将缓冲区中的数据写入文件，最多将缓冲区中的数据全部写入，并返回直接写入的字节数
     fn write(&self, buf: UserBuffer) -> usize;
+
+    // (lzm)
+    fn read_to_vec(&self, offset: isize, len: usize) -> Vec<u8> {
+        panic!("{} not implement read_to_vec", self.name());
+    }
+
+    // TODO seek mode
+    fn seek(&self, _pos: usize) {
+        panic!("{} not implement seek", self.name());
+    }
 
     fn name(&self) -> &str;
 

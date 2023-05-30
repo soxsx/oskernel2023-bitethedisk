@@ -1,4 +1,4 @@
-use super::{
+use crate::fs::{
     open_flags::CreateMode,
     stat::{S_IFCHR, S_IFDIR, S_IFREG},
     Dirent, File, Kstat, OpenFlags, Timespec,
@@ -16,22 +16,22 @@ use fat32::{
 use spin::Mutex;
 
 /// 表示进程中一个被打开的常规文件或目录
-pub struct OSInode {
+pub struct Fat32File {
     readable: bool, // 该文件是否允许通过 sys_read 进行读
     writable: bool, // 该文件是否允许通过 sys_write 进行写
-    pub inner: Mutex<OSInodeInner>,
+    pub inner: Mutex<Fat32FileInner>,
     path: String, // TODO
     name: String,
 }
 
-pub struct OSInodeInner {
+pub struct Fat32FileInner {
     offset: usize, // 偏移量
     pub inode: Arc<VirFile>,
     flags: OpenFlags,
     available: bool,
 }
 
-impl OSInode {
+impl Fat32File {
     pub fn new(
         readable: bool,
         writable: bool,
@@ -43,7 +43,7 @@ impl OSInode {
         Self {
             readable,
             writable,
-            inner: Mutex::new(OSInodeInner {
+            inner: Mutex::new(Fat32FileInner {
                 offset: 0,
                 inode,
                 flags: OpenFlags::empty(),
@@ -70,40 +70,6 @@ impl OSInode {
             v.extend_from_slice(&buffer[..len]);
             i += 1;
         }
-        v
-    }
-
-    pub fn read_vec(&self, offset: isize, len: usize) -> Vec<u8> {
-        let mut inner = self.inner.lock();
-        let mut len = len;
-        let old_offset = inner.offset;
-        if offset >= 0 {
-            inner.offset = offset as usize;
-        }
-        let mut buffer = [0u8; 512];
-        let mut v: Vec<u8> = Vec::new();
-        // TODO
-        if len >= 96 * 4096 {
-            // 防止 v 占用空间过度扩大
-            v.reserve(96 * 4096);
-        }
-        loop {
-            let read_size = inner.inode.read_at(inner.offset, &mut buffer);
-            if read_size == 0 {
-                break;
-            }
-            inner.offset += read_size;
-            v.extend_from_slice(&buffer[..read_size.min(len)]);
-            if len > read_size {
-                len -= read_size;
-            } else {
-                break;
-            }
-        }
-        if offset >= 0 {
-            inner.offset = old_offset;
-        }
-
         v
     }
 
@@ -209,14 +175,8 @@ pub fn open(
     path: &str,
     flags: OpenFlags,
     _mode: CreateMode,
-) -> Option<Arc<OSInode>> {
+) -> Option<Arc<Fat32File>> {
     let mut pathv: Vec<&str> = path.split('/').collect();
-
-    // crate::println!(
-    //     "[fs::inode::open] pathv:{:?} work_path:{}",
-    //     pathv,
-    //     work_path
-    // );
 
     let cur_inode = {
         if work_path == "/" {
@@ -227,21 +187,17 @@ pub fn open(
         }
     };
 
-    // println!("[fs::inode::open] cur_inode.name: {}", cur_inode.name());
-
     let (readable, writable) = flags.read_write();
 
     // 创建文件
     if flags.contains(OpenFlags::O_CREATE) {
-        // match cur_inode.find(pathv.clone()) {
         let res = cur_inode.find(pathv.clone());
         match res {
             Ok(inode) => {
-                // crate::info!("[fs::inode::open] File exist");
                 // 如果文件已存在则清空
                 let name = pathv.pop().unwrap();
                 inode.clear();
-                Some(Arc::new(OSInode::new(
+                Some(Arc::new(Fat32File::new(
                     readable,
                     writable,
                     inode,
@@ -256,55 +212,34 @@ pub fn open(
                     create_type = VirFileType::Dir;
                 }
 
-                // println!("[fs::inode::open] pathv:{:?}", pathv);
-
                 // 找到父目录
                 let name = pathv.pop().unwrap();
                 match cur_inode.find(pathv.clone()) {
-                    Ok(parent) => {
-                        // crate::info!(
-                        //     "[fs::inode::open] Create file: {}, type:{:?}",
-                        //     name,
-                        //     create_type
-                        // );
-                        match parent.create(name, create_type as VirFileType) {
-                            Ok(inode) => Some(Arc::new(OSInode::new(
-                                readable,
-                                writable,
-                                Arc::new(inode),
-                                work_path.to_string(),
-                                name.to_string(),
-                            ))),
-                            Err(_) => {
-                                // crate::warn!("[fs::indoe::open] Create file failed");
-                                None
-                            }
-                        }
-                    }
-                    Err(_) => {
-                        // crate::warn!("[fs::inode::open] Create file failed(find parent)");
-                        None
-                    }
+                    Ok(parent) => match parent.create(name, create_type as VirFileType) {
+                        Ok(inode) => Some(Arc::new(Fat32File::new(
+                            readable,
+                            writable,
+                            Arc::new(inode),
+                            work_path.to_string(),
+                            name.to_string(),
+                        ))),
+                        Err(_) => None,
+                    },
+                    Err(_) => None,
                 }
             }
         }
     } else {
         // 查找文件
-        // crate::info!("[fs::inode::open] Find file");
-
         match cur_inode.find(pathv.clone()) {
             Ok(inode) => {
                 // 删除文件
                 if flags.contains(OpenFlags::O_TRUNC) {
-                    // crate::info!("[fs::inode::open] Clear file");
-
                     inode.clear();
                 }
 
-                // crate::info!("[fs::inode::open] Find file success");
-
                 let name = inode.name().to_string();
-                Some(Arc::new(OSInode::new(
+                Some(Arc::new(Fat32File::new(
                     readable,
                     writable,
                     inode,
@@ -312,16 +247,11 @@ pub fn open(
                     name,
                 )))
             }
-            Err(_) => {
-                // crate::warn!("[fs::inode::open] Find file failed");
-                None
-            }
+            Err(_) => None,
         }
     }
 }
 
-// display debug todo
-// TODO 返回值
 pub fn chdir(work_path: &str, path: &str) -> Option<String> {
     let mut current_work_path_vec: Vec<&str> = work_path.split('/').collect();
     let path_vec: Vec<&str> = path.split('/').collect();
@@ -355,15 +285,51 @@ pub fn chdir(work_path: &str, path: &str) -> Option<String> {
                 Some(current_work_path_vec.join("/"))
             }
         }
-        Err(_) => {
-            // crate::warn!("[fs::inode::chdir] Path not found");
-            None
-        }
+        Err(_) => None,
     }
 }
 
 // 为 OSInode 实现 File Trait
-impl File for OSInode {
+impl File for Fat32File {
+    fn read_to_vec(&self, offset: isize, len: usize) -> Vec<u8> {
+        let mut inner = self.inner.lock();
+        let mut len = len;
+        let old_offset = inner.offset;
+        if offset >= 0 {
+            inner.offset = offset as usize;
+        }
+        let mut buffer = [0u8; 512];
+        let mut v: Vec<u8> = Vec::new();
+        // TODO
+        if len >= 96 * 4096 {
+            // 防止 v 占用空间过度扩大
+            v.reserve(96 * 4096);
+        }
+        loop {
+            let read_size = inner.inode.read_at(inner.offset, &mut buffer);
+            if read_size == 0 {
+                break;
+            }
+            inner.offset += read_size;
+            v.extend_from_slice(&buffer[..read_size.min(len)]);
+            if len > read_size {
+                len -= read_size;
+            } else {
+                break;
+            }
+        }
+        if offset >= 0 {
+            inner.offset = old_offset;
+        }
+
+        v
+    }
+
+    fn seek(&self, _pos: usize) {
+        let mut inner = self.inner.lock();
+        inner.offset = _pos;
+    }
+
     fn readable(&self) -> bool {
         self.readable
     }
@@ -380,6 +346,7 @@ impl File for OSInode {
     fn read(&self, mut buf: UserBuffer) -> usize {
         let offset = self.inner.lock().offset;
         let file_size = self.file_size();
+        // TODO 如果是目录文件
         if file_size == 0 {
             // crate::warn!("[fs::inode::OSInode::read] File size is zero!");
         }
@@ -443,6 +410,7 @@ impl File for OSInode {
     }
 
     fn write_kernel_space(&self, data: Vec<u8>) -> usize {
+        // (lzm) 改为 slice
         let mut inner = self.inner.lock();
         let mut remain = data.len();
         let mut base = 0;
@@ -548,5 +516,3 @@ impl File for OSInode {
         self.path.as_str()
     }
 }
-
-// TODO sync file
