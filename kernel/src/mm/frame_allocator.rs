@@ -87,9 +87,7 @@ impl FrameAllocator for StackFrameAllocator {
     }
     fn alloc(&mut self) -> Option<PhysPageNum> {
         // 首先检查栈 recycled 内有没有之前回收的物理页号，如果有的话直接弹出栈顶并返回
-        // println!("[StackFrameAllocator::alloc] current ppn:0x{:x}(0x{:x}000),end ppn:0x{:x}, recycled len:{}",self.current,self.current,self.end,self.recycled.len());
         if let Some(ppn) = self.recycled.pop() {
-            // println!("[StackFrameAllocator::alloc] alloc recycled ppn:{}",ppn);
             self.refcounter.insert(ppn, 1);
             Some(ppn.into())
         }
@@ -99,7 +97,6 @@ impl FrameAllocator for StackFrameAllocator {
         }
         // 否则就返回最低的物理页号
         else {
-            // println!{"[StackFrameAllocator::alloc] alloced ppn: {:X}", self.current}
             self.current += 1;
             self.refcounter.insert(self.current - 1, 1);
             Some((self.current - 1).into())
@@ -109,7 +106,6 @@ impl FrameAllocator for StackFrameAllocator {
         let ppn = ppn.0;
         let ref_times = self.refcounter.get_mut(&ppn).unwrap();
         *ref_times -= 1;
-        // println!{"[StackFrameAllocator::dealloc] the refcount of {:X} decrease to {}", ppn, ref_times}
         if *ref_times == 0 {
             self.refcounter.remove(&ppn);
             // 验证物理页号有效性，PPN大于已分配的最高内存或已释放栈中存在这个物理页号
