@@ -470,13 +470,22 @@ impl TaskControlBlock {
     pub fn munmap(&self, addr: usize, length: usize) -> isize {
         let mut inner = self.lock();
 
-        let addr_vpn = VirtAddr::from(addr).into();
-
+        let mmap_start_va = VirtAddr(addr);
+        let mmap_end_va = VirtAddr(addr + length);
+        let mmap_start_vpn: VirtPageNum = mmap_start_va.floor();
+        let mmap_end_vpn: VirtPageNum = mmap_end_va.ceil();
         // 可能会有 mmap 后没有访问直接 munmap 的情况，需要检查是否访问过 mmap 的区域(即
         // 是否引发了 lazy_mmap)，防止 unmap 页表中不存在的页表项引发 panic
-        if inner.memory_set.is_lazy_mapped(addr_vpn) {
-            inner.memory_set.remove_mmap_area_with_start_vpn(addr_vpn);
+        if inner.memory_set.is_lazy_mapped(mmap_start_vpn)
+            && inner.memory_set.is_lazy_mapped(mmap_end_vpn)
+        {
+            inner.memory_set.remove_area(mmap_start_va, mmap_end_va);
         }
+
+        // if inner.shared_vm_areas.is_lazy_mapped(mmap_start_vpn) {
+        //     inner.memory_set.remove_mmap_area_with_start_vpn(addr_vpn);
+        // }
+        // TODO end_va 没有 map 的情况
 
         inner.shared_vm_areas.remove(addr, length)
     }

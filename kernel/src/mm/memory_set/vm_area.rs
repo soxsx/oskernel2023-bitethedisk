@@ -58,6 +58,14 @@ impl VmArea {
         }
     }
 
+    pub fn start_vpn(&self) -> VirtPageNum {
+        self.vpn_range.get_start()
+    }
+
+    pub fn end_vpn(&self) -> VirtPageNum {
+        self.vpn_range.get_end()
+    }
+
     // (lzm) 懒加载
     pub fn inflate_pagetable(&mut self, page_table: &mut PageTable) {
         match self.map_type {

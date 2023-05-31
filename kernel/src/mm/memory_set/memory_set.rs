@@ -103,28 +103,86 @@ impl MemorySet {
     }
 
     pub fn remove_mmap_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
-        if let Some((idx, chunk)) = self
+        if let Some((idx, mmap_area)) = self
             .mmap_areas
             .iter_mut()
             .enumerate()
-            .find(|(_, chunk)| chunk.vpn_range.get_start() == start_vpn)
+            .find(|(_, area)| area.vpn_range.get_start() == start_vpn)
         {
-            chunk.erase_pagetable(&mut self.page_table);
+            mmap_area.erase_pagetable(&mut self.page_table);
             self.mmap_areas.remove(idx);
         }
     }
 
     /// 通过起始虚拟页号删除对应的逻辑段（包括连续逻辑段和离散逻辑段）
     pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
-        if let Some((idx, area)) = self
+        if let Some((idx, vm_area)) = self
             .vm_areas
             .iter_mut()
             .enumerate()
             .find(|(_, area)| area.vpn_range.get_start() == start_vpn)
         {
-            area.erase_pagetable(&mut self.page_table);
+            vm_area.erase_pagetable(&mut self.page_table);
             self.vm_areas.remove(idx);
         }
+    }
+
+    // lzm
+    pub fn remove_area(&mut self, start_va: VirtAddr, end_va: VirtAddr) {
+        let mut op = |areas: &mut Vec<VmArea>| {
+            let mut len = areas.len();
+            let mut idx = 0;
+            let start_vpn = start_va.floor();
+            let end_vpn = end_va.ceil();
+            let mut finish = false;
+
+            while idx < len {
+                let area = &mut areas[idx];
+                let area_start_vpn = area.start_vpn();
+                let area_end_vpn = area.end_vpn();
+                let mut area_remove;
+                if start_vpn > area_start_vpn && area_end_vpn > end_vpn {
+                    // area_start_vpn < start_vpn < end_vpn < area_end_vpn
+                    let mut front = area.split_left_pop(start_vpn, area.permission);
+                    let mut end = area.split_right_pop(end_vpn, area.permission);
+                    area_remove = areas.remove(idx);
+                    areas.push(front);
+                    areas.push(end);
+                    finish = true;
+                } else if area_start_vpn >= start_vpn
+                    && area_start_vpn < end_vpn
+                    && area_end_vpn >= end_vpn
+                {
+                    // start_vpn <= area_start_vpn < end_vpn <= area_end_vpn
+                    area_remove = area.split_left_pop(end_vpn, area.permission);
+                    idx += 1;
+                } else if area_start_vpn <= start_vpn
+                    && area_end_vpn > start_vpn
+                    && area_end_vpn <= end_vpn
+                {
+                    // area_start_vpn <= start_vpn < area_end_vpn <= end_vpn
+                    area_remove = area.split_right_pop(start_vpn, area.permission);
+                    idx += 1;
+                } else if area_start_vpn >= start_vpn && area_end_vpn <= end_vpn {
+                    // start_vpn <= area_start_vpn < area_end_vpn <= end_vpn
+                    area_remove = areas.remove(idx);
+                    len -= 1;
+                } else {
+                    idx += 1;
+                    continue;
+                }
+
+                area_remove.write_back(&mut self.page_table);
+                area_remove.erase_pagetable(&mut self.page_table);
+
+                if finish {
+                    return;
+                }
+            }
+        };
+
+        op(&mut self.vm_areas);
+        op(&mut self.mmap_areas);
     }
 
     /// 在当前地址空间插入一个新的连续逻辑段
@@ -389,11 +447,11 @@ impl MemorySet {
                 new_memory_set.push_mapped_area(new_area);
             }
         }
-        for chunk in user_space.mmap_areas.iter() {
-            let mut new_chunk = VmArea::from_another(chunk);
+        for mmap_area in user_space.mmap_areas.iter() {
+            let mut new_mmap_area = VmArea::from_another(mmap_area);
 
             // (lzm) 删除了 push vpn (删了vec_table, 只保留了vpn range)
-            for vpn in chunk.vpn_range.into_iter() {
+            for vpn in mmap_area.vpn_range.into_iter() {
                 // change the map permission of both pagetable
                 // get the former flags and ppn
 
@@ -411,12 +469,12 @@ impl MemorySet {
                     new_memory_set.page_table.set_cow(vpn);
 
                     // (lzm) 删除了 push vpn (删了vec_table, 只保留了vpn range)
-                    new_chunk
+                    new_mmap_area
                         .frame_map
                         .insert(vpn, FrameTracker::from_ppn(src_ppn));
                 }
             }
-            new_memory_set.mmap_areas.push(new_chunk);
+            new_memory_set.mmap_areas.push(new_mmap_area);
         }
 
         new_memory_set.heap_areas = VmArea::from_another(&user_space.heap_areas);
