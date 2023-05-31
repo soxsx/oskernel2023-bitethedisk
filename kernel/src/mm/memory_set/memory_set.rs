@@ -226,15 +226,15 @@ impl MemorySet {
     /// |                    |
     /// +--------------------+
     /// |                    |
-    /// |                    |
+    /// |                    | <-- brk
     /// |     User Heap      |
     /// |                    |
     /// |                    |
-    /// +--------------------+ <-- brk
+    /// +--------------------+ <-- brk_start
     /// |                    |
     /// |    Data Segments   | <-- ELF 文件加载后所有 Segment 的集合
     /// |                    |
-    /// +--------------------+ <-- brk_start
+    /// +--------------------+
     /// ```
     pub fn load_elf(elf_file: Arc<OSInode>) -> LoadedELF {
         let mut memory_set = Self::new_bare();
@@ -255,8 +255,8 @@ impl MemorySet {
         let elf_head_data = elf_file.read_vec(0, ph_offset + ph_count * ph_entry_size);
         let elf = xmas_elf::ElfFile::new(elf_head_data.as_slice()).unwrap();
 
-        // 记录目前涉及到的最大的虚拟页号
-        let mut brk_start_vpn = VirtPageNum(0);
+        // 记录目前涉及到的最大的虚拟地址
+        let mut brk_start_va = VirtAddr(0);
 
         // 遍历程序段进行加载
         for i in 0..ph_count as u16 {
@@ -277,7 +277,7 @@ impl MemorySet {
                         map_perm |= MapPermission::X;
                     }
                     let map_area = VmArea::new(start_va, end_va, MapType::Framed, map_perm);
-                    brk_start_vpn = map_area.vpn_range.get_end();
+                    brk_start_va = end_va;
                     memory_set.insert(
                         map_area,
                         Some((
@@ -306,7 +306,7 @@ impl MemorySet {
         );
 
         // 分配用户堆，懒加载
-        let user_heap_bottom: usize = usize::from(brk_start_vpn) + PAGE_SIZE;
+        let user_heap_bottom: usize = usize::from(brk_start_va) + PAGE_SIZE;
         let user_heap_top: usize = user_heap_bottom + USER_HEAP_SIZE;
         memory_set.heap_areas = VmArea::new(
             user_heap_bottom.into(),
