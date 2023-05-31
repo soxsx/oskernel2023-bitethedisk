@@ -256,7 +256,8 @@ impl MemorySet {
         let elf = xmas_elf::ElfFile::new(elf_head_data.as_slice()).unwrap();
 
         // 记录目前涉及到的最大的虚拟页号
-        let mut brk_start_vpn = VirtPageNum(0);
+        // let mut brk_start_vpn = VirtPageNum(0);
+        let mut brk_start_va = VirtAddr::from(0);
 
         // 遍历程序段进行加载
         for i in 0..ph_count as u16 {
@@ -284,7 +285,7 @@ impl MemorySet {
                         Some(Arc::clone(&elf_file)),
                         start_va.page_offset(),
                     );
-                    brk_start_vpn = map_area.vpn_range.get_end();
+                    brk_start_va = end_va;
                     memory_set.insert(
                         map_area,
                         Some((
@@ -314,7 +315,7 @@ impl MemorySet {
         );
 
         // 分配用户堆，懒加载
-        let user_heap_bottom: usize = usize::from(brk_start_vpn) + PAGE_SIZE;
+        let user_heap_bottom: usize = usize::from(brk_start_va) + PAGE_SIZE;
         let user_heap_top: usize = user_heap_bottom + USER_HEAP_SIZE;
         memory_set.heap_areas = VmArea::new(
             user_heap_bottom.into(),
@@ -392,8 +393,7 @@ impl MemorySet {
             let mut new_chunk = VmArea::from_another(chunk);
 
             // (lzm) 删除了 push vpn (删了vec_table, 只保留了vpn range)
-            for _vpn in chunk.vpn_range.into_iter() {
-                let vpn = _vpn.clone();
+            for vpn in chunk.vpn_range.into_iter() {
                 // change the map permission of both pagetable
                 // get the former flags and ppn
 
@@ -420,9 +420,8 @@ impl MemorySet {
         }
 
         new_memory_set.heap_areas = VmArea::from_another(&user_space.heap_areas);
-        for _vpn in user_space.heap_areas.vpn_range.into_iter() {
+        for vpn in user_space.heap_areas.vpn_range.into_iter() {
             // (lzm) 删除了 push vpn (删了vec_table, 只保留了vpn range)
-            let vpn = _vpn.clone();
             // change the map permission of both pagetable
             // get the former flags and ppn
 
