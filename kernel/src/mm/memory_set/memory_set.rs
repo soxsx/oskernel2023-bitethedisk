@@ -1,9 +1,8 @@
 use super::vm_area::VmArea;
 use super::{MapPermission, MapType};
 use crate::consts::{PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE, USER_STACK_SIZE};
-use crate::fs::Fat32File;
 use crate::fs::File;
-use crate::mm::frame_allocator::{enquire_refcount, frame_add_ref};
+use crate::mm::frame_allocator::enquire_refcount;
 use crate::mm::page_table::PTEFlags;
 use crate::mm::{
     alloc_frame, FrameTracker, PageTable, PageTableEntry, PhysAddr, PhysPageNum, VirtAddr,
@@ -172,7 +171,7 @@ impl MemorySet {
                     continue;
                 }
 
-                area_remove.write_back(&mut self.page_table);
+                area_remove.write_back(&mut self.page_table).unwrap();
                 area_remove.erase_pagetable(&mut self.page_table);
 
                 if finish {
@@ -284,7 +283,7 @@ impl MemorySet {
     /// |                    |
     /// +--------------------+ <-- brk
     /// |                    |
-    /// |                    | <-- brk
+    /// |                    |
     /// |     User Heap      |
     /// |                    |
     /// |                    |
@@ -313,8 +312,8 @@ impl MemorySet {
         let elf_head_data = elf_file.read_to_vec(0, ph_offset + ph_count * ph_entry_size);
         let elf = xmas_elf::ElfFile::new(elf_head_data.as_slice()).unwrap();
 
-        // 记录目前涉及到的最大的虚拟页号
-        let mut brk_start_va = VirtAddr::from(0);
+        // 记录目前涉及到的最大的虚拟地址
+        let mut brk_start_va = VirtAddr(0);
 
         // 遍历程序段进行加载
         for i in 0..ph_count as u16 {
