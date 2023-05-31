@@ -143,8 +143,8 @@ impl MemorySet {
                 let mut area_remove;
                 if start_vpn > area_start_vpn && area_end_vpn > end_vpn {
                     // area_start_vpn < start_vpn < end_vpn < area_end_vpn
-                    let mut front = area.split_left_pop(start_vpn, area.permission);
-                    let mut end = area.split_right_pop(end_vpn, area.permission);
+                    let front = area.split_left_pop(start_vpn, area.permission);
+                    let end = area.split_right_pop(end_vpn, area.permission);
                     area_remove = areas.remove(idx);
                     areas.push(front);
                     areas.push(end);
@@ -284,7 +284,7 @@ impl MemorySet {
     /// |                    |
     /// +--------------------+ <-- brk
     /// |                    |
-    /// |                    |
+    /// |                    | <-- brk
     /// |     User Heap      |
     /// |                    |
     /// |                    |
@@ -314,7 +314,6 @@ impl MemorySet {
         let elf = xmas_elf::ElfFile::new(elf_head_data.as_slice()).unwrap();
 
         // 记录目前涉及到的最大的虚拟页号
-        // let mut brk_start_vpn = VirtPageNum(0);
         let mut brk_start_va = VirtAddr::from(0);
 
         // 遍历程序段进行加载
