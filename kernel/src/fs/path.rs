@@ -8,23 +8,6 @@ pub struct Path {
     pub components: VecDeque<String>,
 }
 
-// 绝对路径
-pub struct AbsolutePath(Path);
-
-impl Debug for AbsolutePath {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        for (idx, p) in self.0.components.iter().enumerate() {
-            if idx == 0 {
-                assert!(p == "/");
-                write!(f, "/")?;
-                continue;
-            }
-            write!(f, "{}/", p)?;
-        }
-        Ok(())
-    }
-}
-
 impl Debug for Path {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         for (idx, p) in self.components.iter().enumerate() {
@@ -86,7 +69,7 @@ impl Path {
         Path::from_string(String::from(str))
     }
 
-    pub fn to_string(&self) -> String {
+    pub fn as_string(&self) -> String {
         format!("{:?}", self)
     }
 
@@ -155,6 +138,50 @@ impl Path {
     }
 }
 
+// 绝对路径
+pub struct AbsolutePath(Path);
+
+impl AbsolutePath {
+    pub fn from_string(path: String) -> Option<Self> {
+        let path = Path::from_string(path)?;
+        if path.is_root() {
+            Some(Self(path))
+        } else {
+            None
+        }
+    }
+
+    pub fn from_str(str: &str) -> Option<Self> {
+        Self::from_string(String::from(str))
+    }
+
+    pub fn as_string(&self) -> String {
+        self.0.as_string()
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_string().as_str()
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0.as_string().as_bytes()
+    }
+}
+
+impl Debug for AbsolutePath {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        for (idx, p) in self.0.components.iter().enumerate() {
+            if idx == 0 {
+                assert!(p == "/");
+                write!(f, "/")?;
+                continue;
+            }
+            write!(f, "{}/", p)?;
+        }
+        Ok(())
+    }
+}
+
 #[allow(unused)]
 pub fn path_test() {
     let path = Path::from_string(String::from("/a/b/c/d/")).unwrap();
@@ -167,6 +194,4 @@ pub fn path_test() {
     println!("path = {:?}", path);
     let path = Path::from_string(String::from("./././."));
     println!("path = {:?}", path);
-    //todo!()
-    //println!("{:?}", path.components);
 }
