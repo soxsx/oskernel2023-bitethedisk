@@ -159,13 +159,13 @@ impl AbsolutePath {
         self.0.as_string()
     }
 
-    pub fn as_str(&self) -> &str {
-        self.0.as_string().as_str()
-    }
+    // pub fn as_str(&self) -> &str {
+    //     self.0.as_string().as_str()
+    // }
 
-    pub fn as_bytes(&self) -> &[u8] {
-        self.0.as_string().as_bytes()
-    }
+    // pub fn as_bytes(&self) -> &[u8] {
+    //     self.0.as_string().as_bytes()
+    // }
 }
 
 impl Debug for AbsolutePath {
