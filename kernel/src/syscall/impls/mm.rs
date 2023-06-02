@@ -17,19 +17,14 @@ use crate::{
 /// uintptr_t brk;
 /// uintptr_t ret = syscall(SYS_brk, brk);
 /// ```
-pub fn sys_brk(brk_addr: usize) -> isize {
+pub fn sys_brk(brk: usize) -> isize {
     let task = current_task().unwrap();
-    let inner = task.lock();
-
-    let brk_start = inner.memory_set.brk_start;
-    let brk = inner.memory_set.brk;
-    drop(inner);
-
-    if brk_addr == 0 {
-        brk as isize
+    let mut addr_new = 0;
+    if brk == 0 {
+        task.grow_proc(0) as isize
     } else {
-        let grow_size: isize = (brk_addr - brk_start) as isize;
-
+        let former_addr = task.grow_proc(0);
+        let grow_size: isize = (brk - former_addr) as isize;
         current_task().unwrap().grow_proc(grow_size) as isize
     }
 }
