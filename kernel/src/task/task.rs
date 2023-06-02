@@ -178,6 +178,95 @@ impl TaskControlBlock {
         task_control_block
     }
 
+    pub fn init_ustack(
+        &self,
+        user_sp: usize,
+        args: Vec<String>,
+        envs: Vec<String>,
+        // auxv: &mut Vec<Aux>,
+    ) -> (usize, usize, usize) {
+        let token = self.lock().get_user_token();
+
+        // 计算共需要多少字节的空间
+        let mut total_len = 0;
+        for i in 0..envs.len() {
+            total_len += envs[i].len() + 1; // String 不包含 '\0'
+        }
+        for i in 0..args.len() {
+            total_len += args[i].len() + 1;
+        }
+
+        // 先进行进行对齐
+        let align = core::mem::size_of::<usize>() / core::mem::size_of::<u8>(); // 8
+        let mut user_sp = user_sp - (align - total_len % align) * core::mem::size_of::<u8>();
+
+        // 分配 envs 的空间, 加入动态链接库位置
+        let envs_ptrv: Vec<_> = (0..envs.len())
+            .map(|idx| {
+                user_sp -= envs[idx].len() + 1; // 1 是手动添加结束标记的空间('\0')
+                let mut ptr = user_sp;
+                for c in envs[idx].as_bytes() {
+                    // 将参数写入到用户栈
+                    *translated_mut(token, ptr as *mut u8) = *c;
+                    ptr += 1;
+                } // 写入字符串结束标记
+                *translated_mut(token, ptr as *mut u8) = 0;
+                user_sp
+            })
+            .collect();
+
+        // 分配 args 的空间, 并写入字符串数据, 把字符串首地址保存在 argv 中
+        // 这里高地址放前面的参数, 即先存放 argv[0]
+        let args_ptrv: Vec<_> = (0..args.len())
+            .map(|idx| {
+                user_sp -= args[idx].len() + 1; // 1 是手动添加结束标记的空间('\0')
+                let mut ptr = user_sp;
+                for c in args[idx].as_bytes() {
+                    // 将参数写入到用户栈
+                    *translated_mut(token, ptr as *mut u8) = *c;
+                    ptr += 1;
+                } // 写入字符串结束标记
+                *translated_mut(token, ptr as *mut u8) = 0;
+                user_sp
+            })
+            .collect();
+
+        // padding 0 表示结束
+        user_sp -= core::mem::size_of::<usize>();
+        *translated_mut(token, user_sp as *mut usize) = 0;
+
+        // envs_ptr
+        user_sp -= (envs.len()) * core::mem::size_of::<usize>();
+        let envs_ptr_base = user_sp; // 参数字符串指针起始地址
+        for i in 0..envs.len() {
+            *translated_mut(
+                token,
+                (envs_ptr_base + i * core::mem::size_of::<usize>()) as *mut usize,
+            ) = envs_ptrv[i];
+        }
+
+        // padding 0 表示结束
+        user_sp -= core::mem::size_of::<usize>();
+        *translated_mut(token, user_sp as *mut usize) = 0;
+
+        // args_ptr
+        user_sp -= (args.len()) * core::mem::size_of::<usize>();
+        let args_ptr_base = user_sp; // 参数字符串指针起始地址
+        for i in 0..args.len() {
+            *translated_mut(
+                token,
+                (args_ptr_base + i * core::mem::size_of::<usize>()) as *mut usize,
+            ) = args_ptrv[i];
+        }
+
+        // argc
+        user_sp -= core::mem::size_of::<usize>();
+        let argc_ptr = user_sp;
+        *translated_mut(token, user_sp as *mut usize) = args.len();
+
+        (user_sp, args_ptr_base as usize, envs_ptr_base as usize)
+    }
+
     /// 用来实现 exec 系统调用，即当前进程加载并执行另一个 ELF 格式可执行文件
     pub fn exec(&self, elf_file: Arc<Fat32File>, args: Vec<String>, envs: Vec<String>) {
         // 从 ELF 文件生成一个全新的地址空间并直接替换
@@ -192,90 +281,21 @@ impl TaskControlBlock {
             .unwrap()
             .ppn();
 
-        // 计算对齐位置
-        let mut total_len = 0;
-        for i in 0..envs.len() {
-            total_len += envs[i].len() + 1;
-        }
-        for i in 0..args.len() {
-            total_len += args[i].len() + 1;
-        }
-        // 进行对齐
-        user_sp -= (8 - total_len % 8) * core::mem::size_of::<u8>();
-
-        // 分配 envs 的空间
-        let envv: Vec<_> = (0..envs.len())
-            .map(|env| {
-                user_sp -= envs[env].len() + 1; //1是手动添加结束标记的空间
-                let mut p = user_sp;
-                for c in envs[env].as_bytes() {
-                    // 将参数写入到用户栈
-                    *translated_mut(memory_set.token(), p as *mut u8) = *c;
-                    p += 1;
-                } // 写入字符串结束标记
-                *translated_mut(memory_set.token(), p as *mut u8) = 0;
-                user_sp
-            })
-            .collect();
-
-        // 分配 args 的空间，并写入字符串数据，把字符串首地址保存在 argv 中
-        // 这里高地址放前面的参数，即先存放 argv[0]
-        let argv: Vec<_> = (0..args.len())
-            .map(|arg| {
-                user_sp -= args[arg].len() + 1; //1是手动添加结束标记的空间
-                let mut p = user_sp;
-                for c in args[arg].as_bytes() {
-                    // 将参数写入到用户栈
-                    *translated_mut(memory_set.token(), p as *mut u8) = *c;
-                    p += 1;
-                } // 写入字符串结束标记
-                *translated_mut(memory_set.token(), p as *mut u8) = 0;
-                user_sp
-            })
-            .collect();
-
-        // envp，0，表示结束
-        user_sp -= core::mem::size_of::<usize>();
-        *translated_mut(memory_set.token(), user_sp as *mut usize) = 0;
-
-        // envp
-        user_sp -= (envs.len()) * core::mem::size_of::<usize>();
-        let envp_base = user_sp; // 参数字符串指针起始地址
-        for i in 0..envs.len() {
-            *translated_mut(
-                memory_set.token(),
-                (envp_base + i * core::mem::size_of::<usize>()) as *mut usize,
-            ) = envv[i];
-        }
-
-        // argv, 0, 表示结束
-        user_sp -= core::mem::size_of::<usize>();
-        *translated_mut(memory_set.token(), user_sp as *mut usize) = 0;
-
-        // argv
-        user_sp -= (args.len()) * core::mem::size_of::<usize>();
-        let argv_base = user_sp; // 参数字符串指针起始地址
-        for i in 0..args.len() {
-            *translated_mut(
-                memory_set.token(),
-                (argv_base + i * core::mem::size_of::<usize>()) as *mut usize,
-            ) = argv[i];
-        }
-
-        // argc
-        user_sp -= core::mem::size_of::<usize>();
-        *translated_mut(memory_set.token(), user_sp as *mut usize) = args.len();
         let mut inner = self.lock();
-
-        inner.memory_set = memory_set; // 这将导致原有的地址空间生命周期结束，里面包含的全部物理页帧都会被回收
+        inner.memory_set = memory_set;
+        // from_copy_on_wirte -> exec
+        // 这将导致原有的地址空间生命周期结束, 里面包含的全部物理页帧都会被回收,
+        // 结果表现为: 原有的地址空间中的所有页表项的 ppn 引用计数减 1
         inner.trap_cx_ppn = trap_cx_ppn;
         let trap_cx = inner.trap_context();
-
         inner
             .fd_table
             .iter_mut()
             .find(|fd| fd.is_some() && !fd.as_ref().unwrap().available())
             .take();
+        drop(inner); // 避免接下来的操作导致死锁
+
+        let (user_sp, _args_ptr, _envs_ptr) = self.init_ustack(user_sp, args, envs);
 
         // 修改新的地址空间中的 Trap 上下文，将解析得到的应用入口点、用户栈位置以及一些内核的信息进行初始化
         *trap_cx = TrapContext::app_init_context(
@@ -285,9 +305,12 @@ impl TaskControlBlock {
             self.kernel_stack.top(),
             user_trap_handler as usize,
         );
+
         // 修改 Trap 上下文中的 a0/a1 寄存器
-        trap_cx.x[10] = 0; // a0 表示命令行参数的个数
-                           // trap_cx.x[11] = argv_base; // a1 则表示 参数字符串首地址数组 的起始地址
+        // trap_cx.x[10] = 0; // a0 表示命令行参数的个数
+
+        // trap_cx.x[11] = args_ptr; // a1 表示 参数字符串首地址数组 的起始地址
+        // trap_cx.x[12] = envs_ptr; // a2 表示 环境变量字符串首地址数组 的起始地址
     }
 
     /// 用来实现 fork 系统调用，即当前进程 fork 出来一个与之几乎相同的子进程
