@@ -15,10 +15,13 @@ impl FrameTracker {
         let bytes_arr = ppn.as_bytes_array();
         bytes_arr.into_iter().for_each(|b| *b = 0);
 
+        frame_add_ref(ppn);
+
         Self { ppn }
     }
 
     pub fn from_ppn(ppn: PhysPageNum) -> Self {
+        frame_add_ref(ppn);
         Self { ppn }
     }
 }
@@ -98,7 +101,7 @@ impl FrameAllocator for StackFrameAllocator {
         // 否则就返回最低的物理页号
         else {
             self.current += 1;
-            self.refcounter.insert(self.current - 1, 1);
+            self.refcounter.insert(self.current - 1, 0);
             Some((self.current - 1).into())
         }
     }

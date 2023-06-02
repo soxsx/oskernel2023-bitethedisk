@@ -433,7 +433,7 @@ impl MemorySet {
                     let pte = parent_page_table.translate(vpn).unwrap();
                     let pte_flags = pte.flags() & !PTEFlags::W;
                     let src_ppn = pte.ppn();
-                    frame_add_ref(src_ppn);
+                    // frame_add_ref(src_ppn);
                     // change the flags of the src_pte
                     parent_page_table.set_flags(vpn, pte_flags);
                     parent_page_table.set_cow(vpn);
@@ -460,7 +460,7 @@ impl MemorySet {
                 if let Some(pte) = parent_page_table.translate(vpn) {
                     let pte_flags = pte.flags() & !PTEFlags::W;
                     let src_ppn = pte.ppn();
-                    frame_add_ref(src_ppn);
+                    // frame_add_ref(src_ppn);
                     // change the flags of the src_pte
                     parent_page_table.set_flags(vpn, pte_flags);
                     parent_page_table.set_cow(vpn);
@@ -488,7 +488,7 @@ impl MemorySet {
             if let Some(pte) = parent_page_table.translate(vpn) {
                 let pte_flags = pte.flags() & !PTEFlags::W;
                 let src_ppn = pte.ppn();
-                frame_add_ref(src_ppn);
+                // frame_add_ref(src_ppn);
                 // change the flags of the src_pte
                 parent_page_table.set_flags(vpn, pte_flags);
                 parent_page_table.set_cow(vpn);
