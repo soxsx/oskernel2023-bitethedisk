@@ -168,7 +168,8 @@ pub fn init() {
 
 /// 分配物理页帧
 pub fn alloc_frame() -> Option<FrameTracker> {
-    FRAME_ALLOCATOR.lock().alloc().map(FrameTracker::new)
+    let ppn = FRAME_ALLOCATOR.lock().alloc()?;
+    Some(FrameTracker::new(ppn))
 }
 
 /// 回收物理页帧
