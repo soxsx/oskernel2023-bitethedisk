@@ -616,7 +616,7 @@ pub fn sys_mkdirat(dirfd: isize, path: *const u8, _mode: u32) -> isize {
             return -1;
         }
         if let Some(file) = &inner.fd_table[dirfd] {
-            let open_path = unsafe { file.path().join_string(path) };
+            let open_path = file.path().join_string(path);
 
             if let Some(_) = open(
                 open_path,
