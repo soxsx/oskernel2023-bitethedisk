@@ -510,9 +510,8 @@ impl MemorySet {
 
     #[no_mangle]
     pub fn cow_alloc(&mut self, vpn: VirtPageNum, former_ppn: PhysPageNum) -> isize {
-        // 如果只有一个引用，那么改回writable
+        // 如果只有一个引用，那么改回 writable, 而不是重新分配 ppn
         if enquire_refcount(former_ppn) == 1 {
-            // panic!("cow_alloc: refcount == 1");;
             self.page_table.reset_cow(vpn);
             // change the flags of the src_pte
             self.page_table.set_flags(
@@ -521,18 +520,20 @@ impl MemorySet {
             );
             return 0;
         }
-        // TODO 还原引用计数？
         // 如果有多个引用，那么分配一个新的物理页，将内容复制过去
         let frame = alloc_frame().unwrap();
         let ppn = frame.ppn;
         self.remap_cow(vpn, ppn, former_ppn);
 
-        // 将映射保存到frame_map中
+        // 注意: 这里通过 BTreeMap insert() 减少了引用计数
         for area in self.vm_areas.iter_mut() {
             let head_vpn = area.vpn_range.get_start();
             let tail_vpn = area.vpn_range.get_end();
             if vpn < tail_vpn && vpn >= head_vpn {
+                // BTreeMap insert 之前, enqueue_refcount(former_ppn) > 1
                 area.frame_map.insert(vpn, frame);
+                // BTreeMap insert 之后, 由于在 from_copy_on_write() 时已经在 frame_map 中插入 vpn key,
+                // insert 会返回旧的 value, 原有 FrameTracker drop, 减少 former_ppn 的引用计数
                 return 0;
             }
         }
