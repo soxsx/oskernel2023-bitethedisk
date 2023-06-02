@@ -105,6 +105,11 @@ impl FrameAllocator for StackFrameAllocator {
     fn dealloc(&mut self, ppn: PhysPageNum) {
         let ppn = ppn.0;
         let ref_times = self.refcounter.get_mut(&ppn).unwrap();
+        assert!(
+            *ref_times > 0,
+            "[StackFrameAllocator::dealloc] Frame ppn={:#x} has no reference!",
+            ppn
+        );
         *ref_times -= 1;
         if *ref_times == 0 {
             self.refcounter.remove(&ppn);

@@ -510,7 +510,9 @@ impl MemorySet {
 
     #[no_mangle]
     pub fn cow_alloc(&mut self, vpn: VirtPageNum, former_ppn: PhysPageNum) -> isize {
+        // 如果只有一个引用，那么改回writable
         if enquire_refcount(former_ppn) == 1 {
+            // panic!("cow_alloc: refcount == 1");;
             self.page_table.reset_cow(vpn);
             // change the flags of the src_pte
             self.page_table.set_flags(
@@ -519,9 +521,13 @@ impl MemorySet {
             );
             return 0;
         }
+        // TODO 还原引用计数？
+        // 如果有多个引用，那么分配一个新的物理页，将内容复制过去
         let frame = alloc_frame().unwrap();
         let ppn = frame.ppn;
         self.remap_cow(vpn, ppn, former_ppn);
+
+        // 将映射保存到frame_map中
         for area in self.vm_areas.iter_mut() {
             let head_vpn = area.vpn_range.get_start();
             let tail_vpn = area.vpn_range.get_end();
@@ -530,11 +536,11 @@ impl MemorySet {
                 return 0;
             }
         }
-        for chunk in self.mmap_areas.iter_mut() {
-            let head_vpn = chunk.vpn_range.get_start();
-            let tail_vpn = chunk.vpn_range.get_end();
+        for mmap_area in self.mmap_areas.iter_mut() {
+            let head_vpn = mmap_area.vpn_range.get_start();
+            let tail_vpn = mmap_area.vpn_range.get_end();
             if vpn < tail_vpn && vpn >= head_vpn {
-                chunk.frame_map.insert(vpn, frame);
+                mmap_area.frame_map.insert(vpn, frame);
                 return 0;
             }
         }
@@ -553,11 +559,11 @@ impl MemorySet {
 
     /// 为mmap缺页分配空页表
     pub fn lazy_mmap(&mut self, stval: VirtAddr) -> isize {
-        for mmap_chunk in self.mmap_areas.iter_mut() {
-            if stval >= mmap_chunk.vpn_range.get_start().into()
-                && stval < mmap_chunk.vpn_range.get_end().into()
+        for mmap_area in self.mmap_areas.iter_mut() {
+            if stval >= mmap_area.vpn_range.get_start().into()
+                && stval < mmap_area.vpn_range.get_end().into()
             {
-                mmap_chunk.lazy_map_vpn(stval.floor(), &mut self.page_table);
+                mmap_area.lazy_map_vpn(stval.floor(), &mut self.page_table);
                 return 0;
             }
         }
@@ -600,9 +606,9 @@ impl MemorySet {
         end_va: VirtAddr,
         permission: MapPermission,
     ) {
-        let new_chunk_area = VmArea::new(start_va, end_va, MapType::Framed, permission, None, 0);
+        let new_mmap_area = VmArea::new(start_va, end_va, MapType::Framed, permission, None, 0);
 
-        self.mmap_areas.push(new_chunk_area);
+        self.mmap_areas.push(new_mmap_area);
     }
 
     pub fn check_va_range(&self, start_va: VirtAddr, len: usize) -> bool {
@@ -614,9 +620,9 @@ impl MemorySet {
                 return true;
             }
         }
-        for chunk in self.mmap_areas.iter() {
-            if chunk.vpn_range.get_start() <= start_va.floor()
-                && end_va.ceil() <= chunk.vpn_range.get_end()
+        for mmap_area in self.mmap_areas.iter() {
+            if mmap_area.vpn_range.get_start() <= start_va.floor()
+                && end_va.ceil() <= mmap_area.vpn_range.get_end()
             {
                 return true;
             }

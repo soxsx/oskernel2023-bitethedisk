@@ -43,14 +43,15 @@ bitflags! {
 /// - `mmap_start` : 地址空间中mmap区块起始虚地址
 /// - `mmap_top` : 地址空间中mmap区块当结束虚地址
 /// - `mmap_set` : mmap块向量
+//  管理上有缺陷: 内存碎片问题
 #[derive(Clone, Debug)]
-pub struct MmapArea {
+pub struct MmapManager {
     pub mmap_start: VirtAddr,
     pub mmap_top: VirtAddr,
-    pub mmap_set: Vec<MmapSpace>,
+    pub mmap_set: Vec<MmapInfo>,
 }
 
-impl MmapArea {
+impl MmapManager {
     pub fn new(mmap_start: VirtAddr, mmap_top: VirtAddr) -> Self {
         Self {
             mmap_start,
@@ -90,14 +91,14 @@ impl MmapArea {
     ) -> usize {
         let start_addr = start.into();
 
-        let mmap_space = MmapSpace::new(start_addr, len, prot, flags, 0, fd, offset);
+        let mmap_space = MmapInfo::new(start_addr, len, prot, flags, 0, fd, offset);
 
         // use lazy map
-
         self.mmap_set.push(mmap_space);
 
         // update mmap_top
-        if self.mmap_top == start_addr {
+        // if self.mmap_top == start_addr {
+        if self.mmap_top <= start_addr {
             self.mmap_top = (start_addr.0 + len).into();
         }
 
@@ -126,7 +127,7 @@ impl MmapArea {
 ///
 /// 用于记录 mmap 空间信息，mmap数据并不存放在此
 #[derive(Clone, Copy, Debug)]
-pub struct MmapSpace {
+pub struct MmapInfo {
     /// mmap 空间起始虚拟地址
     pub oaddr: VirtAddr,
 
@@ -144,11 +145,12 @@ pub struct MmapSpace {
 
     /// 文件描述符
     pub fd: isize,
+
     /// 映射文件偏移地址
     pub offset: usize,
 }
 
-impl MmapSpace {
+impl MmapInfo {
     pub fn new(
         oaddr: VirtAddr,
         length: usize,
@@ -198,7 +200,7 @@ impl MmapSpace {
 
         if let Some(file) = &fd_table[self.fd as usize] {
             let f = file.clone();
-            f.set_offset(offset);
+            f.seek(offset);
             if !f.readable() {
                 return;
             }
