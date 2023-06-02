@@ -296,7 +296,7 @@ pid_t ret = syscall(SYS_clone, flags, stack, ptid, tls, ctid)
 * 功能：执行一个指定的程序；
 * 输入：
     - path: 待执行程序路径名称，
-    - argv: 程序的参数， 
+    - argv: 程序的参数，
     - envp: 环境变量的数组指针
 * 返回值：成功不返回，失败返回-1；
 ```
