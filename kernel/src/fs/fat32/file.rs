@@ -9,10 +9,7 @@ use alloc::{
     sync::Arc,
     vec::Vec,
 };
-use fat32::{
-    dir::DirError, root, Dir as FatDir, File as FatFile, FileSystem, VirFile, VirFileType,
-    ATTR_ARCHIVE, ATTR_DIRECTORY,
-};
+use fat32::{root, Dir as FatDir, FileSystem, VirFile, VirFileType, ATTR_DIRECTORY};
 use spin::Mutex;
 
 /// 表示进程中一个被打开的常规文件或目录
@@ -422,7 +419,7 @@ impl File for Fat32File {
             dirent.init(name.as_str(), offset as isize, first_cluster as usize);
             inner.offset = offset as usize;
             // return size of Dirent as read size
-	    core::mem::size_of::<Dirent>() as isize
+            core::mem::size_of::<Dirent>() as isize
         } else {
             -1
         }
