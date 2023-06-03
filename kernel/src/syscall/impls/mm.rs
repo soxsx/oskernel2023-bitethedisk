@@ -19,7 +19,6 @@ use crate::{
 /// ```
 pub fn sys_brk(brk: usize) -> isize {
     let task = current_task().unwrap();
-
     if brk == 0 {
         task.grow_proc(0) as isize
     } else {
