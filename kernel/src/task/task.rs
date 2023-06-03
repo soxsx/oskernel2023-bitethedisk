@@ -264,7 +264,6 @@ impl TaskControlBlock {
 
         // argc
         user_sp -= core::mem::size_of::<usize>();
-        let argc_ptr = user_sp;
         *translated_mut(token, user_sp as *mut usize) = args.len();
 
         (user_sp, args_ptr_base as usize, envs_ptr_base as usize)
@@ -275,7 +274,7 @@ impl TaskControlBlock {
         // 从 ELF 文件生成一个全新的地址空间并直接替换
         let LoadedELF {
             memory_set,
-            user_stack_top: mut user_sp,
+            user_stack_top: user_sp,
             elf_entry: entry_point,
         } = MemorySet::load_elf(elf_file);
 

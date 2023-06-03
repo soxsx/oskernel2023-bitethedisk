@@ -1,9 +1,9 @@
-use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
+use alloc::{collections::BTreeMap, sync::Arc};
 
 use crate::{
     consts::PAGE_SIZE,
     error::Error,
-    fs::{Fat32File, File},
+    fs::File,
     mm::{
         address::Step, alloc_frame, page_table::PTEFlags, FrameTracker, PageTable, PhysPageNum,
         VPNRange, VirtAddr, VirtPageNum,

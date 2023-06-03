@@ -10,14 +10,9 @@ pub mod fmt;
 pub mod fs;
 pub mod vfs;
 
-use crate::dir::DirError;
-use crate::entry::NameType;
-use crate::fat::ClusterChainErr;
-use crate::file::FileError;
-
 use core::convert::TryInto;
 use core::iter::Iterator;
-use core::option::Option::{self, None, Some};
+use core::option::Option::{None, Some};
 use core::str;
 
 extern crate alloc;

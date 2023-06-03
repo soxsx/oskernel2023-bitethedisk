@@ -7,7 +7,7 @@
 //! ".." files as the first two directory entries in the directory. The only other special aspect of the root
 //! directory is that it is the only directory on the FAT volume for which it is valid to have a file that has
 //! only the ATTR_VOLUME_ID attribute bit set.
-
+//!
 //! Dir_Name[0]
 //!
 //! DIR_Name[0]
@@ -41,7 +41,7 @@
 //! FAT file system on disk data structure is all "little endian".
 //! This is important if your machine is a "big endian" machine, because you will have to translate
 //! between big and little endian as you move data to and from the disk.
-
+//!
 //! When a directory is created, a file with the ATTR_DIRECTORY bit set in its DIR_Attr field, you set
 //! its DIR_FileSize to 0. DIR_FileSize is not used and is always 0 on a file with the
 //! ATTR_DIRECTORY attribute (directories are sized by simply following their cluster chains to the
@@ -67,7 +67,7 @@
 //! - The dot entry is a directory that points to itself.
 //! - The dotdot entry points to the starting cluster of the parent of this directory (which is 0 if this
 //!   directories parent is the root directory).
-
+//!
 //! Organization and Association of Short & Long Directory Entries
 //!
 //! A set of long entries is always associated with a short entry that they always immediately precede.
@@ -102,7 +102,7 @@
 //! information and need not replicate information already available in the short entry. Principally, the
 //! long entries contain the long name of a file. The name contained in a short entry which is associated
 //! with a set of long entries is termed the alias name, or simply alias, of the file.
-
+//!
 //!Storage of a Long-Name Within Long Directory Entries
 //!
 //! A long name can consist of more characters than can fit in a single long directory entry. When this
@@ -112,7 +112,7 @@
 //! 0xFFFF characters in order to detect corruption of long name fields by errant disk utilities. A name
 //! that fits exactly in a n long directory entries (i.e. is an integer multiple of 13) is not NUL terminated
 //! and not padded with 0xFFFFs.
-
+//!
 //! Short Directory Entries
 //!
 //! [`ShortDirEntry`]
@@ -133,7 +133,7 @@
 //! the extended character provides. This mapping also prevents the creation of some file names that
 //! would normally differ, but because of the mapping to upper case they become the same file name.
 //!
-
+//!
 //! Long Directory Entries
 //!
 //! [`LongDirEntry`]
@@ -158,7 +158,7 @@
 //! Long names passed to the file system are not converted to upper case and their original case value is
 //! preserved. UNICODE solves the case mapping problem prevalent in some OEM code pages by
 //! always providing a translation for lower case characters to a single, unique upper case character.
-
+//!
 //! Name Matching In Short & Long Names
 //!
 //! The names contained in the set of all short directory entries are termed the "short name space". The
@@ -186,8 +186,6 @@
 //! the "_" (underscore) character as it is returned to the user – it is NOT modified on the disk. This
 //! character is the same in all OEM code pages and ANSI.
 
-// #![allow(unused)]
-
 use super::vfs::VirFileType;
 use super::{
     ATTR_ARCHIVE, ATTR_DIRECTORY, ATTR_HIDDEN, ATTR_LONG_NAME, ATTR_READ_ONLY, ATTR_SYSTEM,
@@ -198,7 +196,6 @@ use super::{
 use alloc::string::{String, ToString};
 use core::default::Default;
 use core::iter::Iterator;
-use core::option::Option;
 use core::option::Option::{None, Some};
 use core::str;
 
