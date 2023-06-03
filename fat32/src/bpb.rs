@@ -45,7 +45,8 @@
 //! volumes. The BPB_BkBootSec field reduces the severity of this problem for FAT32 volumes, because
 //! starting at that sector number on the volume-6-there is a backup copy of the boot sector
 //! information including the volume's BPB.
-
+//!
+// #![allow(unused)]
 //! FAT File System Layout:
 //!      Boot Sector - Reserved Sectors - FAT1 - FAT2 - (FAT32 without Root Directory Region) - Data Region
 //! Note:
@@ -55,7 +56,7 @@
 //!        (cluster chain) occupied by the file and the management of the free space are implemented by FAT,
 //!         and two are saved in case the first one is damaged, and the second one is available.
 //!
-
+//!
 //! FAT type Definitions
 //! The one and only way that FAT type is determined.
 //!
@@ -147,7 +148,7 @@
 //! compute the proper values to put in BPB_SecPerClus and either BPB_FATSz16 or BPB_FATSz32?
 //! The way Microsoft operating systems do this is with a fixed value, several tables, and a clever
 //! piece of arithmetic.
-
+//!
 //! FAT32 FSInfo Sector Structure and Backup Boot Sector
 //!
 //! On a FAT32 volume, the FAT can be a large data structure, unlike on FAT16 where it is limited to a
@@ -173,8 +174,6 @@
 // 1. 保留扇区包括引导扇区, 引导扇区包括 BPB 和 FSInfo
 // 2. FAT1 起始地址 = 保留扇区数 * 扇区大小
 // 3. 文件分配表区共保存了两个相同的文件分配表, 因为文件所占用的存储空间 (簇链) 及空闲空间的管理都是通过FAT实现的, 保存两个以便第一个损坏时, 还有第二个可用
-
-// #![allow(unused)]
 
 use super::{
     LEAD_SIGNATURE, MAX_CLUSTER_FAT12, MAX_CLUSTER_FAT16, STRUCT_SIGNATURE, TRAIL_SIGNATURE,
