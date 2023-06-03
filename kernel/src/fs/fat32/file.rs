@@ -477,7 +477,7 @@ impl File for Fat32File {
             dirent.init(name.as_str(), offset as isize, first_cluster as usize);
             inner.offset = offset as usize;
             // return size of Dirent as read size
-	    core::mem::size_of::<Dirent>();
+	    core::mem::size_of::<Dirent>() as isize
         } else {
             -1
         }
