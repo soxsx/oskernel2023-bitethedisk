@@ -476,9 +476,8 @@ impl File for Fat32File {
         if let Some((name, offset, first_cluster, _attr)) = inner.inode.dir_info(offset as usize) {
             dirent.init(name.as_str(), offset as isize, first_cluster as usize);
             inner.offset = offset as usize;
-            // TODO + 8 * 4 是什么意思?
-            let len = (name.len() + 8 * 4) as isize;
-            len
+            // return size of Dirent as read size
+	    core::mem::size_of::<Dirent>();
         } else {
             -1
         }
