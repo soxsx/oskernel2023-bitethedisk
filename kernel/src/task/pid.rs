@@ -8,6 +8,8 @@
 use alloc::vec::Vec;
 use spin::Mutex;
 
+use super::processor::PROCESSOR;
+
 lazy_static! {
     static ref PID_ALLOCATOR: Mutex<PidAllocator> = Mutex::new(PidAllocator::new());
 }
