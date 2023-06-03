@@ -3,7 +3,7 @@ use core::arch::global_asm;
 use alloc::{borrow::ToOwned, sync::Arc};
 
 use crate::{
-    fs::{self, open_flags::CreateMode, OpenFlags},
+    fs::{self, open_flags::CreateMode, AbsolutePath, OpenFlags},
     task::task::TaskControlBlock,
 };
 
@@ -21,8 +21,9 @@ lazy_static! {
         let siz = tail - entry;
 
         let initproc = unsafe { core::slice::from_raw_parts(entry as *const u8, siz) };
+        let path = AbsolutePath::from_str("/initproc");
 
-        let inode = fs::open("/", "initproc", OpenFlags::O_CREATE, CreateMode::empty()).expect("initproc create failed!");
+        let inode = fs::open(path, OpenFlags::O_CREATE, CreateMode::empty()).expect("initproc create failed!");
         inode.write_all(&initproc.to_owned());
 
         TaskControlBlock::new(inode)

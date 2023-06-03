@@ -17,6 +17,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 use spin::{Mutex, MutexGuard};
 
+use crate::fs::AbsolutePath;
+
 pub const FD_LIMIT: usize = 128;
 
 pub struct TaskControlBlock {
@@ -59,7 +61,8 @@ pub struct TaskControlBlockInner {
     pub fd_table: Vec<Option<Arc<dyn File>>>,
 
     pub signals: SignalFlags,
-    pub current_path: String,
+
+    pub current_path: AbsolutePath,
 }
 
 impl TaskControlBlockInner {
@@ -95,8 +98,8 @@ impl TaskControlBlockInner {
         }
     }
 
-    pub fn get_work_path(&self) -> &str {
-        self.current_path.as_str()
+    pub fn get_work_path(&self) -> AbsolutePath {
+        self.current_path.clone()
     }
 
     pub fn enquire_pte_via_vpn(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
@@ -158,7 +161,7 @@ impl TaskControlBlock {
                     Some(Arc::new(Stdout)),
                 ],
                 signals: SignalFlags::empty(),
-                current_path: String::from("/"),
+                current_path: AbsolutePath::from_str("/"),
                 mmap_manager: MmapManager::new(
                     VirtAddr::from(MMAP_BASE),
                     VirtAddr::from(MMAP_BASE),

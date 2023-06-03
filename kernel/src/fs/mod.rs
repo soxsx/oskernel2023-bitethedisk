@@ -10,12 +10,14 @@ mod pipe;
 mod stat;
 mod stdio;
 
+pub use path::*;
+
 use crate::{
     fs::fat32::{list_apps, ROOT_INODE},
     mm::UserBuffer,
     timer::Timespec,
 };
-use alloc::vec::Vec;
+use alloc::{string::ToString, vec::Vec};
 use core::fmt::{self, Debug, Formatter};
 
 pub use crate::fs::fat32::{chdir, open, Fat32File};
@@ -28,7 +30,7 @@ pub use stdio::{Stdin, Stdout};
 
 pub fn init() {
     println!("===+ Files Loaded +===");
-    list_apps(ROOT_INODE.clone());
+    list_apps(AbsolutePath::from_string("/".to_string()));
     println!("===+==============+===");
 }
 
@@ -51,6 +53,11 @@ pub trait File: Send + Sync {
         panic!("{} not implement seek", self.name());
     }
 
+    // TODO 仅针对 Fat32File
+    fn path(&self) -> AbsolutePath {
+        panic!("{} not implement get_path", self.name());
+    }
+
     fn name(&self) -> &str;
 
     fn fstat(&self, _kstat: &mut Kstat) {
@@ -63,10 +70,6 @@ pub trait File: Send + Sync {
 
     fn dirent(&self, _dirent: &mut Dirent) -> isize {
         panic!("{} not implement get_dirent", self.name());
-    }
-
-    fn get_path(&self) -> &str {
-        panic!("{} not implement get_path", self.name());
     }
 
     fn offset(&self) -> usize {

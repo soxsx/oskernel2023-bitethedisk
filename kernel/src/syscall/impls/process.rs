@@ -115,12 +115,8 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const u8) ->
     let task = current_task().unwrap();
 
     let inner = task.lock();
-    if let Some(app_inode) = open(
-        inner.current_path.as_str(),
-        path.as_str(),
-        OpenFlags::O_RDONLY,
-        CreateMode::empty(),
-    ) {
+    let new_path = inner.current_path.clone().join_string(path);
+    if let Some(app_inode) = open(new_path, OpenFlags::O_RDONLY, CreateMode::empty()) {
         drop(inner);
         task.exec(app_inode, args_vec, envs_vec);
 

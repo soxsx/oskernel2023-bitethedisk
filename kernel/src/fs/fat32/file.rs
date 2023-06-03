@@ -1,7 +1,7 @@
 use crate::fs::{
     open_flags::CreateMode,
     stat::{S_IFCHR, S_IFDIR, S_IFREG},
-    Dirent, File, Kstat, OpenFlags, Timespec,
+    AbsolutePath, Dirent, File, Kstat, OpenFlags, Timespec,
 };
 use crate::{drivers::BLOCK_DEVICE, mm::UserBuffer};
 use alloc::{
@@ -20,7 +20,7 @@ pub struct Fat32File {
     readable: bool, // 该文件是否允许通过 sys_read 进行读
     writable: bool, // 该文件是否允许通过 sys_write 进行写
     pub inner: Mutex<Fat32FileInner>,
-    path: String, // TODO
+    path: AbsolutePath,
     name: String,
 }
 
@@ -36,7 +36,7 @@ impl Fat32File {
         readable: bool,
         writable: bool,
         inode: Arc<VirFile>,
-        path: String,
+        path: AbsolutePath,
         name: String,
     ) -> Self {
         let available = true;
@@ -122,76 +122,46 @@ lazy_static! {
     };
 }
 
-static mut LAYER: usize = 0;
+pub fn list_apps(path: AbsolutePath) {
+    let layer: usize = 0;
 
-pub fn list_apps(dir: Arc<VirFile>) {
-    for app in dir.ls_with_attr().unwrap() {
-        // 不打印initproc, 事实上它也在task::new之后删除了
-        unsafe {
-            if LAYER == 0 && app.0 == "initproc" {
+    fn ls(path: AbsolutePath, layer: usize) {
+        let dir = ROOT_INODE.find(path.as_vec_str()).unwrap();
+        for app in dir.ls_with_attr().unwrap() {
+            // 不打印initproc, 事实上它也在task::new之后删除了
+            if layer == 0 && app.0 == "initproc" {
                 continue;
             }
-        }
-        if app.1 & ATTR_DIRECTORY == 0 {
-            // 如果不是目录
-            unsafe {
-                for _ in 0..LAYER {
-                    print!("----");
+            let app_path = path.join_string(app.0.clone());
+            if app.1 & ATTR_DIRECTORY == 0 {
+                // 如果不是目录
+                for _ in 0..layer {
+                    print!("  ---");
                 }
-            }
-            crate::println!("{}", app.0);
-        } else if app.0 != "." && app.0 != ".." {
-            unsafe {
-                for _ in 0..LAYER {
-                    crate::print!("----");
+                crate::println!("{}", app.0);
+            } else if app.0 != "." && app.0 != ".." {
+                // 目录
+                for _ in 0..layer {
+                    crate::print!("  ---");
                 }
+                crate::println!("{}: ", app.0);
+                ls(app_path.clone(), layer + 1);
             }
-            let dir = open(
-                dir.name(),
-                app.0.as_str(),
-                OpenFlags::O_RDONLY,
-                CreateMode::empty(),
-            )
-            .unwrap();
-            let inner = dir.inner.lock();
-            let inode = inner.inode.clone();
-            unsafe {
-                LAYER += 1;
-            }
-            list_apps(inode);
         }
     }
-    unsafe {
-        // fix: may overflow
-        if LAYER > 0 {
-            LAYER -= 1;
-        }
-    }
+
+    ls(path, layer);
 }
 
 // work_path 绝对路径
-pub fn open(
-    work_path: &str,
-    path: &str,
-    flags: OpenFlags,
-    _mode: CreateMode,
-) -> Option<Arc<Fat32File>> {
-    let mut pathv: Vec<&str> = path.split('/').collect();
-
-    let cur_inode = {
-        if work_path == "/" {
-            ROOT_INODE.clone()
-        } else {
-            let wpath: Vec<&str> = work_path.split('/').collect();
-            ROOT_INODE.find(wpath).unwrap()
-        }
-    };
+pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Option<Arc<Fat32File>> {
+    let mut pathv = path.as_vec_str();
 
     let (readable, writable) = flags.read_write();
 
     // 创建文件
     if flags.contains(OpenFlags::O_CREATE) {
-        let res = cur_inode.find(pathv.clone());
+        let res = ROOT_INODE.find(pathv.clone());
         match res {
             Ok(inode) => {
                 // 如果文件已存在则清空
@@ -201,7 +171,7 @@ pub fn open(
                     readable,
                     writable,
                     inode,
-                    work_path.to_string(),
+                    path.clone(),
                     name.to_string(),
                 )))
             }
@@ -214,13 +184,13 @@ pub fn open(
 
                 // 找到父目录
                 let name = pathv.pop().unwrap();
-                match cur_inode.find(pathv.clone()) {
+                match ROOT_INODE.find(pathv.clone()) {
                     Ok(parent) => match parent.create(name, create_type as VirFileType) {
                         Ok(inode) => Some(Arc::new(Fat32File::new(
                             readable,
                             writable,
                             Arc::new(inode),
-                            work_path.to_string(),
+                            path.clone(),
                             name.to_string(),
                         ))),
                         Err(_) => None,
@@ -231,7 +201,7 @@ pub fn open(
         }
     } else {
         // 查找文件
-        match cur_inode.find(pathv.clone()) {
+        match ROOT_INODE.find(pathv.clone()) {
             Ok(inode) => {
                 // 删除文件
                 if flags.contains(OpenFlags::O_TRUNC) {
@@ -243,7 +213,7 @@ pub fn open(
                     readable,
                     writable,
                     inode,
-                    work_path.to_string(),
+                    path.clone(),
                     name,
                 )))
             }
@@ -252,40 +222,11 @@ pub fn open(
     }
 }
 
-pub fn chdir(work_path: &str, path: &str) -> Option<String> {
-    let mut current_work_path_vec: Vec<&str> = work_path.split('/').collect();
-    let path_vec: Vec<&str> = path.split('/').collect();
-
-    let current_inode = {
-        if path.chars().nth(0).unwrap() == '/' {
-            // 传入路径是绝对路径
-            ROOT_INODE.clone()
-        } else {
-            // 传入路径是相对路径
-            ROOT_INODE.find(current_work_path_vec.clone()).unwrap()
-        }
-    };
-
-    match current_inode.find(path_vec.clone()) {
-        Ok(_inode) => {
-            if current_inode.name() == "/" {
-                Some(path.to_string())
-            } else {
-                // 将 work_path 和 path 拼接, work_path 为绝对路径, path 为相对路径
-                for i in 0..path_vec.len() {
-                    if path_vec[i] == "." || path_vec[i] == "" {
-                        continue;
-                    } else if path_vec[i] == ".." {
-                        current_work_path_vec.pop();
-                    } else {
-                        current_work_path_vec.push(path_vec[i]);
-                    }
-                }
-
-                Some(current_work_path_vec.join("/"))
-            }
-        }
-        Err(_) => None,
+pub fn chdir(path: AbsolutePath) -> bool {
+    if let Ok(_) = ROOT_INODE.find(path.as_vec_str()) {
+        true
+    } else {
+        false
     }
 }
 
@@ -323,6 +264,10 @@ impl File for Fat32File {
         }
 
         v
+    }
+
+    fn path(&self) -> AbsolutePath {
+        self.path.clone()
     }
 
     fn seek(&self, _pos: usize) {
@@ -510,9 +455,5 @@ impl File for Fat32File {
 
     fn file_size(&self) -> usize {
         self.file_size()
-    }
-
-    fn get_path(&self) -> &str {
-        self.path.as_str()
     }
 }

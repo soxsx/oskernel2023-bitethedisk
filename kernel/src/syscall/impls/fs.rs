@@ -2,9 +2,11 @@
 
 use super::super::errno::*;
 use crate::fs::open_flags::CreateMode;
-use crate::fs::{chdir, make_pipe, open, Dirent, File, Kstat, OpenFlags, MNT_TABLE};
+use crate::fs::{chdir, make_pipe, open, Dirent, Fat32File, File, Kstat, OpenFlags, MNT_TABLE};
 use crate::mm::{translated_bytes_buffer, translated_mut, translated_str, UserBuffer, VirtAddr};
 use crate::task::{current_task, current_user_token, FD_LIMIT};
+
+use crate::fs::AbsolutePath;
 
 use alloc::{sync::Arc, vec::Vec};
 use core::mem::size_of;
@@ -39,9 +41,10 @@ pub fn sys_getcwd(buf: *mut u8, size: usize) -> isize {
     } else {
         let buf_vec = translated_bytes_buffer(token, buf, size);
         let mut userbuf = UserBuffer::wrap(buf_vec);
-        let cwd = inner.current_path.as_bytes();
-        userbuf.write(cwd);
-        userbuf.write_at(cwd.len(), &[0]); // 添加字符串末尾的\0
+        let cwd = inner.current_path.to_string();
+        let cwd_str = cwd.as_bytes();
+        userbuf.write(cwd_str);
+        userbuf.write_at(cwd_str.len(), &[0]); // 添加字符串末尾的\0
 
         buf as isize
     }
@@ -188,11 +191,14 @@ pub fn sys_chdir(path: *const u8) -> isize {
     let task = current_task().unwrap();
     let mut inner = task.lock();
     let path = translated_str(token, path);
-
-    if let Some(new_cwd) = chdir(inner.current_path.as_str(), &path) {
-        inner.current_path = new_cwd;
-
-        0
+    let current_path = inner.current_path.clone();
+    if let Some(new_path) = current_path.cd(path) {
+        if chdir(new_path.clone()) {
+            inner.current_path = new_path.clone();
+            0
+        } else {
+            -1
+        }
     } else {
         -1
     }
@@ -205,7 +211,9 @@ pub fn sys_chdir(path: *const u8) -> isize {
 /// 输入：
 ///
 /// - fd：文件所在目录的文件描述符。
-/// - filename：要打开或创建的文件名。如为绝对路径，则忽略fd。如为相对路径，且fd是AT_FDCWD，则filename是相对于当前工作目录来说的。如为相对路径，且fd是一个文件描述符，则filename是相对于fd所指向的目录来说的。
+/// - filename：要打开或创建的文件名。如为绝对路径，则忽略fd。
+///   如为相对路径，且fd是AT_FDCWD，则filename是相对于当前工作目录来说的。
+///   如为相对路径，且fd是一个文件描述符，则filename是相对于fd所指向的目录来说的。
 /// - flags：必须包含如下访问模式的其中一种：O_RDONLY，O_WRONLY，O_RDWR。还可以包含文件创建标志和文件状态标志。
 /// - mode：文件的所有权描述。详见`man 7 inode `。
 ///
@@ -215,19 +223,20 @@ pub fn sys_chdir(path: *const u8) -> isize {
 /// int fd, const char *filename, int flags, mode_t mode;
 /// int ret = syscall(SYS_openat, fd, filename, flags, mode);
 /// ```
-pub fn sys_openat(fd: isize, path: *const u8, flags: u32, mode: u32) -> isize {
+pub fn sys_openat(fd: isize, filename: *const u8, flags: u32, mode: u32) -> isize {
     let task = current_task().unwrap();
     let token = current_user_token();
     let mut inner = task.lock();
 
-    let path = translated_str(token, path);
+    let path = translated_str(token, filename);
 
     let mode = CreateMode::from_bits(mode).map_or(CreateMode::empty(), |m| m);
     let flags = OpenFlags::from_bits(flags).map_or(OpenFlags::empty(), |f| f);
 
     if fd == AT_FDCWD {
-        // 如果是当前工作目录
-        if let Some(inode) = open(inner.get_work_path(), path.as_str(), flags, mode) {
+        // 相对路径, 在当前工作目录
+        let open_path = inner.get_work_path().join_string(path);
+        if let Some(inode) = open(open_path, flags, mode) {
             let fd = inner.alloc_fd();
             if fd == FD_LIMIT {
                 return -EMFILE;
@@ -245,7 +254,9 @@ pub fn sys_openat(fd: isize, path: *const u8, flags: u32, mode: u32) -> isize {
             return -1;
         }
         if let Some(file) = &inner.fd_table[dirfd] {
-            if let Some(tar_f) = open(file.name(), path.as_str(), flags, mode) {
+            // TODO 目前 open 仅仅打开 Fat32 的文件, 其他文件类型暂不支持
+            let open_path = unsafe { file.path().join_string(path.clone()) };
+            if let Some(tar_f) = open(open_path, flags, mode) {
                 let fd = inner.alloc_fd();
                 if fd == FD_LIMIT {
                     return -EMFILE;
@@ -342,12 +353,7 @@ pub fn sys_getdents64(fd: isize, buf: *mut u8, len: usize) -> isize {
     let mut total_len: usize = 0;
 
     if fd == AT_FDCWD {
-        if let Some(file) = open(
-            "/",
-            work_path.as_str(),
-            OpenFlags::O_RDONLY,
-            CreateMode::empty(),
-        ) {
+        if let Some(file) = open(work_path, OpenFlags::O_RDONLY, CreateMode::empty()) {
             loop {
                 if total_len + dent_len > len {
                     break;
@@ -551,17 +557,13 @@ pub fn sys_unlinkat(fd: isize, path: *const u8, flags: u32) -> isize {
     let task = current_task().unwrap();
     let token = current_user_token();
     let inner = task.lock();
-    // todo
+    // TODO
     _ = flags;
-
     let path = translated_str(token, path);
+    let open_path = inner.get_work_path().join_string(path);
+
     if fd == AT_FDCWD {
-        if let Some(file) = open(
-            inner.get_work_path(),
-            path.as_str(),
-            OpenFlags::O_RDWR,
-            CreateMode::empty(),
-        ) {
+        if let Some(file) = open(open_path, OpenFlags::O_RDWR, CreateMode::empty()) {
             file.delete();
             0
         } else {
@@ -597,11 +599,10 @@ pub fn sys_mkdirat(dirfd: isize, path: *const u8, _mode: u32) -> isize {
     let inner = task.lock();
     let path = translated_str(token, path);
 
-    // println!("[DEBUG] enter sys_mkdirat: dirfd:{}, path:{}. mode:{:o}",dirfd,path,mode);
     if dirfd == AT_FDCWD {
+        let open_path = inner.get_work_path().join_string(path);
         if let Some(_) = open(
-            inner.get_work_path(),
-            path.as_str(),
+            open_path,
             OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE,
             CreateMode::empty(),
         ) {
@@ -615,9 +616,10 @@ pub fn sys_mkdirat(dirfd: isize, path: *const u8, _mode: u32) -> isize {
             return -1;
         }
         if let Some(file) = &inner.fd_table[dirfd] {
+            let open_path = unsafe { file.path().join_string(path) };
+
             if let Some(_) = open(
-                file.name(),
-                path.as_str(),
+                open_path,
                 OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE,
                 CreateMode::empty(),
             ) {
