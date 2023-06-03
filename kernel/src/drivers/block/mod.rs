@@ -1,8 +1,4 @@
-//! # 块设备驱动层
-//! `os/src/drivers/block/mod.rs`
-//! ```
-//! pub static ref BLOCK_DEVICE
-//! ```
+//! 块设备驱动层
 
 mod virtio_blk;
 mod virtio_impl;
