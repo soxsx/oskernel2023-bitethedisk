@@ -112,6 +112,7 @@ impl MmapManager {
             .enumerate()
             .find(|(_, p)| p.oaddr.0 == start);
         if let Some((idx, _)) = pair {
+            // TODO TOFIX 只能处理在尾部增删的情况 (为了保证不出错, 浪费了空间)
             if self.mmap_top == VirtAddr::from(start + len) {
                 self.mmap_top = VirtAddr::from(start);
             }
