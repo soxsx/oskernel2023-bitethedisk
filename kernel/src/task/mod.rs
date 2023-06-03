@@ -27,7 +27,6 @@ use self::{initproc::INITPROC, processor::schedule};
 
 /// 将当前任务置为就绪态，放回到进程管理器中的就绪队列中，重新选择一个进程运行
 pub fn suspend_current_and_run_next() -> isize {
-    // There must be an application running.
     // 取出当前正在执行的任务
     let task_cp = current_task().unwrap();
     let mut task_inner = task_cp.lock();
@@ -76,7 +75,6 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         child.lock().parent = Some(Arc::downgrade(&INITPROC));
         initproc_inner.children.push(child.clone()); // 引用计数 -1
     }
-    // unlock
     drop(initproc_inner);
 
     // 引用计数 +1

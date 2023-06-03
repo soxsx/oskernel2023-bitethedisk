@@ -1,9 +1,12 @@
 //! 进程标识符
+//! 
+//! 在多核环境下，每个 [`Cpu`] 都缓存了一定数量的 PID，以减少进程创建获取 PID 时
+//! 频繁加锁所带来的性能损耗
+//! 
+//! [`Cpu`]: crate::task::processor::cpu::Cpu
 
 use alloc::vec::Vec;
 use spin::Mutex;
-
-use super::processor::PROCESSOR;
 
 lazy_static! {
     static ref PID_ALLOCATOR: Mutex<PidAllocator> = Mutex::new(PidAllocator::new());
