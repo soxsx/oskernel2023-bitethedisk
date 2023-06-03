@@ -9,8 +9,6 @@ use super::get_needed_sector;
 use alloc::sync::Arc;
 use core::clone::Clone;
 use core::cmp::Ord;
-use core::option::Option;
-use core::option::Option::{None, Some};
 use core::result::Result;
 use core::result::Result::{Err, Ok};
 

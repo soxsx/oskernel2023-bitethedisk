@@ -1,7 +1,6 @@
 use super::vm_area::VmArea;
 use super::{MapPermission, MapType};
 use crate::consts::{PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE, USER_STACK_SIZE};
-use crate::fs::Fat32File;
 use crate::fs::File;
 use crate::mm::frame_allocator::{enquire_refcount, frame_add_ref};
 use crate::mm::page_table::PTEFlags;
@@ -172,7 +171,7 @@ impl MemorySet {
                     continue;
                 }
 
-                area_remove.write_back(&mut self.page_table);
+                area_remove.write_back(&mut self.page_table).unwrap();
                 area_remove.erase_pagetable(&mut self.page_table);
 
                 if finish {
