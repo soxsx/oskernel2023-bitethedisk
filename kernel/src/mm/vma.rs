@@ -1,7 +1,7 @@
 use super::address::VirtAddr;
 use super::{translated_bytes_buffer, UserBuffer};
 use crate::consts::PAGE_SIZE;
-use crate::fs::File;
+use crate::fs::file::File;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -29,13 +29,6 @@ bitflags! {
         const MAP_FIXED = 0x10;
         const MAP_ANONYMOUS = 0x20;
     }
-
-    // 应用场景：
-    // MAP_FILE | MAP_SHARED: 两个进程共同读写一个文本文件
-    // MAP_FILE | MAP_PRIVATE: 进程对动态链接库的使用
-    // MAP_ANONYMOUS | MAP_SHARED: 作为进程间通信机制的POSIX共享内存(Linux 中共享内存对应tmpfs的一个文件，也可视为共享文件映射)
-    // MAP_ANONYMOUS | MAP_PRIVATE: 常见的是 malloc()
-
 }
 
 /// mmap 块管理器

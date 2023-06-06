@@ -2,7 +2,7 @@ use super::kernel_stack::KernelStack;
 use super::TaskContext;
 use super::{pid_alloc, PidHandle, SignalFlags};
 use crate::consts::*;
-use crate::fs::{Fat32File, File, Stdin, Stdout};
+use crate::fs::{file::File, Fat32File, Stdin, Stdout};
 use crate::mm::kernel_vmm::acquire_kvmm;
 use crate::mm::memory_set::{LoadedELF, MMAP_BASE};
 use crate::mm::{

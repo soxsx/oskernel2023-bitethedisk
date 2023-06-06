@@ -2,11 +2,9 @@
 
 use super::super::errno::*;
 use crate::fs::open_flags::CreateMode;
-use crate::fs::{chdir, make_pipe, open, Dirent, Fat32File, File, Kstat, OpenFlags, MNT_TABLE};
+use crate::fs::{chdir, file::File, make_pipe, open, Dirent, Kstat, OpenFlags, MNT_TABLE};
 use crate::mm::{translated_bytes_buffer, translated_mut, translated_str, UserBuffer, VirtAddr};
 use crate::task::{current_task, current_user_token, FD_LIMIT};
-
-use crate::fs::AbsolutePath;
 
 use alloc::{sync::Arc, vec::Vec};
 use core::mem::size_of;
