@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use crate::{fs::File, mm::UserBuffer};
+use crate::{fs::file::File, mm::UserBuffer};
 
 pub struct Stdout;
 

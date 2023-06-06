@@ -3,7 +3,7 @@ use alloc::{collections::BTreeMap, sync::Arc};
 use crate::{
     consts::PAGE_SIZE,
     error::Error,
-    fs::File,
+    fs::file::File,
     mm::{
         address::Step, alloc_frame, page_table::PTEFlags, FrameTracker, PageTable, PhysPageNum,
         VPNRange, VirtAddr, VirtPageNum,

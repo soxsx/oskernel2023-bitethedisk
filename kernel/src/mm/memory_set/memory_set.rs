@@ -1,7 +1,7 @@
 use super::vm_area::VmArea;
 use super::{MapPermission, MapType};
 use crate::consts::{PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE, USER_STACK_SIZE};
-use crate::fs::File;
+use crate::fs::file::File;
 use crate::mm::frame_allocator::enquire_refcount;
 use crate::mm::page_table::PTEFlags;
 use crate::mm::{

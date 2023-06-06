@@ -1,7 +1,7 @@
 use crate::fs::{
     open_flags::CreateMode,
     stat::{S_IFCHR, S_IFDIR, S_IFREG},
-    Dirent, File, Kstat, OpenFlags, Timespec,
+    Dirent, file::File, Kstat, OpenFlags, Timespec,
 };
 use crate::{drivers::BLOCK_DEVICE, mm::UserBuffer};
 use alloc::{
