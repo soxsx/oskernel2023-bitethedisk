@@ -17,7 +17,6 @@ pub struct VmArea {
     pub map_type: MapType,
     pub permission: MapPermission,
 
-    // (lzm) 添加 file 和 page_offset
     pub file: Option<Arc<dyn File>>, // 被映射的文件
     pub file_offset: usize,          // 被映射的文件在文件中的偏移量
 
@@ -27,7 +26,6 @@ pub struct VmArea {
 }
 
 impl VmArea {
-    //(lzm)
     pub fn new(
         start_va: VirtAddr,
         end_va: VirtAddr,
@@ -46,7 +44,6 @@ impl VmArea {
         }
     }
 
-    //(lzm)
     pub fn from_another(another: &Self) -> Self {
         Self {
             vpn_range: another.vpn_range,
@@ -66,7 +63,6 @@ impl VmArea {
         self.vpn_range.get_end()
     }
 
-    // (lzm) 懒加载
     pub fn inflate_pagetable(&mut self, page_table: &mut PageTable) {
         match self.map_type {
             MapType::Identical => {
@@ -88,7 +84,6 @@ impl VmArea {
         }
     }
 
-    // (lzm) ummap 写回
     /// 将当前逻辑段到物理内存的映射从传入的该逻辑段所属的地址空间的多级页表中删除
     /// 写回文件(如果 map_perm 包含 W)
     pub fn write_back(&self, page_table: &mut PageTable) -> Result<(), Error> {

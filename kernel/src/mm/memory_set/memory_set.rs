@@ -126,7 +126,6 @@ impl MemorySet {
         }
     }
 
-    // lzm
     pub fn remove_area(&mut self, start_va: VirtAddr, end_va: VirtAddr) {
         let mut op = |areas: &mut Vec<VmArea>| {
             let mut len = areas.len();
@@ -449,12 +448,10 @@ impl MemorySet {
         for mmap_area in user_space.mmap_areas.iter() {
             let mut new_mmap_area = VmArea::from_another(mmap_area);
 
-            // (lzm) 删除了 push vpn (删了vec_table, 只保留了vpn range)
             for vpn in mmap_area.vpn_range.into_iter() {
                 // change the map permission of both pagetable
                 // get the former flags and ppn
 
-                // (lzm)
                 // 只对已经map过的进行cow
                 if let Some(pte) = parent_page_table.translate(vpn) {
                     let pte_flags = pte.flags() & !PTEFlags::W;
@@ -467,7 +464,7 @@ impl MemorySet {
                     new_memory_set.page_table.map(vpn, src_ppn, pte_flags);
                     new_memory_set.page_table.set_cow(vpn);
 
-                    // (lzm) 删除了 push vpn (删了vec_table, 只保留了vpn range)
+                    // () 删除了 push vpn (删了vec_table, 只保留了vpn range)
                     new_mmap_area
                         .frame_map
                         .insert(vpn, FrameTracker::from_ppn(src_ppn));
@@ -478,11 +475,9 @@ impl MemorySet {
 
         new_memory_set.heap_areas = VmArea::from_another(&user_space.heap_areas);
         for vpn in user_space.heap_areas.vpn_range.into_iter() {
-            // (lzm) 删除了 push vpn (删了vec_table, 只保留了vpn range)
             // change the map permission of both pagetable
             // get the former flags and ppn
 
-            // (lzm)
             // 只对已经map过的进行cow
             if let Some(pte) = parent_page_table.translate(vpn) {
                 let pte_flags = pte.flags() & !PTEFlags::W;
@@ -495,7 +490,6 @@ impl MemorySet {
                 new_memory_set.page_table.map(vpn, src_ppn, pte_flags);
                 new_memory_set.page_table.set_cow(vpn);
 
-                // (lzm) 删除了 push vpn (删了vec_table, 只保留了vpn range)
                 new_memory_set
                     .heap_areas
                     .frame_map
