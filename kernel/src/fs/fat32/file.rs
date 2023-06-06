@@ -407,7 +407,6 @@ impl File for Fat32File {
     }
 
     fn write_kernel_space(&self, data: Vec<u8>) -> usize {
-        // (lzm) 改为 slice
         let mut inner = self.inner.lock();
         let mut remain = data.len();
         let mut base = 0;
