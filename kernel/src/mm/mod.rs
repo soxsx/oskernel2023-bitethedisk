@@ -45,8 +45,6 @@ pub fn translated_bytes_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<
     let page_table = PageTable::from_token(token);
 
     let mut start = VirtAddr::from(ptr as usize);
-    // TODO: 这里如果不按照虚拟地址处理可能会出错，具体表现为 end 的值很奇怪，
-    // 可能超出了 39 bit(512GiB) 的虚拟地址空间大小限制
     let end = VirtAddr::from(start.0 + len);
 
     let mut v = Vec::new();
