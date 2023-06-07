@@ -1,5 +1,7 @@
 //! 虚拟地址空间映射的标志性字段
 
+#![allow(unused)]
+
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum MapType {
     Identical,

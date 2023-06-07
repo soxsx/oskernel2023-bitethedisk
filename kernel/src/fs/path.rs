@@ -4,8 +4,6 @@ use alloc::{collections::VecDeque, string::String};
 use core::fmt::{Debug, Formatter};
 use core::ops::{Deref, DerefMut};
 
-use crate::fs::path;
-
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AbsolutePath {
     pub components: VecDeque<String>,
@@ -31,6 +29,7 @@ impl DerefMut for AbsolutePath {
     }
 }
 
+#[allow(unused)]
 impl AbsolutePath {
     pub fn from_string(path: String) -> Self {
         let temp: VecDeque<String> = path.split('/').map(|s| String::from(s)).collect();

@@ -186,6 +186,8 @@
 //! the "_" (underscore) character as it is returned to the user – it is NOT modified on the disk. This
 //! character is the same in all OEM code pages and ANSI.
 
+#![allow(unused)]
+
 use super::vfs::VirFileType;
 use super::{
     ATTR_ARCHIVE, ATTR_DIRECTORY, ATTR_HIDDEN, ATTR_LONG_NAME, ATTR_READ_ONLY, ATTR_SYSTEM,

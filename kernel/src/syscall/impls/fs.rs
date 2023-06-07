@@ -252,8 +252,7 @@ pub fn sys_openat(fd: isize, filename: *const u8, flags: u32, mode: u32) -> isiz
             return -1;
         }
         if let Some(file) = &inner.fd_table[dirfd] {
-            // TODO 目前 open 仅仅打开 Fat32 的文件, 其他文件类型暂不支持
-            let open_path = unsafe { file.path().join_string(path.clone()) };
+            let open_path = file.path().join_string(path.clone());
             if let Some(tar_f) = open(open_path, flags, mode) {
                 let fd = inner.alloc_fd();
                 if fd == FD_LIMIT {

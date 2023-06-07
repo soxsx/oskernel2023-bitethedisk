@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use super::vm_area::VmArea;
 use super::{MapPermission, MapType};
 use crate::consts::{PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE, USER_STACK_SIZE};
