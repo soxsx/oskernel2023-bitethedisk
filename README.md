@@ -81,6 +81,9 @@ make debug        # 链接 dbg-server
 
     可以通过伪指令 `.attribute arch, "rv64gc"` 来解决
 
+    这个问题的解决其实并不直观，除了给出的文档还参考了别人一些类似的情况，不过有的相关链接已经失效了。
+    不过这次给我们的启发是: 遇到不好解决的问题，除了别人的经验，可以大胆向官方提问，开 issue
+
     <https://github.com/riscv-non-isa/riscv-asm-manual/blob/master/riscv-asm.md#-attribute>
 
 - VirtIOBlk 物理内存不连续时导致缓存数据丢失
@@ -113,16 +116,20 @@ make debug        # 链接 dbg-server
 
     <https://github.com/rcore-os/rCore-Tutorial-v3/pull/79#issue-1251450181>
 
-- 多核乱序输出
+- 多核启动顺序
 
    <div class="warp">
-      <img src="docs/imgs/multi-harts.png" class="img" style="    display: inline-block;
+      <img src="docs/imgs/multi-harts-panic.png" class="img" style="    display: inline-block;
         width: auto;
         height: auto;
         max-width: 500px;
         max-height: 100%;
         vertical-align: middle;">
     </div>
+
+  接触过多线程的并发问题，但没有考虑到多核情况下的并发。
+  
+  资源的初始化需要单核完成后，其他核再以此运行
 
   参考 `xv6-riscv` 解决:
 
