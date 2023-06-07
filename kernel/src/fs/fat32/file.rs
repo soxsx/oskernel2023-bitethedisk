@@ -288,10 +288,12 @@ impl File for Fat32File {
     fn read(&self, mut buf: UserBuffer) -> usize {
         let offset = self.inner.lock().offset;
         let file_size = self.file_size();
+
         // TODO 如果是目录文件
         if file_size == 0 {
-            // crate::warn!("[fs::inode::OSInode::read] File size is zero!");
+            todo!("handle dir typed file")
         }
+
         if offset > file_size {
             return 0;
         }

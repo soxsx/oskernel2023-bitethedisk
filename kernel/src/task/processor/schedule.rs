@@ -1,3 +1,7 @@
+//! 单/多核的调度逻辑
+//! 
+//! 包括获取当前 CPU 上的计算单元 [`super::Processor`]，修改进程状态，调度进程
+
 use crate::task::{switch::__switch, TaskContext};
 
 /// 进入 idle 控制流，它运行在这个 CPU 核的启动栈上，

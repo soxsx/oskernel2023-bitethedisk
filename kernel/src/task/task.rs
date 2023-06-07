@@ -395,7 +395,6 @@ impl TaskControlBlock {
         let pte = self.lock().enquire_pte_via_vpn(vpn);
         if pte.is_some() && pte.unwrap().is_cow() {
             let former_ppn = pte.unwrap().ppn();
-            // crate::debug!("cow lazy alloc");
             return self.lock().cow_alloc(vpn, former_ppn);
         } else {
             if let Some(pte1) = pte {
@@ -496,6 +495,7 @@ impl TaskControlBlock {
         let mmap_end_va = VirtAddr(addr + length);
         let mmap_start_vpn: VirtPageNum = mmap_start_va.floor();
         let mmap_end_vpn: VirtPageNum = mmap_end_va.ceil();
+
         // 可能会有 mmap 后没有访问直接 munmap 的情况，需要检查是否访问过 mmap 的区域(即
         // 是否引发了 lazy_mmap)，防止 unmap 页表中不存在的页表项引发 panic
         if inner.memory_set.is_lazy_mapped(mmap_start_vpn)
@@ -503,11 +503,6 @@ impl TaskControlBlock {
         {
             inner.memory_set.remove_area(mmap_start_va, mmap_end_va);
         }
-
-        // if inner.shared_vm_areas.is_lazy_mapped(mmap_start_vpn) {
-        //     inner.memory_set.remove_mmap_area_with_start_vpn(addr_vpn);
-        // }
-        // TODO end_va 没有 map 的情况
 
         inner.mmap_manager.remove(addr, length)
     }

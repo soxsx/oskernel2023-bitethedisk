@@ -30,7 +30,6 @@ unsafe impl Hal for HalImpl {
         let kpaddr: KPhysAddr = ppn_base.into();
         let paddr: PhysAddr = kpaddr.0;
 
-        // crate::info!("alloc DMA: paddr={:#x}, pages={}", paddr, pages);
         let vaddr = NonNull::new(paddr as _).unwrap();
         (paddr, vaddr)
     }
@@ -43,7 +42,7 @@ unsafe impl Hal for HalImpl {
             dealloc_frame(ppn_base);
             ppn_base.step();
         }
-        // crate::info!("dealloc DMA: paddr={:#x}, pages={}", paddr, pages);
+
         0
     }
 
