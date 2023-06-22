@@ -234,6 +234,10 @@ impl TaskControlBlock {
             })
             .collect();
 
+	// padding 0 表示结束 AT_NULL aux entry
+        user_sp -= core::mem::size_of::<usize>();
+        *translated_mut(token, user_sp as *mut usize) = 0;
+
         // padding 0 表示结束
         user_sp -= core::mem::size_of::<usize>();
         *translated_mut(token, user_sp as *mut usize) = 0;
