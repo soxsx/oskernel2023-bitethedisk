@@ -2,7 +2,7 @@
 
 use super::super::errno::*;
 use crate::fs::open_flags::CreateMode;
-use crate::fs::{chdir, file::File, make_pipe, open, Dirent, Kstat, OpenFlags, MNT_TABLE};
+use crate::fs::{chdir, file::File, make_pipe, open, Dirent, Kstat, OpenFlags, MNT_TABLE,Stdin};
 use crate::mm::{translated_bytes_buffer, translated_mut, translated_str, UserBuffer, VirtAddr};
 use crate::task::{current_task, current_user_token, FD_LIMIT};
 
@@ -789,8 +789,8 @@ pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> isize {
 }
 
 pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> isize {
-    println!("[DEBUG] enter sys_writev: fd:{}, iovp:0x{:x}, iovcnt:{}",fd,iovp as usize,iovcnt);
-    // println!("time:{}",get_time_ms());
+//    println!("[DEBUG] enter sys_writev: fd:{}, iovp:0x{:x}, iovcnt:{}",fd,iovp as usize,iovcnt);
+//    println!("time:{}",get_time_ms());
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.lock();
@@ -803,15 +803,16 @@ pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> isize {
         if !file.writable() {
             return -1;
         }
-	println!("name:{}",file.name());
-	println!("!!{:?}",translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>()));
+//       	println!("name:{}",file.name());
+//	println!("!!{:?}",translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>()));
         let iovp_buf_p = translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>())[0].as_ptr();
         let mut addr = iovp_buf_p as *const _ as usize;
         let mut total_write_len = 0;
         for _ in 0..iovcnt {
             let iovp = unsafe { &*(addr as *const Iovec) };
-	    println!("iovp:{:?}",iovp);
+//	    println!("iovp:{:?}",iovp);
 	    if iovp.iov_len<=0{
+		addr += size_of::<Iovec>();
 		continue;
 	    }
             total_write_len += file.write(UserBuffer::wrap(translated_bytes_buffer(
@@ -822,8 +823,185 @@ pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> isize {
             addr += size_of::<Iovec>();
         }
         drop(inner);
+//	println!("size:{:?}",total_write_len);
         total_write_len as isize
     } else {
         -1
+    }
+}
+
+
+const TCGETS: usize = 0x5401;
+const TCSETS: usize = 0x5402;
+const TIOCGPGRP: usize = 0x540f;
+const TIOCSPGRP: usize = 0x5410;
+const TIOCGWINSZ: usize = 0x5413;
+const RTC_RD_TIME: usize = 0xffffffff80247009; // 这个值还需考量
+
+pub fn sys_ioctl(fd: usize, request: usize, argp: *mut u8) -> isize {
+    // println!("enter sys_ioctl: fd:{}, request:0x{:x}, argp:{}", fd, request, argp as usize);
+    let token = current_user_token();
+    let task = current_task().unwrap();
+    let inner = task.lock();
+    // 文件描述符不合法
+    if fd >= inner.fd_table.len() {
+        return -1;
+    }
+    match request {
+        TCGETS => {}
+        TCSETS => {}
+        TIOCGPGRP => *translated_mut(token, argp) = 0 as u8,
+        TIOCSPGRP => {}
+        TIOCGWINSZ => *translated_mut(token, argp) = 0 as u8,
+        RTC_RD_TIME => {}
+        _ => panic!("sys_ioctl: unsupported request!"),
+    }
+    0
+}
+
+
+// 暂时写在这里
+
+bitflags! {
+#[derive(PartialEq, Eq)]
+    pub struct FcntlFlags:usize{
+        const F_DUPFD = 0;
+        const F_GETFD = 1;
+        const F_SETFD = 2;
+        const F_GETFL = 3;
+        const F_SETFL = 4;
+        const F_GETLK = 5;
+        const F_SETLK = 6;
+        const F_SETLKW = 7;
+        const F_SETOWN = 8;
+        const F_GETOWN = 9;
+        const F_SETSIG = 10;
+        const F_GETSIG = 11;
+        const F_SETOWN_EX = 15;
+        const F_GETOWN_EX = 16;
+        const F_GETOWNER_UIDS = 17;
+
+        // 发现 F_UNLCK = 2 , 这个标记分类待研究
+        const F_DUPFD_CLOEXEC = 1030;
+    }
+}
+
+pub fn sys_fcntl(fd: isize, cmd: usize, arg: Option<usize>) -> isize {
+    // println!("[DEBUG] enter sys_fcntl: fd:{}, cmd:{}, arg:{:?}", fd, cmd, arg);
+    let task = current_task().unwrap();
+    let cmd = FcntlFlags::from_bits(cmd).unwrap();
+    match cmd {
+        FcntlFlags::F_SETFL => {
+            let inner = task.lock();
+            if let Some(file) = &inner.fd_table[fd as usize] {
+                file.set_flags(OpenFlags::from_bits(arg.unwrap() as u32).unwrap());
+            } else {
+                panic!("sys_fcntl: fd is not an open file descriptor");
+            }
+        }
+        // Currently, only one such flag is defined: FD_CLOEXEC (value: 1)
+        FcntlFlags::F_GETFD => {
+            // Return (as the function result) the file descriptor flags; arg is ignored.
+            let inner = task.lock();
+            if let Some(file) = &inner.fd_table[fd as usize] {
+                return file.available() as isize;
+            } else {
+                panic!("sys_fcntl: fd is not an open file descriptor");
+            }
+        }
+        FcntlFlags::F_SETFD => {
+            // Set the file descriptor flags to the value specified by arg.
+            let inner = task.lock();
+            if let Some(file) = &inner.fd_table[fd as usize] {
+                if arg.unwrap() != 0 {
+                    file.set_cloexec();
+                }
+            } else {
+                panic!("sys_fcntl: fd is not an open file descriptor");
+            }
+        }
+        FcntlFlags::F_GETFL => {
+            // Return (as the function result) the file access mode and the file status flags; arg is ignored.
+            // todo
+            return 04000;
+        }
+        FcntlFlags::F_DUPFD_CLOEXEC => {
+            let mut inner = task.lock();
+            let start_num = arg.unwrap();
+            let mut new_fd = 0;
+            _ = new_fd;
+            let mut tmp_fd = Vec::new();
+            loop {
+                new_fd = inner.alloc_fd();
+                inner.fd_table[new_fd] = Some(Arc::new(Stdin));
+                if new_fd >= start_num {
+                    break;
+                } else {
+                    tmp_fd.push(new_fd);
+                }
+            }
+            for i in tmp_fd {
+                inner.fd_table[i].take();
+            }
+            inner.fd_table[new_fd] = Some(Arc::clone(
+                inner.fd_table[fd as usize]
+                    .as_ref()
+                    .expect("sys_fcntl: fd is not an open file descriptor"),
+            ));
+            inner.fd_table[new_fd].as_ref().unwrap().set_cloexec();
+            return new_fd as isize;
+        }
+        _ => panic!("sys_ioctl: unsupported request!"),
+    }
+    0
+}
+
+pub const ENOENT: isize = 2;
+pub const EFAULT: isize = 14;
+pub const EMFILE: isize = 24;
+pub fn sys_newfstatat(dirfd: isize, pathname: *const u8, satabuf: *const usize, _flags: usize) -> isize {
+    let token = current_user_token();
+    let task = current_task().unwrap();
+    let inner = task.lock();
+    let path = translated_str(token, pathname);
+
+    // println!(
+    //     "[DEBUG] enter sys_newfstatat: dirfd:{}, pathname:{}, satabuf:0x{:x}, flags:0x{:x}",
+    //     dirfd, path, satabuf as usize, _flags
+    // );
+
+    let buf_vec = translated_bytes_buffer(token, satabuf as *const u8, size_of::<Kstat>());
+    let mut userbuf = UserBuffer::wrap(buf_vec);
+    let mut kstat = Kstat::new();
+
+    // 相对路径, 在当前工作目录
+    if dirfd == AT_FDCWD {
+        let open_path = inner.get_work_path().join_string(path);
+        if let Some(inode) = open(open_path, OpenFlags::O_RDONLY, CreateMode::empty()) {
+            inode.fstat(&mut kstat);
+            userbuf.write(kstat.as_bytes());
+            // panic!();
+            0
+        } else {
+            -ENOENT
+        }
+    } else {
+        let dirfd = dirfd as usize;
+        if dirfd >= inner.fd_table.len() && dirfd > FD_LIMIT {
+            return -1;
+        }
+
+        if let Some(file) = &inner.fd_table[dirfd] {
+            let open_path = inner.get_work_path().join_string(path);
+            if let Some(inode) = open(open_path, OpenFlags::O_RDONLY, CreateMode::empty()) {
+                inode.fstat(&mut kstat);
+                userbuf.write(kstat.as_bytes());
+                0
+            } else {
+                -1
+            }
+        } else {
+            -ENOENT
+        }
     }
 }
