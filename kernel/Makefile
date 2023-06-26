@@ -49,7 +49,7 @@ run: kernel-dbg fat32img
 ##################################################################
 #                      Debug build & run.                        #
 ##################################################################
-kernel-debug:
+kernel-debug: initproc
 	@cargo clean
 	@cargo build
 
