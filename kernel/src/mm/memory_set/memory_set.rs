@@ -15,45 +15,6 @@ use alloc::{sync::Arc, vec::Vec};
 pub const MMAP_BASE: usize = 0x60000000;
 pub const MMAP_END: usize = 0x68000000; // mmap 区大小为 128 MiB
 
-
-#[derive(Clone, Copy,Debug)]
-pub struct AuxEntry(pub usize, pub usize);
-
-pub const AT_NULL: usize = 0;
-pub const AT_PHDR: usize = 3;
-pub const AT_PHENT: usize = 4;
-pub const AT_PHNUM: usize = 5;
-pub const AT_PAGESZ: usize = 6;
-pub const AT_BASE: usize = 7;
-pub const AT_FLAGS: usize = 8 ;
-pub const AT_ENTRY: usize = 9;
-pub const AT_UID: usize = 11;
-pub const AT_EUID: usize = 12;
-pub const AT_GID: usize = 13;
-pub const AT_EGID: usize = 14;
-pub const AT_HWCAP: usize = 16;
-pub const AT_CLKTCK: usize = 17;
-pub const AT_SECURE: usize = 23;
-pub const AT_RANDOM: usize = 25;
-pub const AT_EXECFN: usize = 31;
-
-pub fn new() -> Vec<AuxEntry> {
-    let mut temp = Vec::new();
-    temp.push(AuxEntry(AT_NULL, 0));
-    temp.push(AuxEntry(AT_PAGESZ, PAGE_SIZE));
-    temp.push(AuxEntry(AT_UID, 0));
-    temp.push(AuxEntry(AT_EUID, 0));
-    temp.push(AuxEntry(AT_GID, 0));
-    temp.push(AuxEntry(AT_EGID, 0));
-    temp.push(AuxEntry(AT_SECURE, 0));
-    temp
-}
-
-
-
-
-
-
 /// 虚拟地址空间抽象
 ///
 /// 比如，用户进程的虚拟地址空间抽象:
@@ -336,7 +297,6 @@ impl MemorySet {
     /// ```
     pub fn load_elf(elf_file: Arc<dyn File>) -> LoadedELF {
         let mut memory_set = Self::new_bare();
-	let mut auxs=Vec::new();
 
         memory_set.map_trampoline();
         memory_set.map_trap_context();
@@ -354,8 +314,6 @@ impl MemorySet {
         let elf_head_data = elf_file.read_to_vec(0, ph_offset + ph_count * ph_entry_size);
         let elf = xmas_elf::ElfFile::new(elf_head_data.as_slice()).unwrap();
 
-        let mut head_va = None; // top va of ELF which points to ELF header
-
         // 记录目前涉及到的最大的虚拟地址
         let mut brk_start_va = VirtAddr(0);
 
@@ -364,12 +322,8 @@ impl MemorySet {
             let ph = elf.program_header(i).unwrap();
             match ph.get_type().unwrap() {
                 xmas_elf::program::Type::Load => {
-
                     let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
                     let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
-                    if head_va.is_none() {
-			head_va = Some(start_va.0);
-                    }
                     let mut map_perm = MapPermission::U;
                     let ph_flags = ph.flags();
                     if ph_flags.is_read() {
@@ -399,40 +353,9 @@ impl MemorySet {
                         )),
                     );
                 }
-		xmas_elf::program::Type::Phdr => {
-		    // auxs.push(AuxEntry(AT_PHDR, ph.virtual_addr() as usize));
-		}
-                xmas_elf::program::Type::Interp => {
-		    println!("elf Interp");
-		}
                 _ => continue,
             }
         }
-	// auxs.push(AuxEntry(AT_BASE, 0));
-
-        let ph_head_addr = head_va.unwrap() + elf.header.pt2.ph_offset() as usize;
-
-        /* get auxv vector */
-        auxs.push(AuxEntry(0x21, 0 as usize));          //no vdso
-        auxs.push(AuxEntry( 0x28,  0 as usize));          //AT_L1I_CACHESIZE:     0
-        auxs.push(AuxEntry( AT_PHDR,  (ph_head_addr as usize)));
-        auxs.push(AuxEntry( 0x29, 0 as usize));          //AT_L1I_CACHEGEOMETRY: 0x0
-        auxs.push(AuxEntry( 0x2a, 0 as usize));          //AT_L1D_CACHESIZE:     0
-        auxs.push(AuxEntry( 0x2b, 0 as usize));          //AT_L1D_CACHEGEOMETRY: 0x0
-        auxs.push(AuxEntry( 0x2c, 0 as usize));          //AT_L2_CACHESIZE:      0
-        auxs.push(AuxEntry( 0x2d, 0 as usize));          //AT_L2_CACHEGEOMETRY:  0x0
-        auxs.push(AuxEntry( AT_HWCAP, 0 as usize));
-        auxs.push(AuxEntry( AT_PAGESZ, PAGE_SIZE as usize));
-        // auxs.push(AuxEntry( AT_CLKTCK, CLOCK_FREQ as usize));
-        auxs.push(AuxEntry( AT_PHENT, elf.header.pt2.ph_entry_size() as usize));// ELF64 header 64bytes
-        auxs.push(AuxEntry( AT_PHNUM, ph_count as usize));
-        auxs.push(AuxEntry( AT_FLAGS, 0 as usize));
-        auxs.push(AuxEntry( AT_ENTRY, elf.header.pt2.entry_point() as usize));
-        auxs.push(AuxEntry( AT_UID, 0 as usize));
-        auxs.push(AuxEntry( AT_EUID, 0 as usize));
-        auxs.push(AuxEntry( AT_GID, 0 as usize));
-        auxs.push(AuxEntry( AT_EGID, 0 as usize));
-        auxs.push(AuxEntry( AT_SECURE, 0 as usize));
 
         // 分配用户栈
         let user_stack_top = TRAP_CONTEXT - PAGE_SIZE;
@@ -468,7 +391,6 @@ impl MemorySet {
             memory_set,
             user_stack_top,
             elf_entry: elf.header.pt2.entry_point() as usize,
-	    auxs,
         }
     }
 
@@ -718,5 +640,4 @@ pub struct LoadedELF {
     pub memory_set: MemorySet,
     pub user_stack_top: usize,
     pub elf_entry: usize,
-    pub auxs:Vec<AuxEntry>,
 }
