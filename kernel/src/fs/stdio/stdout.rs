@@ -34,6 +34,4 @@ impl File for Stdout {
 
         data.len()
     }
-    fn set_cloexec(&self) {
-    }
 }

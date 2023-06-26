@@ -77,12 +77,11 @@ pub fn sys_do_fork(
 /// const char *path, char *const argv[], char *const envp[];
 /// int ret = syscall(SYS_execve, path, argv, envp);
 /// ```
-pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize) -> isize {
+pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const u8) -> isize {
 
     let token = current_user_token();
     // 读取到用户空间的应用程序名称（路径）
     let path = translated_str(token, path);
-    // println!("path:{:?},argv:{:?},envp:{:?}",path,argv,envp);
     let mut args_vec: Vec<String> = Vec::new();
     if argv as usize != 0 {
         loop {
@@ -106,7 +105,6 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
                 // 读到下一参数地址为0表示参数结束
                 break;
             } // 否则从用户空间取出参数，压入向量
-//	    println!("envp:{:?},env_str_ptr:{:x?}",envp,env_str_ptr);
             envs_vec.push(translated_str(token, env_str_ptr as *const u8));
             unsafe {
                 envp = envp.add(1);
@@ -255,56 +253,5 @@ pub fn sys_set_tid_address(tidptr: *mut usize) -> isize {
 }
 
 pub fn sys_getuid() -> isize {
-    0
-}
-
-pub fn sys_gettid() -> isize {
-    0
-}
-
-pub fn sys_rt_sigprocmask(how: i32, set: *const usize, oldset: *const usize, _sigsetsize: usize) -> isize {
-    0
-}
-
-pub fn sys_rt_sigreturn(_setptr: *mut usize) -> isize {
-    0
-}
-
-pub fn sys_rt_sigaction() -> isize {
-    0
-}
-
-pub fn sys_rt_sigtimedwait() -> isize {
-    0
-}
-
-pub fn sys_futex() -> isize {
-    0
-}
-
-pub fn sys_geteuid() -> isize {
-    0
-}
-
-pub fn sys_ppoll() -> isize {
-    1
-}
-
-pub const TICKS_PER_SEC: usize = 100;
-pub const MSEC_PER_SEC: usize = 1000;
-pub const USEC_PER_SEC: usize = 1000_000;
-pub const NSEC_PER_SEC: usize = 1000_000_000;
-
-pub const CLOCK_FREQ: usize = 12500000;
-pub fn sys_clock_gettime(_clk_id: usize, ts: *mut u64) -> isize {
-    if ts as usize == 0 {
-        return 0;
-    }
-    let token = current_user_token();
-    let ticks = 0;
-    let sec = (ticks / CLOCK_FREQ) as u64;
-    let nsec = ((ticks % CLOCK_FREQ) * (NSEC_PER_SEC / CLOCK_FREQ)) as u64;
-    *translated_mut(token, ts) = sec;
-    *translated_mut(token, unsafe { ts.add(1) }) = nsec;
     0
 }

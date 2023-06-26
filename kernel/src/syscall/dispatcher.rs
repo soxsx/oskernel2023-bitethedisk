@@ -38,19 +38,9 @@ const SYS_READV: usize = 65;
 const SYS_WRITEV: usize = 66;
 const SYS_EXIT_GROUP: usize = 94;
 const SYS_GETUID: usize = 174;
-const SYS_RT_SIGPROMASK: usize = 135;
-const SYS_RT_SIGACTION: usize = 134;
-const SYS_IOCTL: usize = 29;
-const SYS_FCNTL: usize = 25;
-const SYS_GETEUID: usize = 175;
-const SYS_PPOLL: usize =73;
-const SYS_NEWFSTATAT: usize =79;
-const SYS_CLOCK_GETTIME: usize =113;
-const SYS_GETTID: usize =178;
 
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
-//    println!("syscall:{:?}",syscall_id);
     match syscall_id {
         // TODO: 检查完善
         SYS_CLONE => sys_do_fork(args[0], args[1], args[2], args[3], args[4]),
@@ -58,7 +48,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_EXECVE => sys_exec(
             args[0] as *const u8,
             args[1] as *const usize,
-            args[2] as *const usize,
+            args[2] as *const u8,
         ),
 
         SYS_LINKAT => sys_linkat(
@@ -120,15 +110,6 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
 	SYS_WRITEV => sys_writev(args[0], args[1] as *const usize, args[2]),
 	SYS_EXIT_GROUP => sys_exit_group(args[0] as i32),
 	SYS_GETUID => sys_getuid(),
-	SYS_RT_SIGPROMASK => sys_rt_sigprocmask(args[0] as i32, args[1] as *const usize, args[2] as *const usize, args[3]),
-	SYS_RT_SIGACTION => sys_rt_sigaction(),
-	SYS_IOCTL => sys_ioctl(args[0], args[1], args[2] as *mut u8),
-	SYS_FCNTL => sys_fcntl(args[0] as isize, args[1] as usize, Option::<usize>::from(args[2])),
-	SYS_GETEUID => sys_geteuid(),
-	SYS_PPOLL => sys_ppoll(),
-	SYS_NEWFSTATAT => sys_newfstatat(args[0] as isize, args[1] as *const u8, args[2] as *const usize, args[3]),
-	SYS_CLOCK_GETTIME => sys_clock_gettime(args[0], args[1] as *mut u64),
-	SYS_GETTID => sys_gettid(),
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     }
 }
