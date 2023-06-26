@@ -6,7 +6,7 @@ use super::{pid_alloc, PidHandle, SignalFlags};
 use crate::consts::*;
 use crate::fs::{file::File, Fat32File, Stdin, Stdout};
 use crate::mm::kernel_vmm::acquire_kvmm;
-use crate::mm::memory_set::{LoadedELF, MMAP_BASE,AuxEntry,AT_RANDOM};
+use crate::mm::memory_set::{LoadedELF, MMAP_BASE,AuxEntry,AT_NULL,AT_RANDOM};
 use crate::mm::{
     translated_mut, MapPermission, MemorySet, MmapFlags, MmapManager, MmapProts, PageTableEntry,
     PhysPageNum, VirtAddr, VirtPageNum,

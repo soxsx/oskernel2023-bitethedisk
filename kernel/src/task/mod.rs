@@ -15,7 +15,7 @@ use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
 pub use info::{CloneFlags, Utsname, UTSNAME};
-pub use manager::add_task;
+pub use manager::{add_task, pid2task};
 pub use pid::{pid_alloc, PidHandle};
 pub use processor::{
     current_task, current_trap_cx, current_user_token, schedule::*, take_current_task,

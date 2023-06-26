@@ -1015,3 +1015,34 @@ pub fn sys_newfstatat(dirfd: isize, pathname: *const u8, satabuf: *const usize, 
         }
     }
 }
+
+pub fn sys_sendfile(out_fd: usize, in_fd: usize, offset: usize, _count: usize) -> isize {
+    // println!(
+    //     "[DEBUG] enter sys_sendfile: out_fd:{}, in_fd:{}, offset:{}, count:{}",
+    //     out_fd, in_fd, offset, _count
+    // );
+    let task = current_task().unwrap();
+    let inner = task.lock();
+    let fd_table = inner.fd_table.clone();
+    drop(inner);
+    let mut total_write_size = 0usize;
+    if offset as usize != 0 {
+        unimplemented!();
+    } else {
+        let in_file = fd_table[in_fd].as_ref().unwrap();
+        let out_file = fd_table[out_fd].as_ref().unwrap();
+        let mut data_buffer;
+        loop {
+            data_buffer = in_file.read_kernel_space();
+            // println!("data_buffer:{:?}",data_buffer);
+            let len = data_buffer.len();
+            if len == 0 {
+                break;
+            } else {
+                out_file.write_kernel_space(data_buffer);
+                total_write_size += len;
+            }
+        }
+        total_write_size as isize
+    }
+}

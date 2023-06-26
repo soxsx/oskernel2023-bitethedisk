@@ -43,10 +43,15 @@ const SYS_RT_SIGACTION: usize = 134;
 const SYS_IOCTL: usize = 29;
 const SYS_FCNTL: usize = 25;
 const SYS_GETEUID: usize = 175;
-const SYS_PPOLL: usize =73;
-const SYS_NEWFSTATAT: usize =79;
-const SYS_CLOCK_GETTIME: usize =113;
-const SYS_GETTID: usize =178;
+const SYS_PPOLL: usize = 73;
+const SYS_NEWFSTATAT: usize = 79;
+const SYS_CLOCK_GETTIME: usize = 113;
+const SYS_GETTID: usize = 178;
+const SYS_SENDFILE: usize = 71;
+const SYS_SYSLOG: usize = 116;
+const SYS_FACCESSAT: usize = 48;
+const SYS_SYSINFO: usize =179;
+const SYS_KILL: usize =129;
 
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
@@ -129,6 +134,11 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
 	SYS_NEWFSTATAT => sys_newfstatat(args[0] as isize, args[1] as *const u8, args[2] as *const usize, args[3]),
 	SYS_CLOCK_GETTIME => sys_clock_gettime(args[0], args[1] as *mut u64),
 	SYS_GETTID => sys_gettid(),
+	SYS_SENDFILE => sys_sendfile(args[0], args[1], args[2], args[3]),
+	SYS_SYSLOG => 0,
+	SYS_FACCESSAT => 0,
+	SYS_SYSINFO => 0,
+	SYS_KILL => sys_kill(args[0], args[1] as u32),
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
     match ret {

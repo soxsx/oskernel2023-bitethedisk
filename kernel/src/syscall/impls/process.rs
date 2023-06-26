@@ -5,7 +5,7 @@ use crate::fs::{open, OpenFlags};
 use crate::mm::{translated_mut, translated_ref, translated_str};
 use crate::task::{
     add_task, current_task, current_user_token, exit_current_and_run_next,
-    suspend_current_and_run_next,
+    suspend_current_and_run_next, pid2task, SignalFlags,
 };
 pub use crate::task::{CloneFlags, Utsname, UTSNAME};
 
@@ -307,4 +307,21 @@ pub fn sys_clock_gettime(_clk_id: usize, ts: *mut u64) -> isize {
     *translated_mut(token, ts) = sec;
     *translated_mut(token, unsafe { ts.add(1) }) = nsec;
     0
+}
+pub fn sys_kill(pid: usize, signal: u32) -> isize {
+    // println!("[KERNEL] enter sys_kill: pid:{} send to pid:{}, signal:0x{:x}",current_task().unwrap().pid.0, pid, signal);
+    if signal == 0 {
+        return 0;
+    }
+    let signal = 1 << signal;
+    if let Some(task) = pid2task(pid) {
+        if let Some(flag) = SignalFlags::from_bits(signal) {
+            task.lock().signals |= flag;
+            0
+        } else {
+            panic!("[DEBUG] sys_kill: unsupported signal");
+        }
+    } else {
+        1
+    }
 }
