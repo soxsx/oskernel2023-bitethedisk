@@ -171,7 +171,7 @@ impl MmapInfo {
         fd_table: Vec<Option<Arc<dyn File>>>,
         token: usize,
     ) {
-        let offset: usize = self.offset - self.oaddr.0 + va.0;
+        let offset: usize = self.offset + va.0 - self.oaddr.0;
         self.map_file(va, PAGE_SIZE, offset, fd_table, token);
     }
 
