@@ -1,6 +1,6 @@
 //! 根据 SYS_id 分发具体系统调用
 
-use super::impls::*;
+use super::{error::SyscallError, impls::*};
 
 // 系统调用号
 const SYS_GETCWD: usize = 17;
@@ -36,8 +36,7 @@ const SYS_NANOSLEEP: usize = 101;
 
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
-    match syscall_id {
-        // TODO: 检查完善
+    let ret: core::result::Result<isize, SyscallError> = match syscall_id {
         SYS_CLONE => sys_do_fork(args[0], args[1], args[2], args[3], args[4]),
 
         SYS_EXECVE => sys_exec(
@@ -102,5 +101,13 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_WAIT4 => sys_wait4(args[0] as isize, args[1] as *mut i32),
 
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
+    };
+    match ret {
+        Ok(success) => success,
+        Err(err) => {
+            let error_code = err.error_code();
+            warn!("{}", err);
+            error_code
+        }
     }
 }

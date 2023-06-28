@@ -11,6 +11,8 @@ pub use crate::task::{CloneFlags, Utsname, UTSNAME};
 
 use alloc::{string::String, sync::Arc, vec::Vec};
 
+use super::super::error::*;
+
 /// #define SYS_clone 220
 ///
 /// 功能：创建一个子进程；
@@ -34,7 +36,7 @@ pub fn sys_do_fork(
     _ptid: usize,
     _tls: usize,
     _ctid: usize,
-) -> isize {
+) -> Result<isize> {
     let current_task = current_task().unwrap();
     let new_task = current_task.fork(false);
 
@@ -58,7 +60,7 @@ pub fn sys_do_fork(
         core::arch::asm!("sfence.vma");
         core::arch::asm!("fence.i");
     }
-    new_pid as isize // 对于父进程，返回值是子进程的 PID
+    Ok(new_pid as isize) // 对于父进程，返回值是子进程的 PID
 }
 
 /// #define SYS_execve 221
@@ -77,7 +79,7 @@ pub fn sys_do_fork(
 /// const char *path, char *const argv[], char *const envp[];
 /// int ret = syscall(SYS_execve, path, argv, envp);
 /// ```
-pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const u8) -> isize {
+pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const u8) -> Result<isize> {
     let token = current_user_token();
     // 读取到用户空间的应用程序名称（路径）
     let path = translated_str(token, path);
@@ -116,13 +118,12 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const u8) ->
 
     let inner = task.lock();
     let new_path = inner.current_path.clone().join_string(path);
-    if let Some(app_inode) = open(new_path, OpenFlags::O_RDONLY, CreateMode::empty()) {
+    if let Some(app_inode) = open(new_path.clone(), OpenFlags::O_RDONLY, CreateMode::empty()) {
         drop(inner);
         task.exec(app_inode, args_vec, envs_vec);
-
-        0 as isize
+        Ok(0 as isize)
     } else {
-        -1
+        Err(SyscallError::OpenInodeFailed(-1, new_path))
     }
 }
 
@@ -142,7 +143,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const u8) ->
 /// pid_t pid, int *status, int options;
 /// pid_t ret = syscall(SYS_wait4, pid, status, options);
 /// ```
-pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> isize {
+pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result<isize> {
     let task = current_task().unwrap();
 
     let inner = task.lock();
@@ -153,7 +154,7 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> isize {
         .iter()
         .any(|p| pid == -1 || pid as usize == p.pid())
     {
-        return -1;
+        return Err(SyscallError::PidNotFound(-1, pid));
     }
     drop(inner);
 
@@ -183,7 +184,7 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> isize {
             if exit_code_ptr as usize != 0 {
                 *translated_mut(inner.memory_set.token(), exit_code_ptr) = exit_code << 8;
             }
-            return found_pid as isize;
+            return Ok(found_pid as isize);
         } else {
             // 如果找不到的话则放权等待
             drop(inner); // 手动释放 TaskControlBlock 全局可变部分
@@ -207,7 +208,7 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> isize {
 /// ```
 pub fn sys_exit(exit_code: i32) -> ! {
     exit_current_and_run_next(exit_code);
-    panic!("Unreachable in sys_exit!");
+    unreachable!("unreachable in sys_exit!");
 }
 
 /// #define SYS_getppid 173
@@ -221,8 +222,8 @@ pub fn sys_exit(exit_code: i32) -> ! {
 /// ```c
 /// pid_t ret = syscall(SYS_getppid);
 /// ```
-pub fn sys_getppid() -> isize {
-    current_task().unwrap().tgid as isize
+pub fn sys_getppid() -> Result<isize> {
+    Ok(current_task().unwrap().tgid as isize)
 }
 
 /// #define SYS_getpid 172
@@ -236,6 +237,6 @@ pub fn sys_getppid() -> isize {
 /// ```c
 /// pid_t ret = syscall(SYS_getpid);
 /// ```
-pub fn sys_getpid() -> isize {
-    current_task().unwrap().pid.0 as isize
+pub fn sys_getpid() -> Result<isize> {
+    Ok(current_task().unwrap().pid.0 as isize)
 }

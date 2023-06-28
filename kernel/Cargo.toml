@@ -17,5 +17,6 @@ virtio-drivers = "0.4.0"
 linked_list_allocator = "0.10.5"
 log = "0.4"
 paste = "1"
+thiserror = { version = "1.0", package = "thiserror-core", default-features = false }
 
 fat32 = { path = "../fat32" }

@@ -5,6 +5,8 @@ use crate::{
     task::current_task,
 };
 
+use super::super::error::*;
+
 /// #define SYS_brk 214
 ///
 /// 功能：修改数据段的大小；
@@ -17,14 +19,14 @@ use crate::{
 /// uintptr_t brk;
 /// uintptr_t ret = syscall(SYS_brk, brk);
 /// ```
-pub fn sys_brk(brk: usize) -> isize {
+pub fn sys_brk(brk: usize) -> Result<isize> {
     let task = current_task().unwrap();
     if brk == 0 {
-        task.grow_proc(0) as isize
+        Ok(task.grow_proc(0) as isize)
     } else {
         let former_addr = task.grow_proc(0);
         let grow_size: isize = (brk - former_addr) as isize;
-        current_task().unwrap().grow_proc(grow_size) as isize
+        Ok(current_task().unwrap().grow_proc(grow_size) as isize)
     }
 }
 
@@ -40,10 +42,9 @@ pub fn sys_brk(brk: usize) -> isize {
 /// void *start, size_t len
 /// int ret = syscall(SYS_munmap, start, len);
 /// ```
-pub fn sys_munmap(addr: usize, length: usize) -> isize {
+pub fn sys_munmap(addr: usize, length: usize) -> Result<isize> {
     let task = current_task().unwrap();
-
-    task.munmap(addr, length)
+    Ok(task.munmap(addr, length))
 }
 
 /// #define SYS_mmap 222
@@ -72,9 +73,9 @@ pub fn sys_mmap(
     flags: usize,
     fd: isize,
     offset: usize,
-) -> isize {
+) -> Result<isize> {
     if length == 0 {
-        panic!("mmap:len == 0");
+        return Err(SyscallError::MmapLengthNotBigEnough(-1));
     }
 
     let prot = MmapProts::from_bits(prot).expect("unsupported mmap prot");
@@ -83,5 +84,5 @@ pub fn sys_mmap(
     let task = current_task().unwrap();
     let result_addr = task.mmap(addr, length, prot, flags, fd, offset);
 
-    result_addr as isize
+    Ok(result_addr as isize)
 }

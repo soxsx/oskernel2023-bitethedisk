@@ -4,6 +4,7 @@
 #![feature(panic_info_message)]
 #![feature(alloc_error_handler)]
 #![feature(slice_from_ptr_range)]
+#![feature(error_in_core)]
 
 #[macro_use]
 extern crate alloc;
