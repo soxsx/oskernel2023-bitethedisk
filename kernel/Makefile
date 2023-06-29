@@ -50,8 +50,8 @@ run: kernel-dbg fat32img
 #                      Debug build & run.                        #
 ##################################################################
 kernel-debug: initproc
-	@cargo clean
-	@cargo build
+	# @cargo clean
+	@LOG_LV=debug cargo build
 
 debug-server: kernel-debug fat32img
 	@$(QEMU) \

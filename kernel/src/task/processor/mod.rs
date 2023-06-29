@@ -1,7 +1,7 @@
 //! processor 提供了一系列的抽象
-//! 
+//!
 //! CPU 被抽象为 [`cpu::Cpu`] 对象，指代一个实际的具有 id 的物理 CPU
-//! 
+//!
 //! [`Processor`] 是一个物理上的计算单元，和一个具体的 [`cpu::Cpu`] 绑定，
 //! 它事实上负责进程 [`TaskControlBlock`] 的运行和进程上下文 [`TaskContext`] 的切换
 

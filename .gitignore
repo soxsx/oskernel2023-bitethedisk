@@ -5,3 +5,4 @@ temp/
 sbi-qemu
 kernel-qemu
 temp
+*.log

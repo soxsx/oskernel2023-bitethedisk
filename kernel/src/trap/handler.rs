@@ -109,8 +109,8 @@ pub fn user_trap_handler() -> ! {
 
         // 时间片到了
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
-            set_next_trigger();
             suspend_current_and_run_next();
+            set_next_trigger();
         }
 
         _ => panic!(

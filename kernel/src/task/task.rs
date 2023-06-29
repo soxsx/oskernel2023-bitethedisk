@@ -1,3 +1,5 @@
+use core::fmt::Debug;
+
 use super::kernel_stack::KernelStack;
 use super::TaskContext;
 use super::{pid_alloc, PidHandle, SignalFlags};
@@ -32,6 +34,14 @@ pub struct TaskControlBlock {
     pub kernel_stack: KernelStack,
 
     inner: Mutex<TaskControlBlockInner>,
+}
+
+impl Debug for TaskControlBlock {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("TaskControlBlock")
+            .field("pid", &self.pid.0)
+            .finish()
+    }
 }
 
 pub struct TaskControlBlockInner {
@@ -543,7 +553,7 @@ impl TaskControlBlock {
 /// |`Ready`|准备运行|
 /// |`Running`|正在运行|
 /// |`Zombie`|僵尸态|
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub enum TaskStatus {
     Ready,   // 准备运行
     Running, // 正在运行
