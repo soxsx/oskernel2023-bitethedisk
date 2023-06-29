@@ -16,7 +16,6 @@ use crate::{
         current_add_signal, current_task, current_trap_cx, suspend_current_and_run_next,
         SignalFlags,
     },
-    timer::set_next_trigger,
 };
 
 use super::{set_kernel_trap_entry, trap_return};
@@ -110,7 +109,6 @@ pub fn user_trap_handler() -> ! {
         // 时间片到了
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             suspend_current_and_run_next();
-            set_next_trigger();
         }
 
         _ => panic!(

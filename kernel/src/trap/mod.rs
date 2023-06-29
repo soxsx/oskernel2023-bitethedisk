@@ -1,13 +1,13 @@
-//! trap
-
 mod context;
 pub mod handler;
 
 use self::handler::kernel_trap_handler;
 use crate::consts::{TRAMPOLINE, TRAP_CONTEXT};
 use crate::task::{check_current_signals, current_user_token, exit_current_and_run_next};
+use crate::timer::set_next_trigger;
 use core::arch::{asm, global_asm};
 use log::debug;
+use riscv::register::scause::{self, Trap};
 use riscv::register::{mtvec::TrapMode, sie, stvec};
 
 pub use context::TrapContext;
@@ -50,9 +50,14 @@ pub fn trap_return() -> ! {
     set_user_trap_entry();
 
     let user_satp = current_user_token();
+
     extern "C" {
         fn user_trapvec();
         fn user_trapret();
+    }
+
+    if is_time_intr_trap() {
+        set_next_trigger();
     }
 
     let trapret_addr = user_trapret as usize - user_trapvec as usize + TRAMPOLINE;
@@ -66,4 +71,10 @@ pub fn trap_return() -> ! {
             options(noreturn)
         );
     }
+}
+
+/// 是否是由于时间片耗尽导致的 trap
+fn is_time_intr_trap() -> bool {
+    let scause = scause::read();
+    scause.cause() == Trap::Interrupt(scause::Interrupt::SupervisorTimer)
 }
