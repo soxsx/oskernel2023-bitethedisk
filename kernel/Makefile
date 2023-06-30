@@ -35,7 +35,7 @@ fat32img:
 
 	@cd ../workspace && make image
 
-run: kernel-dbg fat32img
+run: kernel-dbg
 	@$(QEMU) \
 	 	-machine virt \
 		-kernel $(KERNEL_ELF) \
@@ -53,7 +53,7 @@ kernel-debug: initproc
 	# @cargo clean
 	@LOG_LV=debug cargo build
 
-debug-server: kernel-debug fat32img
+debug-server: kernel-debug
 	@$(QEMU) \
 	 	-machine virt \
 		-kernel $(KERNEL_ELF_DBG) \
