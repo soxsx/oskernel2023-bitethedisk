@@ -322,6 +322,6 @@ pub fn sys_kill(pid: usize, signal: u32) -> isize {
             panic!("[DEBUG] sys_kill: unsupported signal");
         }
     } else {
-        1
+        -1
     }
 }
