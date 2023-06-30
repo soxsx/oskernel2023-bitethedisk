@@ -103,9 +103,32 @@ impl Fat32File {
         let inner = self.inner.lock();
         inner.inode.clear()
     }
+
+    pub fn delete_direntry(&self) {
+        let inner = self.inner.lock();
+        inner.inode.clear_direntry();
+    }
+
     pub fn file_size(&self) -> usize {
         let inner = self.inner.lock();
         inner.inode.file_size() as usize
+    }
+
+    pub fn rename(&self, new_path: AbsolutePath, flags: OpenFlags) {
+	// duplicate a new file, and set file cluster and file size
+	let inner=self.inner.lock();
+	// check file exits
+	let new_file=open(new_path, flags, CreateMode::empty()).unwrap();
+	let new_inner=new_file.inner.lock();
+	let first_cluster=inner.inode.first_cluster();
+	let file_size=inner.inode.file_size();
+
+	new_inner.inode.set_first_cluster(first_cluster);
+	new_inner.inode.set_file_size(file_size);
+
+	drop(inner);
+	// clear old direntry
+	self.delete_direntry();
     }
 }
 
