@@ -271,7 +271,14 @@ impl VirFile {
         // let end = (offset + buf.len()).min(file_size);
         // if offset > file_size || buf.len() == 0 {return 0;}
 
-        let end = offset + buf.len();
+	// TAG for lzm
+	// 不能超过文件长度
+	let end = if self.file_size() == 0 {
+	    offset + buf.len()
+	}else{
+	    self.file_size().min(offset + buf.len())
+	};
+	// let end = offset + buf.len();
 
         if buf.len() == 0 {
             return 0;

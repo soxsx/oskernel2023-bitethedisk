@@ -13,6 +13,7 @@
 //!
 //! 注意: Fat32 规定目录文件的大小为 0
 
+
 use super::entry::{LongDirEntry, ShortDirEntry};
 use super::vfs::{DirEntryPos, VirFile, VirFileType};
 
@@ -318,7 +319,12 @@ impl VirFile {
             // 判断名字是否一样
             if !sde.is_deleted() && name == sde.get_name_uppercase() {
                 let sde_pos = self.dir_entry_pos(index).unwrap();
-                let lde_pos_vec: Vec<DirEntryPos> = Vec::new();
+		// TAG for lzm
+		// 必须添加lde，否则delete时不能清空lde
+		let lde_pos = self.dir_entry_pos(index - DIRENT_SIZE).unwrap();
+                let mut lde_pos_vec: Vec<DirEntryPos> = Vec::new();
+		lde_pos_vec.push(lde_pos);
+
                 let file_type = if sde.attr() == ATTR_DIRECTORY {
                     VirFileType::Dir
                 } else {
