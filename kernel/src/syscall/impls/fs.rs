@@ -239,10 +239,8 @@ pub fn sys_openat(fd: isize, filename: *const u8, flags: u32, mode: u32) -> Resu
     let mut inner = task.lock();
 
     let path = translated_str(token, filename);
-
     let mode = CreateMode::from_bits(mode).map_or(CreateMode::empty(), |m| m);
     let flags = OpenFlags::from_bits(flags).map_or(OpenFlags::empty(), |f| f);
-
     if fd == AT_FDCWD {
         // 相对路径, 在当前工作目录
         let open_path = inner.get_work_path().join_string(path);
@@ -789,6 +787,7 @@ pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> isize {
         drop(inner);
         for _ in 0..iovcnt {
             let iovp = unsafe { &*(addr as *const Iovec) };
+	    // println!("[DEBUG] sys_readv iov:{:?}",iovp);
             let len = iovp.iov_len.min(file_size-total_read_len);
             total_read_len += file.read(UserBuffer::wrap(translated_bytes_buffer(token, iovp.iov_base as *const u8, len)));
             addr += size_of::<Iovec>();
@@ -800,11 +799,12 @@ pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> isize {
 }
 
 pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> isize {
-//    println!("[DEBUG] enter sys_writev: fd:{}, iovp:0x{:x}, iovcnt:{}",fd,iovp as usize,iovcnt);
-//    println!("time:{}",get_time_ms());
+    // println!("[DEBUG] enter sys_writev: fd:{}, iovp:0x{:x}, iovcnt:{}",fd,iovp as usize,iovcnt);
+    // println!("time:{}",get_time_ms());
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.lock();
+    let mut  write_data: Vec<&'static mut [u8]>=Vec::new();
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
         return -1;
@@ -814,27 +814,26 @@ pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> isize {
         if !file.writable() {
             return -1;
         }
-//       	println!("name:{}",file.name());
-//	println!("!!{:?}",translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>()));
         let iovp_buf_p = translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>())[0].as_ptr();
         let mut addr = iovp_buf_p as *const _ as usize;
         let mut total_write_len = 0;
         for _ in 0..iovcnt {
             let iovp = unsafe { &*(addr as *const Iovec) };
-//	    println!("iovp:{:?}",iovp);
 	    if iovp.iov_len<=0{
 		addr += size_of::<Iovec>();
 		continue;
 	    }
-            total_write_len += file.write(UserBuffer::wrap(translated_bytes_buffer(
+	    write_data.extend(translated_bytes_buffer(
                 token,
                 iovp.iov_base as *const u8,
                 iovp.iov_len,
-            )));
+            ));
+
             addr += size_of::<Iovec>();
         }
+        total_write_len = file.write(UserBuffer::wrap(write_data));
         drop(inner);
-//	println!("size:{:?}",total_write_len);
+
         total_write_len as isize
     } else {
         -1
@@ -1045,5 +1044,132 @@ pub fn sys_sendfile(out_fd: usize, in_fd: usize, offset: usize, _count: usize) -
             }
         }
         total_write_size as isize
+    }
+}
+
+pub fn sys_utimensat(dirfd: isize, pathname: *const u8, time: *const usize, flags: usize) -> isize {
+    // println!(
+    //     "[DEBUG] enter sys_utimensat: dirfd:{}, pathname:{}, time:{}, flags:{}",
+    //     dirfd, pathname as usize, time as usize, flags
+    // );
+    let token = current_user_token();
+    let task = current_task().unwrap();
+    let inner = task.lock();
+
+    _ = flags;
+
+    if dirfd == AT_FDCWD {
+        if pathname as usize == 0 {
+            unimplemented!();
+        } else {
+            let pathname = translated_str(token, pathname);
+	    let path=inner.get_work_path().join_string(pathname);
+            if let Some(_file) = open(path, OpenFlags::O_RDWR, CreateMode::empty()) {
+                unimplemented!(); // 记得重新制作文件镜像
+            } else {
+                -ENOENT
+            }
+        }
+    } else {
+        if pathname as usize == 0 {
+            if dirfd >= inner.fd_table.len() as isize || dirfd < 0 {
+                return 0;
+            }
+            if let Some(file) = &inner.fd_table[dirfd as usize] {
+                let timespec_buf = translated_bytes_buffer(token, time as *const u8, size_of::<Kstat>()).pop().unwrap();
+                let addr = timespec_buf.as_ptr() as *const _ as usize;
+                let timespec = unsafe { &*(addr as *const Timespec) };
+                file.set_time(timespec);
+                0
+            } else {
+                -1
+            }
+        } else {
+            unimplemented!();
+        }
+    }
+}
+
+// 目前仅支持同当前目录下文件名称更改
+pub fn sys_renameat2(old_dirfd: isize, old_path: *const u8, new_dirfd: isize, new_path: *const u8, _flags: u32) -> isize {
+    let task = current_task().unwrap();
+    let token = current_user_token();
+    let inner = task.lock();
+    let old_path = translated_str(token, old_path);
+    let new_path = translated_str(token, new_path);
+
+    // println!(
+    //     "[DEBUG] enter sys_renameat2: old_dirfd:{}, old_path:{}, new_dirfd:{}, new_path:{}, flags:0x{:x}",
+    //     old_dirfd, old_path, new_dirfd, new_path, _flags
+    // );
+    let old_path=inner.get_work_path().join_string(old_path);
+
+    if old_dirfd == AT_FDCWD {
+        if let Some(old_file) = open(old_path, OpenFlags::O_RDWR, CreateMode::empty()) {
+            let flag = {
+                if old_file.is_dir() {
+                    OpenFlags::O_RDWR | OpenFlags::O_CREATE | OpenFlags::O_DIRECTROY
+                } else {
+                    OpenFlags::O_RDWR | OpenFlags::O_CREATE
+                }
+            };
+            if new_dirfd == AT_FDCWD {
+		let new_path=inner.get_work_path().join_string(new_path);
+		old_file.rename(new_path, flag);
+		0
+            } else {
+                unimplemented!();
+            }
+        } else {
+            panic!("can't find old file");
+        }
+    } else {
+        unimplemented!();
+    }
+}
+
+
+bitflags! {
+    #[derive(PartialEq, Eq)]
+    pub struct SeekFlags: usize {
+        const SEEK_SET = 0;   // 参数 offset 即为新的读写位置
+        const SEEK_CUR = 1;   // 以目前的读写位置往后增加 offset 个位移量
+        const SEEK_END = 2;   // 将读写位置指向文件尾后再增加 offset 个位移量
+    }
+}
+
+pub fn sys_lseek(fd: usize, off_t: usize, whence: usize) -> isize {
+    // println!("[DEBUG] enter sys_lseek: fd:{},off_t:{},whence:{}",fd,off_t,whence);
+
+    let task = current_task().unwrap();
+    let inner = task.lock();
+    // 文件描述符不合法
+    if fd >= inner.fd_table.len() {
+        return -1;
+    }
+
+    if let Some(file) = &inner.fd_table[fd] {
+        let flag = SeekFlags::from_bits(whence).unwrap();
+        match flag {
+            SeekFlags::SEEK_SET => {
+                file.set_offset(off_t);
+                off_t as isize
+            }
+            SeekFlags::SEEK_CUR => {
+                let current_offset = file.offset();
+                file.set_offset(off_t + current_offset);
+                (off_t + current_offset) as isize
+            }
+            SeekFlags::SEEK_END => {
+                let end = file.file_size();
+                file.set_offset(end + off_t);
+                (end + off_t) as isize
+            }
+            // flag wrong
+            _ => panic!("sys_lseek: unsupported whence!"),
+        }
+    } else {
+        // file not exists
+        -3
     }
 }

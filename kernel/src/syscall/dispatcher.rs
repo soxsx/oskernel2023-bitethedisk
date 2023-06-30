@@ -1,5 +1,6 @@
 //! 根据 SYS_id 分发具体系统调用
 
+
 use super::{error::SyscallError, impls::*};
 
 // 系统调用号
@@ -52,11 +53,14 @@ const SYS_SYSLOG: usize = 116;
 const SYS_FACCESSAT: usize = 48;
 const SYS_SYSINFO: usize =179;
 const SYS_KILL: usize =129;
+const SYS_UTIMENSAT: usize =88;
+const SYS_RENAMEAT2: usize = 276;
+const SYS_LSEEK: usize = 62;
 
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
-    let ret: core::result::Result<isize, SyscallError> = match syscall_id {
-	// println!("syscall:{:?}",syscall_id);
+    // println!("[DEBUG] syscall:{:?}",syscall_id);
+    match syscall_id {
         // TODO: 检查完善
         SYS_CLONE => sys_do_fork(args[0], args[1], args[2], args[3], args[4]),
 
@@ -139,6 +143,10 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
 	SYS_FACCESSAT => 0,
 	SYS_SYSINFO => 0,
 	SYS_KILL => sys_kill(args[0], args[1] as u32),
+	SYS_UTIMENSAT => sys_utimensat(args[0] as isize, args[1] as *const u8, args[2] as *const usize, args[3]),
+	SYS_RENAMEAT2 => sys_renameat2(args[0] as isize, args[1] as *const u8, args[2] as isize, args[3] as *const u8, args[4] as u32),
+	SYS_LSEEK => sys_lseek(args[0], args[1], args[2]),
+
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
     match ret {
