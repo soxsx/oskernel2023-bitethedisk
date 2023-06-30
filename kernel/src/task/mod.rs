@@ -10,6 +10,7 @@ mod switch; // 任务上下文切换模块
 mod task;
 
 use alloc::sync::Arc;
+use fat32::sync_all;
 use manager::remove_from_pid2task;
 use task::{TaskControlBlock, TaskStatus};
 
@@ -66,6 +67,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // do not move to its parent but under initproc
 
     if task.pid() == 0 {
+	sync_all();
         panic!("initproc return!");
     }
 
