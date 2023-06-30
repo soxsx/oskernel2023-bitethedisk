@@ -777,9 +777,10 @@ pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> isize {
         if !file.readable() {
             return -1;
         }
-        let iovp_buf_p = translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>()).as_ptr();
+        let iovp_buf_p = translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>())[0].as_ptr();
         let file = file.clone();
         let file_size = file.file_size();
+	// println!("[DEBUG] sys_readv file_size:{:?}",file_size);
         if file_size == 0 {
             warn!("[WARNING] sys_readv: file_size is zero!");
         }
