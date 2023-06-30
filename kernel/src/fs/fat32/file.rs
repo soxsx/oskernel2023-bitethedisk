@@ -17,7 +17,7 @@ pub struct Fat32File {
     readable: bool, // 该文件是否允许通过 sys_read 进行读
     writable: bool, // 该文件是否允许通过 sys_write 进行写
     pub inner: Mutex<Fat32FileInner>,
-    path: AbsolutePath,
+    path: AbsolutePath, // contain file name
     name: String,
 }
 
@@ -186,7 +186,11 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Option<A
             Ok(inode) => {
                 // 如果文件已存在则清空
                 let name = pathv.pop().unwrap();
-                inode.clear();
+		// TAG for lzm
+		// 不能清空 direntry
+                inode.clear_content();
+		// TAG for lzm
+		// 丢失 OpenFlag
                 Some(Arc::new(Fat32File::new(
                     readable,
                     writable,
@@ -207,11 +211,11 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Option<A
                 match ROOT_INODE.find(pathv.clone()) {
                     Ok(parent) => match parent.create(name, create_type as VirFileType) {
                         Ok(inode) => Some(Arc::new(Fat32File::new(
-                            readable,
-                            writable,
-                            Arc::new(inode),
-                            path.clone(),
-                            name.to_string(),
+			    readable,
+			    writable,
+			    Arc::new(inode),
+			    path.clone(),
+			    name.to_string(),
                         ))),
                         Err(_) => None,
                     },
@@ -313,8 +317,10 @@ impl File for Fat32File {
         let file_size = self.file_size();
 
         // TODO 如果是目录文件
+	// TAG for lzm
+	// empty file
         if file_size == 0 {
-            todo!("handle dir typed file")
+	    return 0;
         }
 
         if offset > file_size {
