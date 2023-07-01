@@ -1,6 +1,6 @@
 use core::cell::RefMut;
 
-use alloc::sync::Arc;
+use alloc::{sync::Arc, vec::Vec};
 
 use crate::task::{processor::cpu::Cpu, task::TaskControlBlock, TaskContext};
 
@@ -18,6 +18,41 @@ pub struct Processor {
     current: Option<Arc<TaskControlBlock>>,
     /// 当前处理器上的 idle 控制流的任务上下文
     idle_task_cx: TaskContext,
+
+    /// 挂起的进程，需要在 [`run_tasks`] 检查是否达到可以运行的状态
+    ///
+    /// [`run_tasks`]: super::schedule::run_tasks
+    hq: HangUpQueue,
+}
+
+pub struct HangingTask {
+    ready: bool,
+    inner: Arc<TaskControlBlock>,
+}
+
+impl HangingTask {
+    pub fn new(task: Arc<TaskControlBlock>) -> Self {
+        Self {
+            ready: false,
+            inner: task,
+        }
+    }
+
+    pub fn is_ready(mut self, checker: &dyn Fn(&mut Self) -> bool) -> bool {
+        checker(&mut self)
+    }
+}
+
+pub struct HangUpQueue(pub Vec<HangingTask>);
+
+impl HangUpQueue {
+    pub const fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    pub fn try_fetch(&mut self) {
+        todo!()
+    }
 }
 
 impl Processor {
@@ -25,6 +60,7 @@ impl Processor {
         Self {
             current: None,
             idle_task_cx: TaskContext::empty(),
+            hq: HangUpQueue::new(),
         }
     }
 
@@ -44,6 +80,12 @@ impl Processor {
 
     pub fn current_mut(&mut self) -> &mut Option<Arc<TaskControlBlock>> {
         &mut self.current
+    }
+}
+
+impl Default for Processor {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
