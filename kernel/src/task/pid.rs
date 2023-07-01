@@ -8,7 +8,7 @@
 use alloc::vec::Vec;
 
 #[cfg(not(feature = "multi_harts"))]
-use crate::cell::SyncRefCell;
+use crate::cell::sync_cell::SyncRefCell;
 #[cfg(feature = "multi_harts")]
 use spin::Mutex;
 
