@@ -35,6 +35,7 @@ mod syscall;
 mod task;
 mod timer;
 mod trap;
+mod cell;
 
 use core::{arch::global_asm, slice};
 use riscv::register::sstatus::{set_fs, FS};

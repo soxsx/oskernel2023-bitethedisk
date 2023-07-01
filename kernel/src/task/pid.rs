@@ -1,15 +1,25 @@
 //! 进程标识符
-//! 
+//!
 //! 在多核环境下，每个 [`Cpu`] 都缓存了一定数量的 PID，以减少进程创建获取 PID 时
 //! 频繁加锁所带来的性能损耗
-//! 
+//!
 //! [`Cpu`]: crate::task::processor::cpu::Cpu
 
 use alloc::vec::Vec;
+
+#[cfg(not(feature = "multi_harts"))]
+use crate::cell::SyncRefCell;
+#[cfg(feature = "multi_harts")]
 use spin::Mutex;
 
+#[cfg(feature = "multi_harts")]
 lazy_static! {
     static ref PID_ALLOCATOR: Mutex<PidAllocator> = Mutex::new(PidAllocator::new());
+}
+
+#[cfg(not(feature = ""))]
+lazy_static! {
+    static ref PID_ALLOCATOR: SyncRefCell<PidAllocator> = SyncRefCell::new(PidAllocator::new());
 }
 
 /// 栈式进程标识符分配器
@@ -57,7 +67,10 @@ impl PidAllocator {
 
 impl Drop for PidHandle {
     fn drop(&mut self) {
+        #[cfg(feature = "multi_harts")]
         PID_ALLOCATOR.lock().dealloc(self.0);
+        #[cfg(not(feature = "multi_harts"))]
+        PID_ALLOCATOR.borrow_mut().dealloc(self.0);
     }
 }
 
@@ -77,6 +90,6 @@ pub fn pid_alloc() -> PidHandle {
 
     #[cfg(not(feature = "multi_harts"))]
     {
-        PID_ALLOCATOR.lock().alloc()
+        PID_ALLOCATOR.borrow_mut().alloc()
     }
 }
