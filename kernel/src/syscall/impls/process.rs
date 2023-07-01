@@ -97,7 +97,6 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const u8) ->
             }
         }
     }
-
     // 环境变量
     let mut envs_vec: Vec<String> = Vec::new();
     if envp as usize != 0 {
@@ -211,6 +210,12 @@ pub fn sys_exit(exit_code: i32) -> ! {
     unreachable!("unreachable in sys_exit!");
 }
 
+pub fn sys_exit_group(exit_code: i32) -> ! {
+    exit_current_and_run_next(exit_code);
+    panic!("Unreachable in sys_exit!");
+}
+
+
 /// #define SYS_getppid 173
 ///
 /// 功能：获取父进程ID；
@@ -239,4 +244,14 @@ pub fn sys_getppid() -> Result<isize> {
 /// ```
 pub fn sys_getpid() -> Result<isize> {
     Ok(current_task().unwrap().pid.0 as isize)
+}
+
+pub fn sys_set_tid_address(tidptr: *mut usize) -> isize {
+    let token = current_user_token();
+    *translated_mut(token, tidptr) = 0 as usize;
+    0
+}
+
+pub fn sys_getuid() -> isize {
+    0
 }

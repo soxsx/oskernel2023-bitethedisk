@@ -6,7 +6,7 @@ use super::{pid_alloc, PidHandle, SignalFlags};
 use crate::consts::*;
 use crate::fs::{file::File, Fat32File, Stdin, Stdout};
 use crate::mm::kernel_vmm::acquire_kvmm;
-use crate::mm::memory_set::{LoadedELF, MMAP_BASE};
+use crate::mm::memory_set::{LoadedELF, MMAP_BASE,AuxEntry,AT_RANDOM};
 use crate::mm::{
     translated_mut, MapPermission, MemorySet, MmapFlags, MmapManager, MmapProts, PageTableEntry,
     PhysPageNum, VirtAddr, VirtPageNum,
@@ -137,6 +137,7 @@ impl TaskControlBlock {
             memory_set,
             elf_entry: entry_point,
             user_stack_top: user_sp,
+	    auxs,
         } = MemorySet::load_elf(initproc.clone());
         initproc.delete();
         // 从地址空间 memory_set 中查多级页表找到应用地址空间中的 Trap 上下文实际被放在哪个物理页帧
@@ -196,7 +197,7 @@ impl TaskControlBlock {
         user_sp: usize,
         args: Vec<String>,
         envs: Vec<String>,
-        // auxv: &mut Vec<Aux>,
+        auxv: &mut Vec<AuxEntry>,
     ) -> (usize, usize, usize) {
         let token = self.lock().get_user_token();
 
@@ -248,6 +249,15 @@ impl TaskControlBlock {
         user_sp -= core::mem::size_of::<usize>();
         *translated_mut(token, user_sp as *mut usize) = 0;
 
+        auxv.push(AuxEntry(AT_RANDOM, args_ptrv[0]));
+
+        // 分配 auxs 空间，并写入数据
+        for i in 0..auxv.len() {
+            user_sp -= core::mem::size_of::<AuxEntry>();
+            *translated_mut(token, user_sp as *mut AuxEntry) = auxv[i];
+        }
+
+
         // padding 0 表示结束
         user_sp -= core::mem::size_of::<usize>();
         *translated_mut(token, user_sp as *mut usize) = 0;
@@ -290,6 +300,7 @@ impl TaskControlBlock {
             memory_set,
             user_stack_top: user_sp,
             elf_entry: entry_point,
+	    mut auxs,
         } = MemorySet::load_elf(elf_file);
 
         let trap_cx_ppn = memory_set
@@ -311,7 +322,7 @@ impl TaskControlBlock {
             .take();
         drop(inner); // 避免接下来的操作导致死锁
 
-        let (user_sp, _args_ptr, _envs_ptr) = self.init_ustack(user_sp, args, envs);
+        let (user_sp, _args_ptr, _envs_ptr) = self.init_ustack(user_sp, args, envs, & mut auxs);
 
         // 修改新的地址空间中的 Trap 上下文，将解析得到的应用入口点、用户栈位置以及一些内核的信息进行初始化
         *trap_cx = TrapContext::app_init_context(

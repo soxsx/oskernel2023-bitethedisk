@@ -14,6 +14,13 @@ use super::super::error::*;
 
 const AT_FDCWD: isize = -100;
 
+#[derive(Clone, Copy, Debug)]
+pub struct Iovec {
+    iov_base: usize,
+    iov_len: usize,
+}
+
+
 /// #define SYS_getcwd 17
 ///
 /// 功能：获取当前工作目录；
@@ -755,5 +762,78 @@ pub fn sys_fstat(fd: isize, buf: *mut u8) -> Result<isize> {
         Ok(0)
     } else {
         Err(SyscallError::FdInvalid(-1, dirfd))
+    }
+}
+
+
+pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> isize {
+    let token = current_user_token();
+    let task = current_task().unwrap();
+    let inner = task.lock();
+    if fd >= inner.fd_table.len() {
+        return -1;
+    }
+    if let Some(file) = &inner.fd_table[fd] {
+        if !file.readable() {
+            return -1;
+        }
+        let iovp_buf_p = translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>()).as_ptr();
+        let file = file.clone();
+        let file_size = file.file_size();
+        if file_size == 0 {
+            warn!("[WARNING] sys_readv: file_size is zero!");
+        }
+        let mut addr = iovp_buf_p as *const _ as usize;
+        let mut total_read_len = 0;
+        drop(inner);
+        for _ in 0..iovcnt {
+            let iovp = unsafe { &*(addr as *const Iovec) };
+            let len = iovp.iov_len.min(file_size-total_read_len);
+            total_read_len += file.read(UserBuffer::wrap(translated_bytes_buffer(token, iovp.iov_base as *const u8, len)));
+            addr += size_of::<Iovec>();
+        }
+        total_read_len as isize
+    } else {
+        -1
+    }
+}
+
+pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> isize {
+    println!("[DEBUG] enter sys_writev: fd:{}, iovp:0x{:x}, iovcnt:{}",fd,iovp as usize,iovcnt);
+    // println!("time:{}",get_time_ms());
+    let token = current_user_token();
+    let task = current_task().unwrap();
+    let inner = task.lock();
+    // 文件描述符不合法
+    if fd >= inner.fd_table.len() {
+        return -1;
+    }
+    if let Some(file) = &inner.fd_table[fd] {
+        // 文件不可写
+        if !file.writable() {
+            return -1;
+        }
+	println!("name:{}",file.name());
+	println!("!!{:?}",translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>()));
+        let iovp_buf_p = translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>())[0].as_ptr();
+        let mut addr = iovp_buf_p as *const _ as usize;
+        let mut total_write_len = 0;
+        for _ in 0..iovcnt {
+            let iovp = unsafe { &*(addr as *const Iovec) };
+	    println!("iovp:{:?}",iovp);
+	    if iovp.iov_len<=0{
+		continue;
+	    }
+            total_write_len += file.write(UserBuffer::wrap(translated_bytes_buffer(
+                token,
+                iovp.iov_base as *const u8,
+                iovp.iov_len,
+            )));
+            addr += size_of::<Iovec>();
+        }
+        drop(inner);
+        total_write_len as isize
+    } else {
+        -1
     }
 }

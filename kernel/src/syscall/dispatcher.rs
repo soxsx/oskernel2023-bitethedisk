@@ -33,6 +33,11 @@ const SYS_UNAME: usize = 160;
 const SYS_SCHED_YIELD: usize = 124;
 const SYS_GETTIMEOFDAY: usize = 169;
 const SYS_NANOSLEEP: usize = 101;
+const SYS_SET_TID_ADDRESS: usize = 96;
+const SYS_READV: usize = 65;
+const SYS_WRITEV: usize = 66;
+const SYS_EXIT_GROUP: usize = 94;
+const SYS_GETUID: usize = 174;
 
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
@@ -99,7 +104,11 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         ),
         SYS_MUNMAP => sys_munmap(args[0], args[1]),
         SYS_WAIT4 => sys_wait4(args[0] as isize, args[1] as *mut i32),
-
+	SYS_SET_TID_ADDRESS => sys_set_tid_address(args[0] as *mut usize),
+	SYS_READV => sys_readv(args[0], args[1] as *const usize, args[2]),
+	SYS_WRITEV => sys_writev(args[0], args[1] as *const usize, args[2]),
+	SYS_EXIT_GROUP => sys_exit_group(args[0] as i32),
+	SYS_GETUID => sys_getuid(),
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
     match ret {
