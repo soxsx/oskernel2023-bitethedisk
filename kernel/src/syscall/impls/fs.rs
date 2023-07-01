@@ -765,16 +765,16 @@ pub fn sys_fstat(fd: isize, buf: *mut u8) -> Result<isize> {
 }
 
 
-pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> isize {
+pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize> {
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.lock();
     if fd >= inner.fd_table.len() {
-        return -1;
+        return Err(SyscallError::ReachFdLimit(13));
     }
     if let Some(file) = &inner.fd_table[fd] {
         if !file.readable() {
-            return -1;
+            return Err(SyscallError::ReachFdLimit(13));
         }
         let iovp_buf_p = translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>())[0].as_ptr();
         let file = file.clone();
@@ -793,13 +793,13 @@ pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> isize {
             total_read_len += file.read(UserBuffer::wrap(translated_bytes_buffer(token, iovp.iov_base as *const u8, len)));
             addr += size_of::<Iovec>();
         }
-        total_read_len as isize
+        Ok(total_read_len as isize)
     } else {
-        -1
+        Err(SyscallError::ReachFdLimit(13))
     }
 }
 
-pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> isize {
+pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize> {
     // println!("[DEBUG] enter sys_writev: fd:{}, iovp:0x{:x}, iovcnt:{}",fd,iovp as usize,iovcnt);
     // println!("time:{}",get_time_ms());
     let token = current_user_token();
@@ -808,12 +808,12 @@ pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> isize {
     let mut  write_data: Vec<&'static mut [u8]>=Vec::new();
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
-        return -1;
+        return Err(SyscallError::ReachFdLimit(13));
     }
     if let Some(file) = &inner.fd_table[fd] {
         // 文件不可写
         if !file.writable() {
-            return -1;
+            return Err(SyscallError::ReachFdLimit(13));
         }
         let iovp_buf_p = translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>())[0].as_ptr();
         let mut addr = iovp_buf_p as *const _ as usize;
@@ -835,9 +835,9 @@ pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> isize {
         total_write_len = file.write(UserBuffer::wrap(write_data));
         drop(inner);
 
-        total_write_len as isize
+        Ok(total_write_len as isize)
     } else {
-        -1
+        Err(SyscallError::ReachFdLimit(13))
     }
 }
 
@@ -849,14 +849,14 @@ const TIOCSPGRP: usize = 0x5410;
 const TIOCGWINSZ: usize = 0x5413;
 const RTC_RD_TIME: usize = 0xffffffff80247009; // 这个值还需考量
 
-pub fn sys_ioctl(fd: usize, request: usize, argp: *mut u8) -> isize {
+pub fn sys_ioctl(fd: usize, request: usize, argp: *mut u8) -> Result<isize> {
     // println!("enter sys_ioctl: fd:{}, request:0x{:x}, argp:{}", fd, request, argp as usize);
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.lock();
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
-        return -1;
+        return Err(SyscallError::ReachFdLimit(13));
     }
     match request {
         TCGETS => {}
@@ -867,7 +867,7 @@ pub fn sys_ioctl(fd: usize, request: usize, argp: *mut u8) -> isize {
         RTC_RD_TIME => {}
         _ => panic!("sys_ioctl: unsupported request!"),
     }
-    0
+    Ok(0)
 }
 
 
@@ -897,7 +897,7 @@ bitflags! {
     }
 }
 
-pub fn sys_fcntl(fd: isize, cmd: usize, arg: Option<usize>) -> isize {
+pub fn sys_fcntl(fd: isize, cmd: usize, arg: Option<usize>) -> Result<isize> {
     // println!("[DEBUG] enter sys_fcntl: fd:{}, cmd:{}, arg:{:?}", fd, cmd, arg);
     let task = current_task().unwrap();
     let cmd = FcntlFlags::from_bits(cmd).unwrap();
@@ -915,7 +915,7 @@ pub fn sys_fcntl(fd: isize, cmd: usize, arg: Option<usize>) -> isize {
             // Return (as the function result) the file descriptor flags; arg is ignored.
             let inner = task.lock();
             if let Some(file) = &inner.fd_table[fd as usize] {
-                return file.available() as isize;
+                return Ok(file.available() as isize);
             } else {
                 panic!("sys_fcntl: fd is not an open file descriptor");
             }
@@ -934,7 +934,7 @@ pub fn sys_fcntl(fd: isize, cmd: usize, arg: Option<usize>) -> isize {
         FcntlFlags::F_GETFL => {
             // Return (as the function result) the file access mode and the file status flags; arg is ignored.
             // todo
-            return 04000;
+            return Ok(04000);
         }
         FcntlFlags::F_DUPFD_CLOEXEC => {
             let mut inner = task.lock();
@@ -960,17 +960,17 @@ pub fn sys_fcntl(fd: isize, cmd: usize, arg: Option<usize>) -> isize {
                     .expect("sys_fcntl: fd is not an open file descriptor"),
             ));
             inner.fd_table[new_fd].as_ref().unwrap().set_cloexec();
-            return new_fd as isize;
+            return Ok(new_fd as isize);
         }
         _ => panic!("sys_ioctl: unsupported request!"),
     }
-    0
+    Ok(0)
 }
 
 pub const ENOENT: isize = 2;
 pub const EFAULT: isize = 14;
 pub const EMFILE: isize = 24;
-pub fn sys_newfstatat(dirfd: isize, pathname: *const u8, satabuf: *const usize, _flags: usize) -> isize {
+pub fn sys_newfstatat(dirfd: isize, pathname: *const u8, satabuf: *const usize, _flags: usize) -> Result<isize> {
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.lock();
@@ -992,14 +992,15 @@ pub fn sys_newfstatat(dirfd: isize, pathname: *const u8, satabuf: *const usize, 
             inode.fstat(&mut kstat);
             userbuf.write(kstat.as_bytes());
             // panic!();
-            0
+            Ok(0)
         } else {
-            -ENOENT
+	    Err(SyscallError::ReachFdLimit(13))
+            // -ENOENT
         }
     } else {
         let dirfd = dirfd as usize;
         if dirfd >= inner.fd_table.len() && dirfd > FD_LIMIT {
-            return -1;
+	    return Err(SyscallError::ReachFdLimit(13));
         }
 
         if let Some(file) = &inner.fd_table[dirfd] {
@@ -1007,17 +1008,17 @@ pub fn sys_newfstatat(dirfd: isize, pathname: *const u8, satabuf: *const usize, 
             if let Some(inode) = open(open_path, OpenFlags::O_RDONLY, CreateMode::empty()) {
                 inode.fstat(&mut kstat);
                 userbuf.write(kstat.as_bytes());
-                0
+		Ok(0)
             } else {
-                -1
+		Err(SyscallError::ReachFdLimit(13))
             }
         } else {
-            -ENOENT
+	    Err(SyscallError::ReachFdLimit(13))
         }
     }
 }
 
-pub fn sys_sendfile(out_fd: usize, in_fd: usize, offset: usize, _count: usize) -> isize {
+pub fn sys_sendfile(out_fd: usize, in_fd: usize, offset: usize, _count: usize) -> Result<isize> {
     // println!(
     //     "[DEBUG] enter sys_sendfile: out_fd:{}, in_fd:{}, offset:{}, count:{}",
     //     out_fd, in_fd, offset, _count
@@ -1044,11 +1045,11 @@ pub fn sys_sendfile(out_fd: usize, in_fd: usize, offset: usize, _count: usize) -
                 total_write_size += len;
             }
         }
-        total_write_size as isize
+        Ok(total_write_size as isize)
     }
 }
 
-pub fn sys_utimensat(dirfd: isize, pathname: *const u8, time: *const usize, flags: usize) -> isize {
+pub fn sys_utimensat(dirfd: isize, pathname: *const u8, time: *const usize, flags: usize) -> Result<isize> {
     // println!(
     //     "[DEBUG] enter sys_utimensat: dirfd:{}, pathname:{}, time:{}, flags:{}",
     //     dirfd, pathname as usize, time as usize, flags
@@ -1068,22 +1069,22 @@ pub fn sys_utimensat(dirfd: isize, pathname: *const u8, time: *const usize, flag
             if let Some(_file) = open(path, OpenFlags::O_RDWR, CreateMode::empty()) {
                 unimplemented!(); // 记得重新制作文件镜像
             } else {
-                -ENOENT
+		Err(SyscallError::ReachFdLimit(13))
             }
         }
     } else {
         if pathname as usize == 0 {
             if dirfd >= inner.fd_table.len() as isize || dirfd < 0 {
-                return 0;
+                return Ok(0);
             }
             if let Some(file) = &inner.fd_table[dirfd as usize] {
                 let timespec_buf = translated_bytes_buffer(token, time as *const u8, size_of::<Kstat>()).pop().unwrap();
                 let addr = timespec_buf.as_ptr() as *const _ as usize;
                 let timespec = unsafe { &*(addr as *const Timespec) };
                 file.set_time(timespec);
-                0
+		Ok(0)
             } else {
-                -1
+		Err(SyscallError::ReachFdLimit(13))
             }
         } else {
             unimplemented!();
@@ -1092,7 +1093,7 @@ pub fn sys_utimensat(dirfd: isize, pathname: *const u8, time: *const usize, flag
 }
 
 // 目前仅支持同当前目录下文件名称更改
-pub fn sys_renameat2(old_dirfd: isize, old_path: *const u8, new_dirfd: isize, new_path: *const u8, _flags: u32) -> isize {
+pub fn sys_renameat2(old_dirfd: isize, old_path: *const u8, new_dirfd: isize, new_path: *const u8, _flags: u32) -> Result<isize> {
     let task = current_task().unwrap();
     let token = current_user_token();
     let inner = task.lock();
@@ -1117,7 +1118,7 @@ pub fn sys_renameat2(old_dirfd: isize, old_path: *const u8, new_dirfd: isize, ne
             if new_dirfd == AT_FDCWD {
 		let new_path=inner.get_work_path().join_string(new_path);
 		old_file.rename(new_path, flag);
-		0
+		Ok(0)
             } else {
                 unimplemented!();
             }
@@ -1139,14 +1140,14 @@ bitflags! {
     }
 }
 
-pub fn sys_lseek(fd: usize, off_t: usize, whence: usize) -> isize {
+pub fn sys_lseek(fd: usize, off_t: usize, whence: usize) -> Result<isize> {
     // println!("[DEBUG] enter sys_lseek: fd:{},off_t:{},whence:{}",fd,off_t,whence);
 
     let task = current_task().unwrap();
     let inner = task.lock();
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
-        return -1;
+        return Err(SyscallError::ReachFdLimit(13));
     }
 
     if let Some(file) = &inner.fd_table[fd] {
@@ -1154,23 +1155,24 @@ pub fn sys_lseek(fd: usize, off_t: usize, whence: usize) -> isize {
         match flag {
             SeekFlags::SEEK_SET => {
                 file.set_offset(off_t);
-                off_t as isize
+                Ok(off_t as isize)
             }
             SeekFlags::SEEK_CUR => {
                 let current_offset = file.offset();
                 file.set_offset(off_t + current_offset);
-                (off_t + current_offset) as isize
+                Ok((off_t + current_offset) as isize)
             }
             SeekFlags::SEEK_END => {
                 let end = file.file_size();
                 file.set_offset(end + off_t);
-                (end + off_t) as isize
+                Ok((end + off_t) as isize)
             }
             // flag wrong
             _ => panic!("sys_lseek: unsupported whence!"),
         }
     } else {
         // file not exists
-        -3
+	Err(SyscallError::ReachFdLimit(13))
+        // -3
     }
 }

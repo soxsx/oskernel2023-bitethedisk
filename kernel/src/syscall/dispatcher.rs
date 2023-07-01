@@ -60,7 +60,7 @@ const SYS_LSEEK: usize = 62;
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     // println!("[DEBUG] syscall:{:?}",syscall_id);
-    match syscall_id {
+    let ret: core::result::Result<isize, SyscallError> = match syscall_id {    
         // TODO: 检查完善
         SYS_CLONE => sys_do_fork(args[0], args[1], args[2], args[3], args[4]),
 
@@ -139,9 +139,9 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
 	SYS_CLOCK_GETTIME => sys_clock_gettime(args[0], args[1] as *mut u64),
 	SYS_GETTID => sys_gettid(),
 	SYS_SENDFILE => sys_sendfile(args[0], args[1], args[2], args[3]),
-	SYS_SYSLOG => 0,
-	SYS_FACCESSAT => 0,
-	SYS_SYSINFO => 0,
+	SYS_SYSLOG => Ok(0),
+	SYS_FACCESSAT => Ok(0),
+	SYS_SYSINFO => Ok(0),
 	SYS_KILL => sys_kill(args[0], args[1] as u32),
 	SYS_UTIMENSAT => sys_utimensat(args[0] as isize, args[1] as *const u8, args[2] as *const usize, args[3]),
 	SYS_RENAMEAT2 => sys_renameat2(args[0] as isize, args[1] as *const u8, args[2] as isize, args[3] as *const u8, args[4] as u32),

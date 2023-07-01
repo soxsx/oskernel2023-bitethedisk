@@ -79,7 +79,7 @@ pub fn sys_do_fork(
 /// const char *path, char *const argv[], char *const envp[];
 /// int ret = syscall(SYS_execve, path, argv, envp);
 /// ```
-pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const u8) -> Result<isize> {
+pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize) -> Result<isize> {
     let token = current_user_token();
     // 读取到用户空间的应用程序名称（路径）
     let path = translated_str(token, path);
@@ -248,46 +248,46 @@ pub fn sys_getpid() -> Result<isize> {
     Ok(current_task().unwrap().pid.0 as isize)
 }
 
-pub fn sys_set_tid_address(tidptr: *mut usize) -> isize {
+pub fn sys_set_tid_address(tidptr: *mut usize) -> Result<isize> {
     let token = current_user_token();
     *translated_mut(token, tidptr) = 0 as usize;
-    0
+    Ok(0)
 }
 
-pub fn sys_getuid() -> isize {
-    0
+pub fn sys_getuid() -> Result<isize> {
+    Ok(0)
 }
 
-pub fn sys_gettid() -> isize {
-    0
+pub fn sys_gettid() -> Result<isize> {
+    Ok(0)
 }
 
-pub fn sys_rt_sigprocmask(how: i32, set: *const usize, oldset: *const usize, _sigsetsize: usize) -> isize {
-    0
+pub fn sys_rt_sigprocmask(how: i32, set: *const usize, oldset: *const usize, _sigsetsize: usize) -> Result<isize> {
+    Ok(0)
 }
 
-pub fn sys_rt_sigreturn(_setptr: *mut usize) -> isize {
-    0
+pub fn sys_rt_sigreturn(_setptr: *mut usize) -> Result<isize> {
+    Ok(0)
 }
 
-pub fn sys_rt_sigaction() -> isize {
-    0
+pub fn sys_rt_sigaction() -> Result<isize> {
+    Ok(0)
 }
 
-pub fn sys_rt_sigtimedwait() -> isize {
-    0
+pub fn sys_rt_sigtimedwait() -> Result<isize> {
+    Ok(0)
 }
 
-pub fn sys_futex() -> isize {
-    0
+pub fn sys_futex() -> Result<isize> {
+    Ok(0)
 }
 
-pub fn sys_geteuid() -> isize {
-    0
+pub fn sys_geteuid() -> Result<isize> {
+    Ok(0)
 }
 
-pub fn sys_ppoll() -> isize {
-    1
+pub fn sys_ppoll() -> Result<isize> {
+    Ok(1)
 }
 
 pub const TICKS_PER_SEC: usize = 100;
@@ -296,9 +296,9 @@ pub const USEC_PER_SEC: usize = 1000_000;
 pub const NSEC_PER_SEC: usize = 1000_000_000;
 
 pub const CLOCK_FREQ: usize = 12500000;
-pub fn sys_clock_gettime(_clk_id: usize, ts: *mut u64) -> isize {
+pub fn sys_clock_gettime(_clk_id: usize, ts: *mut u64) -> Result<isize> {
     if ts as usize == 0 {
-        return 0;
+        return Ok(0);
     }
     let token = current_user_token();
     let ticks = 0;
@@ -306,22 +306,22 @@ pub fn sys_clock_gettime(_clk_id: usize, ts: *mut u64) -> isize {
     let nsec = ((ticks % CLOCK_FREQ) * (NSEC_PER_SEC / CLOCK_FREQ)) as u64;
     *translated_mut(token, ts) = sec;
     *translated_mut(token, unsafe { ts.add(1) }) = nsec;
-    0
+    Ok(0)
 }
-pub fn sys_kill(pid: usize, signal: u32) -> isize {
+pub fn sys_kill(pid: usize, signal: u32) -> Result<isize> {
     // println!("[KERNEL] enter sys_kill: pid:{} send to pid:{}, signal:0x{:x}",current_task().unwrap().pid.0, pid, signal);
     if signal == 0 {
-        return 0;
+        return Ok(0);
     }
     let signal = 1 << signal;
     if let Some(task) = pid2task(pid) {
         if let Some(flag) = SignalFlags::from_bits(signal) {
             task.lock().signals |= flag;
-            0
+	    Ok(0)
         } else {
             panic!("[DEBUG] sys_kill: unsupported signal");
         }
     } else {
-        -1
+	Err(SyscallError::PidNotFound(0, 0))
     }
 }
