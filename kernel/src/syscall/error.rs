@@ -45,6 +45,9 @@ pub enum SyscallError {
 
     #[error("unmount failed")]
     UnmountFailed(isize),
+
+    #[error("No such file or directory")]
+    NoSuchFile(isize),
 }
 
 impl SyscallError {
@@ -62,6 +65,7 @@ impl SyscallError {
             SyscallError::PidNotFound(error_code, _) => *error_code,
             SyscallError::ReachMountLimit(error_code) => *error_code,
             SyscallError::UnmountFailed(error_code) => *error_code,
+	    SyscallError::NoSuchFile(error_code) => *error_code,
         }
     }
 }

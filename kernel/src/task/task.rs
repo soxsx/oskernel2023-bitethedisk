@@ -307,7 +307,6 @@ impl TaskControlBlock {
             .translate(VirtAddr::from(TRAP_CONTEXT).into())
             .unwrap()
             .ppn();
-
         let mut inner = self.lock();
         inner.memory_set = memory_set;
         // from_copy_on_wirte -> exec
@@ -323,7 +322,6 @@ impl TaskControlBlock {
         drop(inner); // 避免接下来的操作导致死锁
 
         let (user_sp, _args_ptr, _envs_ptr) = self.init_ustack(user_sp, args, envs, & mut auxs);
-
         // 修改新的地址空间中的 Trap 上下文，将解析得到的应用入口点、用户栈位置以及一些内核的信息进行初始化
         *trap_cx = TrapContext::app_init_context(
             entry_point,

@@ -1069,7 +1069,8 @@ pub fn sys_utimensat(dirfd: isize, pathname: *const u8, time: *const usize, flag
             if let Some(_file) = open(path, OpenFlags::O_RDWR, CreateMode::empty()) {
                 unimplemented!(); // 记得重新制作文件镜像
             } else {
-		Err(SyscallError::ReachFdLimit(13))
+		Err(SyscallError::NoSuchFile(-2))
+		// Ok(-ENOENT)
             }
         }
     } else {
