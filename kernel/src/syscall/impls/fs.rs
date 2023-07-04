@@ -92,7 +92,7 @@ pub fn sys_pipe2(pipe: *mut i32, _flag: usize) -> Result<isize> {
 
     let read_fd = inner.alloc_fd();
     if read_fd == FD_LIMIT {
-        return Err(SyscallError::ReachFdLimit(-EMFILE));
+        return Err(SyscallError::ReachFdLimit(-1));
     }
     inner.fd_table[read_fd] = Some(pipe_read);
 
@@ -248,7 +248,7 @@ pub fn sys_openat(fd: isize, filename: *const u8, flags: u32, mode: u32) -> Resu
         if let Some(inode) = open(open_path.clone(), flags, mode) {
             let fd = inner.alloc_fd();
             if fd == FD_LIMIT {
-                return Err(SyscallError::ReachFdLimit(-EMFILE));
+                return Err(SyscallError::ReachFdLimit(-1));
             }
             inner.fd_table[fd] = Some(inode);
             Ok(fd as isize)
@@ -266,7 +266,7 @@ pub fn sys_openat(fd: isize, filename: *const u8, flags: u32, mode: u32) -> Resu
             if let Some(tar_f) = open(open_path.clone(), flags, mode) {
                 let fd = inner.alloc_fd();
                 if fd == FD_LIMIT {
-                    return Err(SyscallError::ReachFdLimit(-EMFILE));
+                    return Err(SyscallError::ReachFdLimit(-1));
                 }
                 inner.fd_table[fd] = Some(tar_f);
                 debug!("[DEBUG] sys_openat return new fd:{}", fd);
@@ -486,7 +486,7 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> Result<isize> {
         .check_va_range(VirtAddr::from(buf as usize), len);
     if !is_va_range_valid {
         return Err(SyscallError::InvalidVirtAddress(
-            -EFAULT,
+            -1,
             VirtAddr::from(buf as usize),
         ));
     }
@@ -770,11 +770,11 @@ pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize> 
     let task = current_task().unwrap();
     let inner = task.lock();
     if fd >= inner.fd_table.len() {
-        return Err(SyscallError::ReachFdLimit(13));
+        return Err(SyscallError::FdInvalid(-1, fd));
     }
     if let Some(file) = &inner.fd_table[fd] {
         if !file.readable() {
-            return Err(SyscallError::ReachFdLimit(13));
+            return Err(SyscallError::FdInvalid(-1, fd));
         }
         let iovp_buf_p = translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>())[0].as_ptr();
         let file = file.clone();
@@ -795,7 +795,7 @@ pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize> 
         }
         Ok(total_read_len as isize)
     } else {
-        Err(SyscallError::ReachFdLimit(13))
+        Err(SyscallError::FdInvalid(-1, fd))
     }
 }
 
@@ -808,12 +808,12 @@ pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize>
     let mut  write_data: Vec<&'static mut [u8]>=Vec::new();
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
-        return Err(SyscallError::ReachFdLimit(13));
+	return Err(SyscallError::FdInvalid(-1, fd));
     }
     if let Some(file) = &inner.fd_table[fd] {
         // 文件不可写
         if !file.writable() {
-            return Err(SyscallError::ReachFdLimit(13));
+            return Err(SyscallError::FdInvalid(-1, fd));
         }
         let iovp_buf_p = translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>())[0].as_ptr();
         let mut addr = iovp_buf_p as *const _ as usize;
@@ -837,7 +837,7 @@ pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize>
 
         Ok(total_write_len as isize)
     } else {
-        Err(SyscallError::ReachFdLimit(13))
+        return Err(SyscallError::ReachFdLimit(13));
     }
 }
 
@@ -856,7 +856,7 @@ pub fn sys_ioctl(fd: usize, request: usize, argp: *mut u8) -> Result<isize> {
     let inner = task.lock();
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
-        return Err(SyscallError::ReachFdLimit(13));
+        return Err(SyscallError::FdInvalid(-1, fd));
     }
     match request {
         TCGETS => {}
@@ -967,9 +967,6 @@ pub fn sys_fcntl(fd: isize, cmd: usize, arg: Option<usize>) -> Result<isize> {
     Ok(0)
 }
 
-pub const ENOENT: isize = 2;
-pub const EFAULT: isize = 14;
-pub const EMFILE: isize = 24;
 pub fn sys_newfstatat(dirfd: isize, pathname: *const u8, satabuf: *const usize, _flags: usize) -> Result<isize> {
     let token = current_user_token();
     let task = current_task().unwrap();
@@ -988,19 +985,19 @@ pub fn sys_newfstatat(dirfd: isize, pathname: *const u8, satabuf: *const usize, 
     // 相对路径, 在当前工作目录
     if dirfd == AT_FDCWD {
         let open_path = inner.get_work_path().join_string(path);
-        if let Some(inode) = open(open_path, OpenFlags::O_RDONLY, CreateMode::empty()) {
+        if let Some(inode) = open(open_path.clone(), OpenFlags::O_RDONLY, CreateMode::empty()) {
             inode.fstat(&mut kstat);
             userbuf.write(kstat.as_bytes());
             // panic!();
             Ok(0)
         } else {
-	    Err(SyscallError::ReachFdLimit(13))
+	    Err(SyscallError::NoSuchFile(-1))
             // -ENOENT
         }
     } else {
         let dirfd = dirfd as usize;
         if dirfd >= inner.fd_table.len() && dirfd > FD_LIMIT {
-	    return Err(SyscallError::ReachFdLimit(13));
+	    return Err(SyscallError::FdInvalid(-1, dirfd));
         }
 
         if let Some(file) = &inner.fd_table[dirfd] {
@@ -1010,10 +1007,10 @@ pub fn sys_newfstatat(dirfd: isize, pathname: *const u8, satabuf: *const usize, 
                 userbuf.write(kstat.as_bytes());
 		Ok(0)
             } else {
-		Err(SyscallError::ReachFdLimit(13))
+		Err(SyscallError::NoSuchFile(-1))
             }
         } else {
-	    Err(SyscallError::ReachFdLimit(13))
+	    Err(SyscallError::FdInvalid(-1, dirfd))
         }
     }
 }
@@ -1069,7 +1066,7 @@ pub fn sys_utimensat(dirfd: isize, pathname: *const u8, time: *const usize, flag
             if let Some(_file) = open(path, OpenFlags::O_RDWR, CreateMode::empty()) {
                 unimplemented!(); // 记得重新制作文件镜像
             } else {
-		Err(SyscallError::NoSuchFile(-2))
+		Err(SyscallError::NoSuchFile(-1))
 		// Ok(-ENOENT)
             }
         }
@@ -1085,7 +1082,7 @@ pub fn sys_utimensat(dirfd: isize, pathname: *const u8, time: *const usize, flag
                 file.set_time(timespec);
 		Ok(0)
             } else {
-		Err(SyscallError::ReachFdLimit(13))
+		Err(SyscallError::FdInvalid(-1, dirfd as usize))
             }
         } else {
             unimplemented!();
@@ -1148,7 +1145,7 @@ pub fn sys_lseek(fd: usize, off_t: usize, whence: usize) -> Result<isize> {
     let inner = task.lock();
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
-        return Err(SyscallError::ReachFdLimit(13));
+        return Err(SyscallError::FdInvalid(-1, fd));
     }
 
     if let Some(file) = &inner.fd_table[fd] {
@@ -1173,7 +1170,7 @@ pub fn sys_lseek(fd: usize, off_t: usize, whence: usize) -> Result<isize> {
         }
     } else {
         // file not exists
-	Err(SyscallError::ReachFdLimit(13))
+	Err(SyscallError::FdInvalid(-1, fd))
         // -3
     }
 }

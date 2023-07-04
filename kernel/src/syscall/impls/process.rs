@@ -322,6 +322,6 @@ pub fn sys_kill(pid: usize, signal: u32) -> Result<isize> {
             panic!("[DEBUG] sys_kill: unsupported signal");
         }
     } else {
-	Err(SyscallError::PidNotFound(0, 0))
+	Err(SyscallError::PidNotFound(-1, pid as isize))
     }
 }
