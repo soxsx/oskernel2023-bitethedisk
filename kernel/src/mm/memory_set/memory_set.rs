@@ -2,7 +2,7 @@
 
 use super::vm_area::VmArea;
 use super::{MapPermission, MapType};
-use crate::consts::{PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE, USER_STACK_SIZE};
+use crate::consts::{PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE, USER_STACK_SIZE, CLOCK_FREQ};
 use crate::fs::file::File;
 use crate::mm::frame_allocator::enquire_refcount;
 use crate::mm::page_table::PTEFlags;
@@ -408,14 +408,17 @@ impl MemorySet {
                 _ => continue,
             }
         }
+        let user_stack_top = TRAP_CONTEXT - PAGE_SIZE;
+        let user_stack_bottom = user_stack_top - USER_STACK_SIZE;
+	
 	// auxs.push(AuxEntry(AT_BASE, 0));
 
         let ph_head_addr = head_va.unwrap() + elf.header.pt2.ph_offset() as usize;
+        // let ph_head_addr = elf.header.pt2.ph_offset() as usize;	
 
         /* get auxv vector */
         auxs.push(AuxEntry(0x21, 0 as usize));          //no vdso
         auxs.push(AuxEntry( 0x28,  0 as usize));          //AT_L1I_CACHESIZE:     0
-        auxs.push(AuxEntry( AT_PHDR,  (ph_head_addr as usize)));
         auxs.push(AuxEntry( 0x29, 0 as usize));          //AT_L1I_CACHEGEOMETRY: 0x0
         auxs.push(AuxEntry( 0x2a, 0 as usize));          //AT_L1D_CACHESIZE:     0
         auxs.push(AuxEntry( 0x2b, 0 as usize));          //AT_L1D_CACHEGEOMETRY: 0x0
@@ -423,9 +426,12 @@ impl MemorySet {
         auxs.push(AuxEntry( 0x2d, 0 as usize));          //AT_L2_CACHEGEOMETRY:  0x0
         auxs.push(AuxEntry( AT_HWCAP, 0 as usize));
         auxs.push(AuxEntry( AT_PAGESZ, PAGE_SIZE as usize));
-        // auxs.push(AuxEntry( AT_CLKTCK, CLOCK_FREQ as usize));
+        auxs.push(AuxEntry( AT_CLKTCK, CLOCK_FREQ as usize));
+        auxs.push(AuxEntry( AT_PHDR,  (ph_head_addr as usize)));
         auxs.push(AuxEntry( AT_PHENT, elf.header.pt2.ph_entry_size() as usize));// ELF64 header 64bytes
         auxs.push(AuxEntry( AT_PHNUM, ph_count as usize));
+	// Interp
+        // auxs.push(AuxEntry( AT_BASE, 0));
         auxs.push(AuxEntry( AT_FLAGS, 0 as usize));
         auxs.push(AuxEntry( AT_ENTRY, elf.header.pt2.entry_point() as usize));
         auxs.push(AuxEntry( AT_UID, 0 as usize));
@@ -433,10 +439,14 @@ impl MemorySet {
         auxs.push(AuxEntry( AT_GID, 0 as usize));
         auxs.push(AuxEntry( AT_EGID, 0 as usize));
         auxs.push(AuxEntry( AT_SECURE, 0 as usize));
+	// do not add this line, program will run additional check?
+        auxs.push(AuxEntry( AT_RANDOM, user_stack_top - 2 * core::mem::size_of::<usize>()));
+        // auxs.push(AuxEntry(AT_EXECFN, 32));
+	// do not add this line, too wide
+        // auxs.push(AuxEntry(AT_NULL, 0));
+
 
         // 分配用户栈
-        let user_stack_top = TRAP_CONTEXT - PAGE_SIZE;
-        let user_stack_bottom = user_stack_top - USER_STACK_SIZE;
         memory_set.insert(
             VmArea::new(
                 user_stack_bottom.into(),

@@ -213,6 +213,12 @@ impl TaskControlBlock {
         // 先进行进行对齐
         let align = core::mem::size_of::<usize>() / core::mem::size_of::<u8>(); // 8
         let mut user_sp = user_sp - (align - total_len % align) * core::mem::size_of::<u8>();
+        // user_sp -= core::mem::size_of::<usize>();
+        // *translated_mut(token, user_sp as *mut usize) = 123;
+        // user_sp -= core::mem::size_of::<usize>();
+        // *translated_mut(token, user_sp as *mut usize) = 456;
+
+	
 
         // 分配 envs 的空间, 加入动态链接库位置
         let envs_ptrv: Vec<_> = (0..envs.len())
@@ -248,8 +254,6 @@ impl TaskControlBlock {
 	// padding 0 表示结束 AT_NULL aux entry
         user_sp -= core::mem::size_of::<usize>();
         *translated_mut(token, user_sp as *mut usize) = 0;
-
-        auxv.push(AuxEntry(AT_RANDOM, args_ptrv[0]));
 
         // 分配 auxs 空间，并写入数据
         for i in 0..auxv.len() {
@@ -431,7 +435,7 @@ impl TaskControlBlock {
         } else if va >= mmap_start && va < mmap_end {
             self.lazy_mmap(va, is_load)
         } else {
-            println!("[check_lazy] {:?}", va);
+            println!("[check_lazy] {:x?}", va);
             println!("[check_lazy] mmap_start: 0x{:x}", mmap_start.0);
             println!("[check_lazy] mmap_end: 0x{:x}", mmap_end.0);
             println!("[check_lazy] heap_start: 0x{:x}", heap_start.0);
