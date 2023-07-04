@@ -56,6 +56,15 @@ const SYS_KILL: usize =129;
 const SYS_UTIMENSAT: usize =88;
 const SYS_RENAMEAT2: usize = 276;
 const SYS_LSEEK: usize = 62;
+const SYS_GETEGID: usize = 177;
+const SYS_GETGID: usize = 176;
+const SYS_SET_ROBUST_LIST: usize = 99;
+const SYS_PRLIMIT64: usize = 261;
+const SYS_READLINKAT: usize = 78;
+const SYS_GETRANDOM: usize = 278;
+const SYS_MPROTECT: usize = 226;
+const SYS_GETPGID: usize = 155;
+const SYS_SETPGID: usize = 154;
 
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
@@ -146,9 +155,18 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
 	SYS_UTIMENSAT => sys_utimensat(args[0] as isize, args[1] as *const u8, args[2] as *const usize, args[3]),
 	SYS_RENAMEAT2 => sys_renameat2(args[0] as isize, args[1] as *const u8, args[2] as isize, args[3] as *const u8, args[4] as u32),
 	SYS_LSEEK => sys_lseek(args[0], args[1], args[2]),
-
+	SYS_GETEGID => Ok(0),
+	SYS_GETGID => Ok(0),
+	SYS_SET_ROBUST_LIST => Ok(-1),
+	SYS_PRLIMIT64 => Ok(0),
+	SYS_READLINKAT => sys_readlinkat(args[0] as isize,args[1] as *const u8 ,args[2] as *const u8,args[3]),
+	SYS_GETRANDOM => sys_getrandom(args[0] as *const u8, args[1], args[2]),
+	SYS_MPROTECT => Ok(0),
+	SYS_GETPGID => Ok(0),
+	SYS_SETPGID => Ok(0),
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
+    // println!("syscall end");
     match ret {
         Ok(success) => success,
         Err(err) => {

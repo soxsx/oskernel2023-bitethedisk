@@ -1177,3 +1177,21 @@ pub fn sys_lseek(fd: usize, off_t: usize, whence: usize) -> Result<isize> {
         // -3
     }
 }
+
+pub fn sys_readlinkat(dirfd: isize, pathname: *const u8, buf: *const u8, bufsiz: usize) -> Result<isize> {
+    if dirfd == AT_FDCWD {
+        let token = current_user_token();
+        let path = translated_str(token, pathname);
+	println!("readlinkat path:{:?}",path);
+        if path.as_str() != "/proc/self/exe" {
+            panic!("sys_readlinkat: pathname not support");
+        }
+        let mut userbuf = UserBuffer::wrap(translated_bytes_buffer(token, buf, bufsiz));
+        let procinfo = "/lua\0";
+        userbuf.write(procinfo.as_bytes());
+        let len = procinfo.len() - 1;
+        return Ok(len as isize);
+    } else {
+        panic!("sys_readlinkat: fd not support");
+    }
+}
