@@ -1,3 +1,4 @@
+use crate::task::processor::hanging_current_task;
 use crate::timer::TimeVal;
 use crate::{
     mm::{translated_bytes_buffer, translated_ref, UserBuffer},
@@ -121,16 +122,10 @@ pub fn sys_gettimeofday(buf: *const u8) -> Result<isize> {
 /// ```
 pub fn sys_nanosleep(buf: *const u8) -> Result<isize> {
     let tic = get_time_ms();
-
     let token = current_user_token();
     let len_timeval = translated_ref(token, buf as *const TimeVal);
     let len = len_timeval.sec * 1000 + len_timeval.usec / 1000;
-    loop {
-        let toc = get_time_ms();
-        if toc - tic >= len {
-            break;
-        }
-    }
+    hanging_current_task(tic, len);
     Ok(0)
 }
 

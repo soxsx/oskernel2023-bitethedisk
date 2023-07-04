@@ -1,16 +1,14 @@
 use core::cell::RefMut;
 
-use alloc::{sync::Arc, vec::Vec};
+use alloc::sync::Arc;
 
-use crate::task::{processor::cpu::Cpu, task::TaskControlBlock, TaskContext};
+use crate::cell::sync_cell::SyncRefCell;
+use crate::task::manager::TASK_MANAGER;
+use crate::task::{task::TaskControlBlock, TaskContext};
 
-/// - Processor 是描述 CPU执行状态 的数据结构。
-/// - 在单核CPU环境下，我们仅创建单个 Processor 的全局实例 PROCESSOR
-#[cfg(not(feature = "multi_harts"))]
-pub static mut PROCESSOR: Cpu = Cpu::new();
-
-#[cfg(feature = "multi_harts")]
-pub static mut PROCESSORS: [Cpu; 2] = [Cpu::new(), Cpu::new()];
+/// [`Processor`] 是描述 CPU执行状态 的数据结构。
+/// 在单核环境下，我们仅创建单个 Processor 的全局实例 PROCESSOR
+pub static mut PROCESSOR: SyncRefCell<Processor> = SyncRefCell::new(Processor::new());
 
 /// 每个核上的处理器，负责运行一个进程
 pub struct Processor {
@@ -18,41 +16,6 @@ pub struct Processor {
     current: Option<Arc<TaskControlBlock>>,
     /// 当前处理器上的 idle 控制流的任务上下文
     idle_task_cx: TaskContext,
-
-    /// 挂起的进程，需要在 [`run_tasks`] 检查是否达到可以运行的状态
-    ///
-    /// [`run_tasks`]: super::schedule::run_tasks
-    hq: HangUpQueue,
-}
-
-pub struct HangingTask {
-    ready: bool,
-    inner: Arc<TaskControlBlock>,
-}
-
-impl HangingTask {
-    pub fn new(task: Arc<TaskControlBlock>) -> Self {
-        Self {
-            ready: false,
-            inner: task,
-        }
-    }
-
-    pub fn is_ready(mut self, checker: &dyn Fn(&mut Self) -> bool) -> bool {
-        checker(&mut self)
-    }
-}
-
-pub struct HangUpQueue(pub Vec<HangingTask>);
-
-impl HangUpQueue {
-    pub const fn new() -> Self {
-        Self(Vec::new())
-    }
-
-    pub fn try_fetch(&mut self) {
-        todo!()
-    }
 }
 
 impl Processor {
@@ -60,7 +23,6 @@ impl Processor {
         Self {
             current: None,
             idle_task_cx: TaskContext::empty(),
-            hq: HangUpQueue::new(),
         }
     }
 
@@ -81,6 +43,12 @@ impl Processor {
     pub fn current_mut(&mut self) -> &mut Option<Arc<TaskControlBlock>> {
         &mut self.current
     }
+
+    pub fn hang_current(&mut self, sleep_time: usize, duration: usize) {
+        TASK_MANAGER
+            .borrow_mut()
+            .hang(sleep_time, duration, self.take_current().unwrap());
+    }
 }
 
 impl Default for Processor {
@@ -90,14 +58,5 @@ impl Default for Processor {
 }
 
 pub fn acquire_processor<'a>() -> RefMut<'a, Processor> {
-    #[cfg(not(feature = "multi_harts"))]
-    {
-        unsafe { PROCESSOR.get_mut() }
-    }
-
-    #[cfg(feature = "multi_harts")]
-    {
-        use super::processor::PROCESSORS;
-        unsafe { PROCESSORS[hartid!()].get_mut() }
-    }
+    unsafe { PROCESSOR.borrow_mut() }
 }

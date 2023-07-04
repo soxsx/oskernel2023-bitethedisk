@@ -4,7 +4,7 @@ mod initproc;
 mod kernel_stack;
 mod manager; // 进程管理器
 mod pid; // 进程标识符模块
-mod processor; // 处理器管理模块
+pub mod processor; // 处理器管理模块
 mod signals;
 mod switch; // 任务上下文切换模块
 mod task;

@@ -17,7 +17,7 @@ impl<T> SyncRefCell<T> {
 unsafe impl<T> Sync for SyncRefCell<T> {}
 
 impl<T> SyncRefCell<T> {
-    pub fn new(value: T) -> Self {
+    pub const fn new(value: T) -> Self {
         Self {
             inner: RefCell::new(value),
         }
