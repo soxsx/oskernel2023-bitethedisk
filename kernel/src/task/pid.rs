@@ -7,20 +7,9 @@
 
 use alloc::vec::Vec;
 
-#[cfg(not(feature = "multi_harts"))]
 use crate::cell::sync_cell::SyncRefCell;
-#[cfg(feature = "multi_harts")]
-use spin::Mutex;
 
-#[cfg(feature = "multi_harts")]
-lazy_static! {
-    static ref PID_ALLOCATOR: Mutex<PidAllocator> = Mutex::new(PidAllocator::new());
-}
-
-#[cfg(not(feature = ""))]
-lazy_static! {
-    static ref PID_ALLOCATOR: SyncRefCell<PidAllocator> = SyncRefCell::new(PidAllocator::new());
-}
+static PID_ALLOCATOR: SyncRefCell<PidAllocator> = SyncRefCell::new(PidAllocator::new());
 
 /// 栈式进程标识符分配器
 struct PidAllocator {
@@ -67,29 +56,11 @@ impl PidAllocator {
 
 impl Drop for PidHandle {
     fn drop(&mut self) {
-        #[cfg(feature = "multi_harts")]
-        PID_ALLOCATOR.lock().dealloc(self.0);
-        #[cfg(not(feature = "multi_harts"))]
         PID_ALLOCATOR.borrow_mut().dealloc(self.0);
     }
 }
 
 /// 从全局栈式进程标识符分配器 `PID_ALLOCATOR` 分配一个进程标识符
 pub fn pid_alloc() -> PidHandle {
-    #[cfg(feature = "multi_harts")]
-    {
-        let mut pid_pool = &mut PROCESSORS[hartid!()].pid_pool;
-        if Some(pid_handle) = pid_pool.pop() {
-            pid_handle
-        } else {
-            let mut pid_allocator = PID_ALLOCATOR.lock();
-            (0..512).for_each(|| pid_pool.push(pid_allocator.alloc()));
-            pid_pool.pop()
-        }
-    }
-
-    #[cfg(not(feature = "multi_harts"))]
-    {
-        PID_ALLOCATOR.borrow_mut().alloc()
-    }
+    PID_ALLOCATOR.borrow_mut().alloc()
 }

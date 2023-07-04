@@ -5,7 +5,6 @@
 //! [`Processor`] 是一个物理上的计算单元，和一个具体的 [`cpu::Cpu`] 绑定，
 //! 它事实上负责进程 [`TaskControlBlock`] 的运行和进程上下文 [`TaskContext`] 的切换
 
-pub mod cpu;
 pub mod processor;
 pub mod schedule;
 
@@ -37,6 +36,16 @@ pub fn current_user_token() -> usize {
 
 pub fn current_trap_cx() -> &'static mut TrapContext {
     current_task().unwrap().lock().trap_context()
+}
+
+pub fn hanging_current_task(sleep_time: usize, duration: usize) {
+    let task = current_task().unwrap();
+    let mut inner = task.lock();
+    let current_cx_ptr = &mut inner.task_cx as *mut TaskContext;
+    drop(inner);
+    drop(task);
+    acquire_processor().hang_current(sleep_time, duration);
+    schedule(current_cx_ptr);
 }
 
 /// 换到 idle 控制流并开启新一轮的任务调度

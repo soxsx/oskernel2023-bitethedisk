@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-multi_harts = []
+multi-harts = []
 
 [dependencies]
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
@@ -18,5 +18,4 @@ linked_list_allocator = "0.10.5"
 log = "0.4"
 paste = "1"
 thiserror = { version = "1.0", package = "thiserror-core", default-features = false }
-
-fat32 = { path = "../fat32" }
+fat32 = { path = "../crates/fat32" }
