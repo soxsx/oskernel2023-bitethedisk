@@ -2,9 +2,9 @@ use core::cell::RefMut;
 
 use alloc::sync::Arc;
 
-use crate::cell::sync_cell::SyncRefCell;
 use crate::task::manager::TASK_MANAGER;
 use crate::task::{task::TaskControlBlock, TaskContext};
+use sync_cell::SyncRefCell;
 
 /// [`Processor`] 是描述 CPU执行状态 的数据结构。
 /// 在单核环境下，我们仅创建单个 Processor 的全局实例 PROCESSOR

@@ -35,14 +35,13 @@ mod syscall;
 mod task;
 mod timer;
 mod trap;
-mod cell;
 
 use core::{arch::global_asm, slice};
 use riscv::register::sstatus::{set_fs, FS};
 
 global_asm!(include_str!("entry.S"));
 
-#[cfg(not(feature = "multi_harts"))]
+#[cfg(not(feature = "multi-harts"))]
 #[no_mangle]
 pub fn meow() -> ! {
     if hartid!() == 0 {
@@ -63,7 +62,7 @@ pub fn meow() -> ! {
     unreachable!("main.rs/meow: you should not be here!");
 }
 
-#[cfg(feature = "multi_harts")]
+#[cfg(feature = "multi-harts")]
 #[no_mangle]
 pub fn meow() -> ! {
     if hartid!() == 0 {
