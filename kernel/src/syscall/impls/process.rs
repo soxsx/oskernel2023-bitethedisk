@@ -82,9 +82,13 @@ pub fn sys_do_fork(
 pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize) -> Result<isize> {
     let token = current_user_token();
     // 读取到用户空间的应用程序名称（路径）
-    let path = translated_str(token, path);
+    let mut path = translated_str(token, path);
     // println!("path:{:?},argv:{:?},envp:{:?}",path,argv,envp);
     let mut args_vec: Vec<String> = Vec::new();
+    if path.ends_with(".sh") {
+	path="/busybox".to_string();
+	args_vec.push("sh".to_string());
+    }
     if argv as usize != 0 {
         loop {
             let arg_str_ptr = *translated_ref(token, argv);
