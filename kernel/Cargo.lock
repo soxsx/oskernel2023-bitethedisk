@@ -105,6 +105,7 @@ dependencies = [
  "paste",
  "riscv",
  "spin 0.9.8",
+ "sync_cell",
  "thiserror-core",
  "virtio-drivers",
  "xmas-elf",
@@ -252,6 +253,10 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "sync_cell"
+version = "0.1.0"
 
 [[package]]
 name = "thiserror-core"

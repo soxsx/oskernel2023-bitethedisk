@@ -13,19 +13,19 @@ GDB = riscv64-unknown-elf-gdb
 FAT32_IMAGE = ../workspace/fat32.img
 NCPU = 2
 
-LOG_LEVEL := info
+RUST_LOG := info
 
 ##################################################################
 #                        Run straightly                          #
 ##################################################################
 initproc:
-	@cd ../misc && make initproc
+	@cd ../crates/libd && cargo build --release
 
 kernel: initproc
 	@cargo build --release --offline
 
 kernel-dbg: initproc
-	@LOG_LV=$(LOG_LEVEL) cargo build --release --offline
+	@RUST_LOG=$(RUST_LOG) cargo build --release --offline
 
 fat32img:
 	@cd ../misc && make tests
@@ -50,8 +50,7 @@ run: kernel-dbg
 #                      Debug build & run.                        #
 ##################################################################
 kernel-debug: initproc
-	# @cargo clean
-	@LOG_LV=debug cargo build
+	@RUST_LOG=$(RUST_LOG) cargo build
 
 debug-server: kernel-debug
 	@$(QEMU) \

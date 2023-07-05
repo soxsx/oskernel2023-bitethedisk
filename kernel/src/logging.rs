@@ -40,7 +40,7 @@ impl Log for SimpleLogger {
 pub fn init() {
     log::set_logger(&LOGGER).unwrap();
 
-    log::set_max_level(match option_env!("LOG_LV") {
+    log::set_max_level(match option_env!("RUST_LOG") {
         Some(log_level) => match log_level {
             "ERROR" | "error" => LevelFilter::Error,
             "WARN" | "warn" => LevelFilter::Warn,

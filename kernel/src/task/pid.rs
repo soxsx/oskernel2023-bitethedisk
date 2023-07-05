@@ -7,7 +7,7 @@
 
 use alloc::vec::Vec;
 
-use crate::cell::sync_cell::SyncRefCell;
+use sync_cell::SyncRefCell;
 
 static PID_ALLOCATOR: SyncRefCell<PidAllocator> = SyncRefCell::new(PidAllocator::new());
 

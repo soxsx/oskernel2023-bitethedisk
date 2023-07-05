@@ -167,7 +167,7 @@ make debug        # 链接 dbg-server
 
   // kernel/src/main.rs
 
-  #[cfg(feature = "multi_harts")]
+  #[cfg(feature = "multi-harts")]
   #[no_mangle]
   pub fn meow() -> ! {
       if hartid!() == 0 {

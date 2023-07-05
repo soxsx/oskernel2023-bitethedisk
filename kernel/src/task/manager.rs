@@ -1,5 +1,5 @@
-use crate::cell::sync_cell::SyncRefCell;
 use crate::timer::get_time_ms;
+use sync_cell::SyncRefCell;
 
 use super::TaskControlBlock;
 use alloc::collections::{BTreeMap, VecDeque};
