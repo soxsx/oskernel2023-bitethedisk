@@ -18,7 +18,9 @@ clean:
 	@rm -rf temp/
 	@cd kernel/ && cargo clean
 	@cd workspace/ && make clean
-	@cd fat32/ && cargo clean
+	@cd crates/libd && cargo clean
+	@cd crates/sync_cell && cargo clean
+	@cd crates/fat32 && cargo clean
 	@cd misc/ && make clean
 
 fat32img:
