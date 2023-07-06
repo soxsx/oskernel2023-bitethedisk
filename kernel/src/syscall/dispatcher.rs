@@ -2,68 +2,39 @@
 
 use super::{error::SyscallError, impls::*};
 
+macro_rules! syscall_nums {
+    ($($sysn:ident = $id:expr),*) => {
+        $(
+            #[allow(unused)]
+            const $sysn: usize = $id;
+        )*
+    };
+}
+
 // 系统调用号
-const SYS_GETCWD: usize = 17;
-const SYS_PIPE2: usize = 59;
-const SYS_DUP: usize = 23;
-const SYS_DUP3: usize = 24;
-const SYS_CHDIR: usize = 49;
-const SYS_OPENAT: usize = 56;
-const SYS_CLOSE: usize = 57;
-const SYS_GETDENTS64: usize = 61;
-const SYS_READ: usize = 63;
-const SYS_WRITE: usize = 64;
-const SYS_LINKAT: usize = 37;
-const SYS_UNLINKAT: usize = 35;
-const SYS_MKDIRAT: usize = 34;
-const SYS_UMOUNT2: usize = 39;
-const SYS_MOUNT: usize = 40;
-const SYS_FSTAT: usize = 80;
-const SYS_CLONE: usize = 220;
-const SYS_EXECVE: usize = 221;
-const SYS_WAIT4: usize = 260;
-const SYS_EXIT: usize = 93;
-const SYS_GETPPID: usize = 173;
-const SYS_GETPID: usize = 172;
-const SYS_BRK: usize = 214;
-const SYS_MUNMAP: usize = 215;
-const SYS_MMAP: usize = 222;
-const SYS_TIMES: usize = 153;
-const SYS_UNAME: usize = 160;
-const SYS_SCHED_YIELD: usize = 124;
-const SYS_GETTIMEOFDAY: usize = 169;
-const SYS_NANOSLEEP: usize = 101;
-const SYS_SET_TID_ADDRESS: usize = 96;
-const SYS_READV: usize = 65;
-const SYS_WRITEV: usize = 66;
-const SYS_EXIT_GROUP: usize = 94;
-const SYS_GETUID: usize = 174;
-const SYS_RT_SIGPROMASK: usize = 135;
-const SYS_RT_SIGACTION: usize = 134;
-const SYS_IOCTL: usize = 29;
-const SYS_FCNTL: usize = 25;
-const SYS_GETEUID: usize = 175;
-const SYS_PPOLL: usize = 73;
-const SYS_NEWFSTATAT: usize = 79;
-const SYS_CLOCK_GETTIME: usize = 113;
-const SYS_GETTID: usize = 178;
-const SYS_SENDFILE: usize = 71;
-const SYS_SYSLOG: usize = 116;
-const SYS_FACCESSAT: usize = 48;
-const SYS_SYSINFO: usize = 179;
-const SYS_KILL: usize = 129;
-const SYS_UTIMENSAT: usize = 88;
-const SYS_RENAMEAT2: usize = 276;
-const SYS_LSEEK: usize = 62;
-const SYS_GETEGID: usize = 177;
-const SYS_GETGID: usize = 176;
-const SYS_SET_ROBUST_LIST: usize = 99;
-const SYS_PRLIMIT64: usize = 261;
-const SYS_READLINKAT: usize = 78;
-const SYS_GETRANDOM: usize = 278;
-const SYS_MPROTECT: usize = 226;
-const SYS_GETPGID: usize = 155;
-const SYS_SETPGID: usize = 154;
+syscall_nums! {
+    SYS_GETCWD = 17, SYS_PIPE2  = 59, SYS_DUP    = 23, SYS_DUP3       = 24,
+    SYS_CHDIR  = 49, SYS_OPENAT = 56, SYS_CLOSE  = 57, SYS_GETDENTS64 = 61,
+    SYS_READ   = 63, SYS_WRITE  = 64, SYS_LINKAT = 37, SYS_UNLINKAT   = 35,
+
+    SYS_MKDIRAT = 34,  SYS_UMOUNT2 = 39,  SYS_MOUNT  = 40,  SYS_FSTAT  = 80,
+    SYS_CLONE   = 220, SYS_EXECVE  = 221, SYS_WAIT4  = 260, SYS_EXIT   = 93,
+    SYS_GETPPID = 173, SYS_GETPID  = 172, SYS_BRK    = 214, SYS_MUNMAP = 215,
+
+    SYS_MMAP         = 222, SYS_TIMES      = 153, SYS_UNAME  = 160, SYS_SCHED_YIELD = 124,
+    SYS_WRITEV       = 66,  SYS_EXIT_GROUP = 94,  SYS_GETUID = 174, SYS_RT_SIGPROMASK = 135,
+    SYS_RT_SIGACTION = 134, SYS_IOCTL      = 29,  SYS_FCNTL  = 25, SYS_GETEUID = 175,
+
+    SYS_PPOLL    = 73,  SYS_NEWFSTATAT = 79,  SYS_CLOCK_GETTIME = 113, SYS_GETTID  = 178,
+    SYS_SENDFILE = 71,  SYS_SYSLOG     = 116, SYS_FACCESSAT     = 48,  SYS_SYSINFO = 179,
+    SYS_KILL     = 129, SYS_UTIMENSAT  = 88,  SYS_RENAMEAT2     = 276, SYS_LSEEK   = 62,
+
+    SYS_GETEGID      = 177, SYS_GETGID    = 176, SYS_SET_ROBUST_LIST = 99,  SYS_PRLIMIT64 = 261,
+    SYS_READLINKAT   = 78,  SYS_GETRANDOM = 278, SYS_MPROTECT        = 226, SYS_GETPGID   = 155,
+    SYS_GETTIMEOFDAY = 169, SYS_NANOSLEEP = 101, SYS_SET_TID_ADDRESS = 96,  SYS_READV     = 65,
+
+    SYS_SETPGID = 154
+}
 
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
