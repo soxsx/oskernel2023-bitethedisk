@@ -32,16 +32,7 @@ sdcard:
 	@rm -f $(SDCARD)
 	@cp $(SDCARD_BRK) $(SDCARD)
 
-<<<<<<< HEAD
-	@cd ../workspace && mkdir -p tests/
-	@cd ../misc && cp -r ./user/build/riscv64/* ../workspace/tests
-
-	@cd ../workspace && make image
-
-run: kernel-dbg
-=======
 run: kernel-dbg sdcard
->>>>>>> Feat: workflow-rc
 	@$(QEMU) \
 	 	-machine virt \
 		-kernel $(KERNEL_ELF) \
@@ -58,11 +49,7 @@ run: kernel-dbg sdcard
 kernel-debug: initproc
 	@RUST_LOG=$(RUST_LOG) cargo build
 
-<<<<<<< HEAD
-debug-server: kernel-debug
-=======
 debug-server: kernel-debug sdcard
->>>>>>> Feat: workflow-rc
 	@$(QEMU) \
 	 	-machine virt \
 		-kernel $(KERNEL_ELF_DBG) \

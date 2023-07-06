@@ -65,7 +65,7 @@ impl SyscallError {
             SyscallError::PidNotFound(error_code, _) => *error_code,
             SyscallError::ReachMountLimit(error_code) => *error_code,
             SyscallError::UnmountFailed(error_code) => *error_code,
-	    SyscallError::NoSuchFile(error_code) => *error_code,
+            SyscallError::NoSuchFile(error_code) => *error_code,
         }
     }
 }

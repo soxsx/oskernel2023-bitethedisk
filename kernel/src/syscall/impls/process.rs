@@ -4,8 +4,8 @@ use crate::fs::open_flags::CreateMode;
 use crate::fs::{open, OpenFlags};
 use crate::mm::{translated_mut, translated_ref, translated_str};
 use crate::task::{
-    add_task, current_task, current_user_token, exit_current_and_run_next,
-    suspend_current_and_run_next, pid2task, SignalFlags,
+    add_task, current_task, current_user_token, exit_current_and_run_next, pid2task,
+    suspend_current_and_run_next, SignalFlags,
 };
 pub use crate::task::{CloneFlags, Utsname, UTSNAME};
 
@@ -107,7 +107,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
                 // 读到下一参数地址为0表示参数结束
                 break;
             } // 否则从用户空间取出参数，压入向量
-//	    println!("envp:{:?},env_str_ptr:{:x?}",envp,env_str_ptr);
+              //	    println!("envp:{:?},env_str_ptr:{:x?}",envp,env_str_ptr);
             envs_vec.push(translated_str(token, env_str_ptr as *const u8));
             unsafe {
                 envp = envp.add(1);
@@ -217,7 +217,6 @@ pub fn sys_exit_group(exit_code: i32) -> ! {
     panic!("Unreachable in sys_exit!");
 }
 
-
 /// #define SYS_getppid 173
 ///
 /// 功能：获取父进程ID；
@@ -262,7 +261,12 @@ pub fn sys_gettid() -> Result<isize> {
     Ok(0)
 }
 
-pub fn sys_rt_sigprocmask(how: i32, set: *const usize, oldset: *const usize, _sigsetsize: usize) -> Result<isize> {
+pub fn sys_rt_sigprocmask(
+    how: i32,
+    set: *const usize,
+    oldset: *const usize,
+    _sigsetsize: usize,
+) -> Result<isize> {
     Ok(0)
 }
 
@@ -317,11 +321,11 @@ pub fn sys_kill(pid: usize, signal: u32) -> Result<isize> {
     if let Some(task) = pid2task(pid) {
         if let Some(flag) = SignalFlags::from_bits(signal) {
             task.lock().signals |= flag;
-	    Ok(0)
+            Ok(0)
         } else {
             panic!("[DEBUG] sys_kill: unsupported signal");
         }
     } else {
-	Err(SyscallError::PidNotFound(-1, pid as isize))
+        Err(SyscallError::PidNotFound(0, 0))
     }
 }

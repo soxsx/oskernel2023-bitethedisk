@@ -67,7 +67,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // do not move to its parent but under initproc
 
     if task.pid() == 0 {
-	sync_all();
+        sync_all();
         panic!("initproc return!");
     }
 
