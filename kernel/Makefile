@@ -10,7 +10,8 @@ KERNEL_ELF_DBG := target/$(TARGET)/debug/kernel
 QEMU = qemu-system-riscv64
 GDB = riscv64-unknown-elf-gdb
 
-FAT32_IMAGE = ../workspace/fat32.img
+SDCARD = ../workspace/sdcard.img
+SDCARD_BRK = ../workspace/sdcard.img.brk 
 NCPU = 2
 
 RUST_LOG := info
@@ -27,15 +28,20 @@ kernel: initproc
 kernel-dbg: initproc
 	@RUST_LOG=$(RUST_LOG) cargo build --release --offline
 
-fat32img:
-	@cd ../misc && make tests
+sdcard:
+	@rm -f $(SDCARD)
+	@cp $(SDCARD_BRK) $(SDCARD)
 
+<<<<<<< HEAD
 	@cd ../workspace && mkdir -p tests/
 	@cd ../misc && cp -r ./user/build/riscv64/* ../workspace/tests
 
 	@cd ../workspace && make image
 
 run: kernel-dbg
+=======
+run: kernel-dbg sdcard
+>>>>>>> Feat: workflow-rc
 	@$(QEMU) \
 	 	-machine virt \
 		-kernel $(KERNEL_ELF) \
@@ -43,7 +49,7 @@ run: kernel-dbg
 		-nographic \
 		-smp $(NCPU) \
 		-bios $(BOOTLOADER) \
-		-drive file=$(FAT32_IMAGE),if=none,format=raw,id=x0 \
+		-drive file=$(SDCARD),if=none,format=raw,id=x0 \
 		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 
 ##################################################################
@@ -52,7 +58,11 @@ run: kernel-dbg
 kernel-debug: initproc
 	@RUST_LOG=$(RUST_LOG) cargo build
 
+<<<<<<< HEAD
 debug-server: kernel-debug
+=======
+debug-server: kernel-debug sdcard
+>>>>>>> Feat: workflow-rc
 	@$(QEMU) \
 	 	-machine virt \
 		-kernel $(KERNEL_ELF_DBG) \
@@ -60,7 +70,7 @@ debug-server: kernel-debug
 		-nographic \
 		-smp $(NCPU) \
 		-bios $(BOOTLOADER) \
-		-drive file=$(FAT32_IMAGE),if=none,format=raw,id=x0 \
+		-drive file=$(SDCARD),if=none,format=raw,id=x0 \
 		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
 		-s -S
 

@@ -23,9 +23,6 @@ clean:
 	@cd crates/fat32 && cargo clean
 	@cd misc/ && make clean
 
-fat32img:
-	@cd kernel/ && make fat32img
-
 run:
 	@cd kernel/ && make run
 
@@ -34,3 +31,8 @@ debug-server:
 
 debug:
 	@cd kernel/ && make debug
+
+init:
+	@cd testsuits/ \
+	&& docker run --rm -it -v $$(pwd):/code --privileged --entrypoint make alphamj/os-contest:v7.7 -C /code sdcard \
+	&& mv sdcard.img ../workspace/sdcard.img.brk
