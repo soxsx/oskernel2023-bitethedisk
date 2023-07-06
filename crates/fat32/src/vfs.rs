@@ -117,6 +117,35 @@ impl VirFile {
         self.name.as_str()
     }
 
+    // TAG for lzm
+    pub fn clear_direntry(&self) {
+        for i in 0..self.lde_pos.len() {
+            self.modify_lde(i, |lde: &mut LongDirEntry| {
+                lde.delete();
+            });
+        }
+        self.modify_sde(|sde: &mut ShortDirEntry| {
+            sde.delete();
+        });
+    }
+
+    // TAG for lzm
+    pub fn clear_content(&self) -> usize {
+        let first_cluster = self.first_cluster() as u32;
+        let cluster_cnt;
+        if first_cluster >= 2 && first_cluster < END_OF_CLUSTER {
+            let all_clusters = self.fs.read().fat.read().get_all_cluster_id(first_cluster);
+            cluster_cnt = all_clusters.len();
+            self.fs.write().dealloc_cluster(all_clusters);
+        } else {
+            cluster_cnt = 0;
+        }
+
+        self.set_file_size(0);
+        self.set_first_cluster(NEW_VIR_FILE_CLUSTER as usize);
+        cluster_cnt
+    }
+
     pub fn sde_pos(&self) -> (usize, usize) {
         assert!(self.sde_pos.cluster < END_OF_CLUSTER);
         let cluster_id = self.sde_pos.cluster;
