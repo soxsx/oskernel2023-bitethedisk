@@ -21,18 +21,18 @@ clean:
 	@cd crates/libd && cargo clean
 	@cd crates/sync_cell && cargo clean
 	@cd crates/fat32 && cargo clean
-	@cd misc/ && make clean
+	@cd testsuits/ && make clean
 
 run:
 	@cd kernel/ && make run
 
-debug-server:
+debug-server: check-sdcard
 	@cd kernel/ && make debug-server
 
-debug:
+debug: 
 	@cd kernel/ && make debug
 
-init:
+sdcard:
 	@cd testsuits/ \
 	&& docker run --rm -it -v $$(pwd):/code --privileged --entrypoint make alphamj/os-contest:v7.7 -C /code sdcard \
-	&& mv sdcard.img ../workspace/sdcard.img.brk
+	&& mv sdcard.img ../workspace/sdcard.img.bak

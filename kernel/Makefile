@@ -11,7 +11,7 @@ QEMU = qemu-system-riscv64
 GDB = riscv64-unknown-elf-gdb
 
 SDCARD = ../workspace/sdcard.img
-SDCARD_BRK = ../workspace/sdcard.img.brk 
+SDCARD_BAK = ../workspace/sdcard.img.bak 
 NCPU = 2
 
 RUST_LOG := info
@@ -30,7 +30,7 @@ kernel-dbg: initproc
 
 sdcard:
 	@rm -f $(SDCARD)
-	@cp $(SDCARD_BRK) $(SDCARD)
+	@cp $(SDCARD_BAK) $(SDCARD)
 
 run: kernel-dbg sdcard
 	@$(QEMU) \

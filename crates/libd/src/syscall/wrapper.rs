@@ -8,7 +8,7 @@ pub fn fork() -> isize {
     sys_fork()
 }
 
-pub fn exec(path: &str /* , argv: &[&str], envp: &[&str] */) -> isize {
+pub fn exec(path: &str) -> isize {
     sys_exec(path.as_ptr() as *const u8, 0 as *const u8, 0 as *const u8)
 }
 

@@ -218,8 +218,6 @@ impl TaskControlBlock {
         // user_sp -= core::mem::size_of::<usize>();
         // *translated_mut(token, user_sp as *mut usize) = 456;
 
-	
-
         // 分配 envs 的空间, 加入动态链接库位置
         let envs_ptrv: Vec<_> = (0..envs.len())
             .map(|idx| {

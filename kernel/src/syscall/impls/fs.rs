@@ -811,7 +811,7 @@ pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize>
     let mut write_data: Vec<&'static mut [u8]> = Vec::new();
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
-	return Err(SyscallError::FdInvalid(-1, fd));
+        return Err(SyscallError::FdInvalid(-1, fd));
     }
     if let Some(file) = &inner.fd_table[fd] {
         // 文件不可写
@@ -1199,11 +1199,16 @@ pub fn sys_lseek(fd: usize, off_t: usize, whence: usize) -> Result<isize> {
     }
 }
 
-pub fn sys_readlinkat(dirfd: isize, pathname: *const u8, buf: *const u8, bufsiz: usize) -> Result<isize> {
+pub fn sys_readlinkat(
+    dirfd: isize,
+    pathname: *const u8,
+    buf: *const u8,
+    bufsiz: usize,
+) -> Result<isize> {
     if dirfd == AT_FDCWD {
         let token = current_user_token();
         let path = translated_str(token, pathname);
-	println!("readlinkat path:{:?}",path);
+        println!("readlinkat path:{:?}", path);
         if path.as_str() != "/proc/self/exe" {
             panic!("sys_readlinkat: pathname not support");
         }

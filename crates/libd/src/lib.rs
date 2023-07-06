@@ -13,4 +13,3 @@ mod panic;
 pub mod syscall;
 
 pub use console::*;
-

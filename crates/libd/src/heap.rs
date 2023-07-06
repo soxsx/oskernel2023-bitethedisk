@@ -2,7 +2,7 @@
 
 use buddy_system_allocator::LockedHeap;
 
-pub(crate) const USER_HEAP_SIZE: usize = 65536;
+pub(crate) const USER_HEAP_SIZE: usize = 0x8000;
 pub(crate) static mut HEAP_SPACE: [u8; USER_HEAP_SIZE] = [0; USER_HEAP_SIZE];
 
 #[global_allocator]

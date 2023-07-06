@@ -85,10 +85,18 @@ pub fn translated_str(token: usize, ptr: *const u8) -> String {
     let mut string = String::new();
     let mut va = ptr as usize;
     loop {
-        let ch: u8 = *(page_table
-            .translate_va(VirtAddr::from(va))
-            .unwrap()
-            .as_mut());
+        // let ch: u8 = *(page_table
+        //     .translate_va(VirtAddr::from(va))
+        //     .unwrap()
+        //     .as_ref());
+
+        let ch: u8 = match page_table.translate_va(VirtAddr::from(va)) {
+            Some(va) => *va.as_mut(),
+            None => {
+                panic!("None va: {:?}", va);
+            }
+        };
+
         if ch == 0 {
             break;
         } else {

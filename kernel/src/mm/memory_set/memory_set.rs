@@ -2,7 +2,9 @@
 
 use super::vm_area::VmArea;
 use super::{MapPermission, MapType};
-use crate::consts::{PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE, USER_STACK_SIZE, CLOCK_FREQ};
+use crate::consts::{
+    CLOCK_FREQ, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE, USER_STACK_SIZE,
+};
 use crate::fs::file::File;
 use crate::mm::frame_allocator::enquire_refcount;
 use crate::mm::page_table::PTEFlags;
@@ -401,10 +403,14 @@ impl MemorySet {
                 _ => continue,
             }
         }
+        let user_stack_top = TRAP_CONTEXT - PAGE_SIZE;
+        let user_stack_bottom = user_stack_top - USER_STACK_SIZE;
+
+        // auxs.push(AuxEntry(AT_BASE, 0));
         // auxs.push(AuxEntry(AT_BASE, 0));
 
         let ph_head_addr = head_va.unwrap() + elf.header.pt2.ph_offset() as usize;
-        // let ph_head_addr = elf.header.pt2.ph_offset() as usize;	
+        // let ph_head_addr = elf.header.pt2.ph_offset() as usize;
 
         /* get auxv vector */
         auxs.push(AuxEntry(0x21, 0 as usize)); //no vdso
