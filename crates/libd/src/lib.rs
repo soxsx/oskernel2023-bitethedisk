@@ -8,7 +8,7 @@ extern crate alloc;
 #[macro_use]
 pub mod console;
 mod entry;
-mod heap;
+pub mod heap;
 mod panic;
 pub mod syscall;
 

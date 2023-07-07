@@ -1,29 +1,17 @@
 //! 提供给用户的系统调用封装
 
-use alloc::vec::Vec;
-
 use super::syscall::*;
 
 pub fn fork() -> isize {
     sys_fork()
 }
 
-pub fn exec(path: &str) -> isize {
-    sys_exec(path.as_ptr() as *const u8, 0 as *const u8, 0 as *const u8)
+pub fn exec(path: *const i8) -> isize {
+    sys_exec(path, 0 as *const i8, 0 as *const i8)
 }
 
-pub fn execve(path: &str, argv: &[&str], envp: &[&str]) -> isize {
-    let argv = to_cstr(argv);
-    let envp = to_cstr(envp);
-    sys_exec(path.as_ptr(), argv, envp)
-}
-
-fn to_cstr(rs_str: &[&str]) -> *const u8 {
-    let mut cstr_heads = Vec::new();
-    for &cstr in rs_str {
-        cstr_heads.push(cstr.as_ptr());
-    }
-    cstr_heads.as_slice() as *const _ as *const _
+pub fn execve(path: *const i8, argv: *const i8, envp: *const i8) -> isize {
+    sys_exec(path as *const i8, argv, envp)
 }
 
 pub fn write(fd: usize, buf: &[u8]) -> isize {
@@ -38,6 +26,6 @@ pub fn yield_() {
     sys_sched_yield()
 }
 
-pub fn wait(pid: usize, exit_code: &mut usize) -> isize {
+pub fn waitpid(pid: usize, exit_code: &mut i32) -> isize {
     sys_waitpid(pid, exit_code)
 }

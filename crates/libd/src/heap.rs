@@ -18,3 +18,7 @@ pub unsafe fn init() -> Result<(), ()> {
         .init(HEAP_SPACE.as_ptr() as usize, HEAP_SPACE.len());
     Ok(())
 }
+
+pub fn init_unchecked() {
+    unsafe { init().unwrap() }
+}

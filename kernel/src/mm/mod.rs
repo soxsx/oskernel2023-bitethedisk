@@ -87,7 +87,7 @@ pub fn translated_str(token: usize, ptr: *const u8) -> String {
     loop {
         let ch: u8 = *(page_table
             .translate_va(VirtAddr::from(va))
-            .expect(&format!("virtual address translation failed: {:?}", va))
+            .expect(&format!("virtual address translation failed: 0x{:x?}", va))
             .as_ref());
 
         if ch == 0 {

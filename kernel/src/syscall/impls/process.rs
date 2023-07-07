@@ -162,11 +162,11 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result<isize> {
     loop {
         let mut inner = task.lock();
         // 查找所有符合PID要求的处于僵尸状态的进程，如果有的话还需要同时找出它在当前进程控制块子进程向量中的下标
-        let pair = inner.children.iter().enumerate().find(|(_, p)| {
-            // ++++ temporarily access child PCB lock exclusively
-            p.lock().is_zombie() && (pid == -1 || pid as usize == p.pid())
-            // ++++ release child PCB
-        });
+        let pair = inner
+            .children
+            .iter()
+            .enumerate()
+            .find(|(_, p)| p.lock().is_zombie() && (pid == -1 || pid as usize == p.pid()));
         if let Some((idx, _)) = pair {
             // 将子进程从向量中移除并置于当前上下文中
             let child = inner.children.remove(idx);
@@ -174,24 +174,28 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result<isize> {
             // 更不会出现在处理器监控器或者任务管理器中。当它所在的代码块结束，这次引用变量的生命周期结束，
             // 将导致该子进程进程控制块的引用计数变为 0 ，彻底回收掉它占用的所有资源，
             // 包括：内核栈和它的 PID 还有它的应用地址空间存放页表的那些物理页帧等等
-            // println!("[KERNEL] pid {} waitpid {}",current_task().unwrap().pid.0, pid);
+            // debug!("[KERNEL] pid {} waitpid {}",current_task().unwrap().pid.0, pid);
             assert_eq!(Arc::strong_count(&child), 1);
             // 收集的子进程信息返回
             let found_pid = child.pid();
-            // ++++ temporarily access child TCB exclusively
-            let exit_code = child.lock().exit_code;
-            // ++++ release child PCB
+            let mut exit_code = child.lock().exit_code;
             // 将子进程的退出码写入到当前进程的应用地址空间中
             if exit_code_ptr as usize != 0 {
-                *translated_mut(inner.memory_set.token(), exit_code_ptr) = exit_code << 8;
+                // 进程异常退出，低 16 位中的低 7 位放错误时的返回值，16 位中的高 8 位为 0
+                if exit_code & 0b1111111 != 0 {
+                    exit_code = exit_code & 0b1111111;
+                } else
+                // 进程正常退出
+                {
+                    exit_code <<= 8;
+                }
+                *translated_mut(inner.memory_set.token(), exit_code_ptr) = exit_code;
             }
             return Ok(found_pid as isize);
         } else {
-            // 如果找不到的话则放权等待
-            drop(inner); // 手动释放 TaskControlBlock 全局可变部分
+            drop(inner); // 因为下个函数会切换上下文，所以需要手动释放锁
             suspend_current_and_run_next();
         }
-        // ---- release current PCB lock automatically
     }
 }
 

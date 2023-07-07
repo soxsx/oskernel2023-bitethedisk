@@ -6,7 +6,7 @@ use super::{pid_alloc, PidHandle, SignalFlags};
 use crate::consts::*;
 use crate::fs::{file::File, Fat32File, Stdin, Stdout};
 use crate::mm::kernel_vmm::acquire_kvmm;
-use crate::mm::memory_set::{AuxEntry, LoadedELF, AT_RANDOM, MMAP_BASE};
+use crate::mm::memory_set::{AuxEntry, LoadedELF, MMAP_BASE};
 use crate::mm::{
     translated_mut, MapPermission, MemorySet, MmapFlags, MmapManager, MmapProts, PageTableEntry,
     PhysPageNum, VirtAddr, VirtPageNum,
@@ -137,7 +137,7 @@ impl TaskControlBlock {
             memory_set,
             elf_entry: entry_point,
             user_stack_top: user_sp,
-            auxs,
+            auxs: _auxs,
         } = MemorySet::load_elf(initproc.clone());
         initproc.delete();
         // 从地址空间 memory_set 中查多级页表找到应用地址空间中的 Trap 上下文实际被放在哪个物理页帧
@@ -432,13 +432,11 @@ impl TaskControlBlock {
         } else if va >= mmap_start && va < mmap_end {
             self.lazy_mmap(va, is_load)
         } else {
-            println!("[check_lazy] {:x?}", va);
-            println!("[check_lazy] mmap_start: 0x{:x}", mmap_start.0);
-            println!("[check_lazy] mmap_end: 0x{:x}", mmap_end.0);
-            println!("[check_lazy] heap_start: 0x{:x}", heap_start.0);
-            println!("[check_lazy] heap_end: 0x{:x}", heap_end.0);
-            println!("[check_lazy] current vma layout:");
-
+            warn!("[check_lazy] {:x?}", va);
+            warn!("[check_lazy] mmap_start: 0x{:x}", mmap_start.0);
+            warn!("[check_lazy] mmap_end: 0x{:x}", mmap_end.0);
+            warn!("[check_lazy] heap_start: 0x{:x}", heap_start.0);
+            warn!("[check_lazy] heap_end: 0x{:x}", heap_end.0);
             -2
         }
     }

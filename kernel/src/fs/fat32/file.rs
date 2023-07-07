@@ -153,19 +153,19 @@ pub fn list_apps(path: AbsolutePath) {
             if layer == 0 && app.0 == "initproc" {
                 continue;
             }
-            let app_path = path.join_string(app.0.clone());
+            let app_path: AbsolutePath = path.join_string(app.0.clone());
             if app.1 & ATTR_DIRECTORY == 0 {
                 // 如果不是目录
                 for _ in 0..layer {
-                    print!("  ---");
+                    print!("   ");
                 }
                 crate::println!("{}", app.0);
             } else if app.0 != "." && app.0 != ".." {
                 // 目录
                 for _ in 0..layer {
-                    crate::print!("  ---");
+                    crate::print!("  ");
                 }
-                crate::println!("{}: ", app.0);
+                crate::println!("{}/", app.0);
                 ls(app_path.clone(), layer + 1);
             }
         }

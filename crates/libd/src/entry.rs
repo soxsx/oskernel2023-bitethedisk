@@ -1,49 +1,37 @@
-use core::arch::asm;
+use core::{arch::asm, ffi::CStr};
 
-use alloc::vec::Vec;
+use alloc::{ffi::CString, vec::Vec};
 
 use crate::{heap, syscall::exit};
-
 
 #[linkage = "weak"]
 #[link_section = ".text.entry"]
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
-    if let Err(_) = unsafe { heap::init() } {
+pub unsafe extern "C" fn _start() -> ! {
+    let mut argc: usize;
+    let mut argv: usize;
+    asm! {
+        "ld a0, 0(sp)",
+        "ld a1, 8(sp)",
+        out("a0") argc,
+        out("a1") argv,
+    }
+
+    if let Err(_) = heap::init() {
         panic!("heap init failed");
     };
 
-    let argc: usize;
-    let argv: usize;
-    unsafe {
-        asm!(
-            "ld a0, 0(sp)",
-            "ld a1, 8(sp)",
-            out("a0") argc,
-            out("a1") argv
-        );
-    }
-
-    let mut v: Vec<&'static str> = Vec::new();
+    let mut v: Vec<CString> = Vec::new();
     for i in 0..argc {
-        let str_start =
-            unsafe { ((argv + i * core::mem::size_of::<usize>()) as *const usize).read_volatile() };
-        let len = (0usize..)
-            .find(|i| unsafe { ((str_start + *i) as *const u8).read_volatile() == 0 })
-            .unwrap();
-        v.push(
-            core::str::from_utf8(unsafe {
-                core::slice::from_raw_parts(str_start as *const u8, len)
-            })
-            .unwrap(),
-        );
+        let c_char_ptr =
+            ((argv + i * core::mem::size_of::<usize>()) as *const u8).read_volatile() as *mut i8;
+        v.push(CString::from(CStr::from_ptr(c_char_ptr)));
     }
-
-    exit(main(argc, v.as_slice()));
+    exit(main(argc, v));
 }
 
 #[linkage = "weak"]
 #[no_mangle]
-fn main(_argc: usize, _argv: &[&str]) -> isize {
+fn main(_argc: usize, _argv: Vec<CString>) -> isize {
     panic!("cannot find main!");
 }
