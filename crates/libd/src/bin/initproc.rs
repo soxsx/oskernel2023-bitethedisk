@@ -12,18 +12,13 @@ use libd::{
 };
 
 #[no_mangle]
-fn _start() -> ! {
-    exit(main())
-}
-
-#[no_mangle]
 fn main() -> isize {
     let pid = fork();
     if pid == 0 {
         execve(
             "./busybox\0".as_ptr() as *const i8,
             ["./busybox\0".as_ptr(), "sh\0".as_ptr()].as_ptr() as *const i8,
-            ["\0".as_ptr()].as_ptr() as *const i8,
+            ["PATH=/\0".as_ptr()].as_ptr() as *const i8,
         );
     } else {
         let mut exit_code = 0_i32;

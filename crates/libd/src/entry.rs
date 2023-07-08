@@ -27,11 +27,11 @@ pub unsafe extern "C" fn _start() -> ! {
             ((argv + i * core::mem::size_of::<usize>()) as *const u8).read_volatile() as *mut i8;
         v.push(CString::from(CStr::from_ptr(c_char_ptr)));
     }
-    exit(main(argc, v));
+    exit(main(argc, v.as_ptr() as *const i8));
 }
 
 #[linkage = "weak"]
 #[no_mangle]
-fn main(_argc: usize, _argv: Vec<CString>) -> isize {
+fn main(_argc: usize, _argv: *const i8) -> isize {
     panic!("cannot find main!");
 }

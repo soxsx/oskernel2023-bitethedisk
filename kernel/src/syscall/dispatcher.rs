@@ -5,7 +5,6 @@ use super::{error::SyscallError, impls::*};
 macro_rules! syscall_nums {
     ($($sysn:ident = $id:expr),*) => {
         $(
-            #[allow(unused)]
             const $sysn: usize = $id;
         )*
     };
@@ -29,18 +28,17 @@ syscall_nums! {
     SYS_SENDFILE = 71,  SYS_SYSLOG     = 116, SYS_FACCESSAT     = 48,  SYS_SYSINFO = 179,
     SYS_KILL     = 129, SYS_UTIMENSAT  = 88,  SYS_RENAMEAT2     = 276, SYS_LSEEK   = 62,
 
+    SYS_GETTIMEOFDAY = 169, SYS_NANOSLEEP = 101, SYS_SET_TID_ADDRESS = 96,  SYS_READV     = 65,
     SYS_GETEGID      = 177, SYS_GETGID    = 176, SYS_SET_ROBUST_LIST = 99,  SYS_PRLIMIT64 = 261,
     SYS_READLINKAT   = 78,  SYS_GETRANDOM = 278, SYS_MPROTECT        = 226, SYS_GETPGID   = 155,
-    SYS_GETTIMEOFDAY = 169, SYS_NANOSLEEP = 101, SYS_SET_TID_ADDRESS = 96,  SYS_READV     = 65,
 
     SYS_SETPGID = 154
 }
 
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
-    // println!("[DEBUG] syscall:{:?}",syscall_id);
+    debug!("syscall:{:?}", syscall_id);
     let ret: core::result::Result<isize, SyscallError> = match syscall_id {
-        // TODO: 检查完善
         SYS_CLONE => sys_do_fork(args[0], args[1], args[2], args[3], args[4]),
 
         SYS_EXECVE => sys_exec(
@@ -153,7 +151,6 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
 
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
-    // println!("syscall end");
     match ret {
         Ok(success) => success,
         Err(err) => {
