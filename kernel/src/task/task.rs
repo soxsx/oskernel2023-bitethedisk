@@ -21,7 +21,7 @@ use spin::{Mutex, MutexGuard};
 
 use crate::fs::AbsolutePath;
 
-pub const FD_LIMIT: usize = 128;
+pub const FD_LIMIT: usize = 1048576;
 
 pub struct TaskControlBlock {
     /// 进程标识符
@@ -29,6 +29,9 @@ pub struct TaskControlBlock {
 
     /// thread group id
     pub tgid: usize,
+
+    /// 进程组 Id
+    pub pgid: usize,
 
     /// 应用内核栈
     pub kernel_stack: KernelStack,
@@ -148,12 +151,14 @@ impl TaskControlBlock {
         // 为进程分配 PID 以及内核栈，并记录下内核栈在内核地址空间的位置
         let pid_handle = pid_alloc();
         let tgid = pid_handle.0;
+        let pgid = pid_handle.0;
         let kernel_stack = KernelStack::new(&pid_handle);
         let kernel_stack_top = kernel_stack.top();
         // 在该进程的内核栈上压入初始化的任务上下文，使得第一次任务切换到它的时候可以跳转到 trap_return 并进入用户态开始执行
         let task_control_block = Self {
             pid: pid_handle,
             tgid,
+            pgid,
             kernel_stack,
             inner: Mutex::new(TaskControlBlockInner {
                 trap_cx_ppn,
@@ -353,13 +358,12 @@ impl TaskControlBlock {
             .ppn();
         // 分配一个 PID
         let pid_handle = pid_alloc();
-        let mut tgid = 0;
-        _ = tgid;
-        if is_create_thread {
-            tgid = self.pid.0;
+        let tgid = if is_create_thread {
+            self.pid.0
         } else {
-            tgid = pid_handle.0;
-        }
+            pid_handle.0
+        };
+        let pgid = self.pid.0;
         // 根据 PID 创建一个应用内核栈
         let kernel_stack = KernelStack::new(&pid_handle); // use 2 pages
         let kernel_stack_top = kernel_stack.top();
@@ -372,9 +376,11 @@ impl TaskControlBlock {
                 new_fd_table.push(None);
             }
         }
+
         let task_control_block = Arc::new(TaskControlBlock {
             pid: pid_handle,
             tgid,
+            pgid,
             kernel_stack,
             inner: Mutex::new(TaskControlBlockInner {
                 trap_cx_ppn,
