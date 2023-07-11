@@ -336,12 +336,6 @@ impl TaskControlBlock {
             self.kernel_stack.top(),
             user_trap_handler as usize,
         );
-
-        // 修改 Trap 上下文中的 a0/a1 寄存器
-        // trap_cx.x[10] = 0; // a0 表示命令行参数的个数
-
-        // trap_cx.x[11] = args_ptr; // a1 表示 参数字符串首地址数组 的起始地址
-        // trap_cx.x[12] = envs_ptr; // a2 表示 环境变量字符串首地址数组 的起始地址
     }
 
     /// 用来实现 fork 系统调用，即当前进程 fork 出来一个与之几乎相同的子进程

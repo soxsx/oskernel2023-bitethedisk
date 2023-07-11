@@ -1,9 +1,9 @@
 //! 根据 SYS_id 分发具体系统调用
 
-use super::{error::SyscallError, impls::*};
+use super::impls::*;
 
 macro_rules! syscall_nums {
-    ($($sysn:ident = $id:expr),*) => {
+    ($($sysn:ident = $id:expr),+ $(,)?) => {
         $(
             const $sysn: usize = $id;
         )*
@@ -32,14 +32,16 @@ syscall_nums! {
     SYS_GETEGID      = 177, SYS_GETGID    = 176, SYS_SET_ROBUST_LIST = 99,  SYS_PRLIMIT64 = 261,
     SYS_READLINKAT   = 78,  SYS_GETRANDOM = 278, SYS_MPROTECT        = 226,
 
-    SYS_SETPGID = 154, SYS_GETPGID = 155
+    SYS_SETPGID = 154, SYS_GETPGID = 155, SYS_TGKILL = 131,
 }
 
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
-    debug!("syscall:{:?}", syscall_id);
-    let ret: core::result::Result<isize, SyscallError> = match syscall_id {
+    debug!("syscall: {:?}", syscall_id);
+    let ret: core::result::Result<isize, Errno> = match syscall_id {
         SYS_CLONE => sys_do_fork(args[0], args[1], args[2], args[3], args[4]),
+
+        SYS_TGKILL => sys_tgkill(args[0] as isize, args[1], args[2] as isize),
 
         SYS_EXECVE => sys_exec(
             args[0] as *const u8,
@@ -152,11 +154,10 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
     match ret {
-        Ok(success) => success,
+        Ok(data) => data,
         Err(err) => {
-            let error_code = err.error_code();
             warn!("{}", err);
-            error_code
+            err as isize
         }
     }
 }

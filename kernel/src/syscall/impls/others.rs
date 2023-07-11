@@ -6,9 +6,7 @@ use crate::{
     timer::{get_time_ms, get_timeval, tms},
 };
 
-use super::{Utsname, UTSNAME};
-
-use super::super::error::*;
+use super::*;
 
 /// #define SYS_times 153
 ///
@@ -72,7 +70,8 @@ pub fn sys_uname(buf: *const u8) -> Result<isize> {
     Ok(0)
 }
 
-/// ### 应用主动交出 CPU 所有权进入 Ready 状态并切换到其他应用
+/// 应用主动交出 CPU 所有权进入 Ready 状态并切换到其他应用
+/// 
 /// - 返回值：总是返回 0。
 /// - syscall ID：124
 pub fn sys_sched_yield() -> Result<isize> {

@@ -3,15 +3,17 @@
 use crate::fs::open_flags::CreateMode;
 use crate::fs::{open, OpenFlags};
 use crate::mm::{translated_mut, translated_ref, translated_str};
+use crate::task::task::TaskControlBlockInner;
 use crate::task::{
     add_task, current_task, current_user_token, exit_current_and_run_next, pid2task,
-    suspend_current_and_run_next, SignalFlags,
+    suspend_current_and_run_next, SignalFlags, TaskControlBlock,
 };
 pub use crate::task::{CloneFlags, Utsname, UTSNAME};
 
 use alloc::{string::String, sync::Arc, vec::Vec};
+use spin::MutexGuard;
 
-use super::super::error::*;
+use super::*;
 
 /// #define SYS_clone 220
 ///
@@ -83,7 +85,6 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
     let token = current_user_token();
     // 读取到用户空间的应用程序名称（路径）
     let path = translated_str(token, path);
-    // println!("path:{:?},argv:{:?},envp:{:?}",path,argv,envp);
     let mut args_vec: Vec<String> = Vec::new();
     if argv as usize != 0 {
         loop {
@@ -93,9 +94,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
                 break;
             } // 否则从用户空间取出参数，压入向量
             args_vec.push(translated_str(token, arg_str_ptr as *const u8));
-            unsafe {
-                argv = argv.add(1);
-            }
+            unsafe { argv = argv.add(1) }
         }
     }
     // 环境变量
@@ -124,7 +123,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
         task.exec(app_inode, args_vec, envs_vec);
         Ok(0 as isize)
     } else {
-        Err(SyscallError::OpenInodeFailed(-1, new_path))
+        Err(Errno::UNCLEAR)
     }
 }
 
@@ -155,7 +154,7 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result<isize> {
         .iter()
         .any(|p| pid == -1 || pid as usize == p.pid())
     {
-        return Err(SyscallError::PidNotFound(-1, pid));
+        return Err(Errno::UNCLEAR);
     }
     drop(inner);
 
@@ -317,7 +316,6 @@ pub fn sys_clock_gettime(_clk_id: usize, ts: *mut u64) -> Result<isize> {
     Ok(0)
 }
 pub fn sys_kill(pid: usize, signal: u32) -> Result<isize> {
-    // println!("[KERNEL] enter sys_kill: pid:{} send to pid:{}, signal:0x{:x}",current_task().unwrap().pid.0, pid, signal);
     if signal == 0 {
         return Ok(0);
     }
@@ -327,9 +325,32 @@ pub fn sys_kill(pid: usize, signal: u32) -> Result<isize> {
             task.lock().signals |= flag;
             Ok(0)
         } else {
-            panic!("[DEBUG] sys_kill: unsupported signal");
+            panic!("sys_kill: unsupported signal");
         }
     } else {
-        Err(SyscallError::PidNotFound(0, 0))
+        Err(Errno::EINVAL)
+    }
+}
+
+///
+///
+/// ```c
+/// int tgkill(int tgid, int tid, int sig);
+/// ```
+pub fn sys_tgkill(tgid: isize, tid: usize, sig: isize) -> Result<isize> {
+    if tgid == -1 {
+        todo!("给当前tgid对应的线程组里面所有的线程发送对应的信号")
+    }
+    let master_pid = tgid as usize;
+    let son_pid = tid;
+    if let Some(parent_task) = pid2task(master_pid) {
+        let inner = parent_task.lock();
+        if let Some(target_task) = inner.children.iter().find(|child| child.pid() == son_pid) {
+            todo!("发送信号")
+        } else {
+            todo!("errno")
+        }
+    } else {
+        todo!("errno")
     }
 }

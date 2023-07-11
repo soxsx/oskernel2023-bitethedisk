@@ -7,12 +7,12 @@ mod pid; // 进程标识符模块
 pub mod processor; // 处理器管理模块
 mod signals;
 mod switch; // 任务上下文切换模块
-mod task;
+pub mod task;
 
 use alloc::sync::Arc;
 use fat32::sync_all;
 use manager::remove_from_pid2task;
-use task::{TaskControlBlock, TaskStatus};
+pub use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
 pub use info::{CloneFlags, Utsname, UTSNAME};

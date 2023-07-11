@@ -5,9 +5,9 @@ use crate::{
     task::current_task,
 };
 
-use super::super::error::*;
+use super::*;
 
-/// #define SYS_brk 214
+// #define SYS_brk 214
 ///
 /// 功能：修改数据段的大小；
 ///
@@ -75,7 +75,7 @@ pub fn sys_mmap(
     offset: usize,
 ) -> Result<isize> {
     if length == 0 {
-        return Err(SyscallError::MmapLengthNotBigEnough(-1));
+        return Err(Errno::EINVAL);
     }
 
     let prot = MmapProts::from_bits(prot).expect("unsupported mmap prot");
