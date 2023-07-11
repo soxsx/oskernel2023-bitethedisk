@@ -6,7 +6,7 @@ pub use signal_flags::SignalFlags;
 
 pub fn check_current_signals() -> Option<(i32, &'static str)> {
     let task = current_task().unwrap();
-    let task_inner = task.lock();
+    let task_inner = task.write();
     match task_inner.signals {
         SignalFlags::SIGINT => Some((-2, "Killed, SIGINT=2")),
         SignalFlags::SIGILL => Some((-4, "Illegal Instruction, SIGILL=4")),
@@ -20,6 +20,6 @@ pub fn check_current_signals() -> Option<(i32, &'static str)> {
 
 pub fn current_add_signal(signal: SignalFlags) {
     let task = current_task().unwrap();
-    let mut task_inner = task.lock();
+    let mut task_inner = task.write();
     task_inner.signals.set(signal, true);
 }

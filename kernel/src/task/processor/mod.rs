@@ -29,18 +29,18 @@ pub fn current_task() -> Option<Arc<TaskControlBlock>> {
 /// 从全局变量 `PROCESSOR` 中取出当前正在执行任务的用户地址空间 token
 pub fn current_user_token() -> usize {
     let task = current_task().unwrap();
-    let token = task.lock().get_user_token();
+    let token = task.write().get_user_token();
 
     token
 }
 
 pub fn current_trap_cx() -> &'static mut TrapContext {
-    current_task().unwrap().lock().trap_context()
+    current_task().unwrap().write().trap_context()
 }
 
 pub fn hanging_current_task(sleep_time: usize, duration: usize) {
     let task = current_task().unwrap();
-    let mut inner = task.lock();
+    let mut inner = task.write();
     let current_cx_ptr = &mut inner.task_cx as *mut TaskContext;
     drop(inner);
     drop(task);

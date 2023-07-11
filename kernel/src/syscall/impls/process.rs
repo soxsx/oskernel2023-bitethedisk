@@ -3,7 +3,6 @@
 use crate::fs::open_flags::CreateMode;
 use crate::fs::{open, OpenFlags};
 use crate::mm::{translated_mut, translated_ref, translated_str};
-use crate::task::task::TaskControlBlockInner;
 use crate::task::{
     add_task, current_task, current_user_token, exit_current_and_run_next, pid2task,
     suspend_current_and_run_next, SignalFlags, TaskControlBlock,
@@ -46,12 +45,12 @@ pub fn sys_do_fork(
     let _flags = CloneFlags::from_bits(flags).unwrap();
 
     if stack_ptr != 0 {
-        let trap_cx = new_task.lock().trap_context();
+        let trap_cx = new_task.write().trap_context();
         trap_cx.set_sp(stack_ptr);
     }
     let new_pid = new_task.pid.0;
     // modify trap context of new_task, because it returns immediately after switching
-    let trap_cx = new_task.lock().trap_context();
+    let trap_cx = new_task.write().trap_context();
     // we do not have to move to next instruction since we have done it before
     // trap_handler 已经将当前进程 Trap 上下文中的 sepc 向后移动了 4 字节，
     // 使得它回到用户态之后，会从发出系统调用的 ecall 指令的下一条指令开始执行
@@ -116,7 +115,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
 
     let task = current_task().unwrap();
 
-    let inner = task.lock();
+    let inner = task.write();
     let new_path = inner.current_path.clone().join_string(path);
     if let Some(app_inode) = open(new_path.clone(), OpenFlags::O_RDONLY, CreateMode::empty()) {
         drop(inner);
@@ -146,7 +145,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
 pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result<isize> {
     let task = current_task().unwrap();
 
-    let inner = task.lock();
+    let inner = task.write();
 
     // 根据pid参数查找有没有符合要求的进程
     if !inner
@@ -159,13 +158,13 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result<isize> {
     drop(inner);
 
     loop {
-        let mut inner = task.lock();
+        let mut inner = task.write();
         // 查找所有符合PID要求的处于僵尸状态的进程，如果有的话还需要同时找出它在当前进程控制块子进程向量中的下标
         let pair = inner
             .children
             .iter()
             .enumerate()
-            .find(|(_, p)| p.lock().is_zombie() && (pid == -1 || pid as usize == p.pid()));
+            .find(|(_, p)| p.write().is_zombie() && (pid == -1 || pid as usize == p.pid()));
         if let Some((idx, _)) = pair {
             // 将子进程从向量中移除并置于当前上下文中
             let child = inner.children.remove(idx);
@@ -177,7 +176,7 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result<isize> {
             assert_eq!(Arc::strong_count(&child), 1);
             // 收集的子进程信息返回
             let found_pid = child.pid();
-            let mut exit_code = child.lock().exit_code;
+            let mut exit_code = child.write().exit_code;
             // 将子进程的退出码写入到当前进程的应用地址空间中
             if exit_code_ptr as usize != 0 {
                 // 进程异常退出，低 16 位中的低 7 位放错误时的返回值，16 位中的高 8 位为 0
@@ -322,7 +321,7 @@ pub fn sys_kill(pid: usize, signal: u32) -> Result<isize> {
     let signal = 1 << signal;
     if let Some(task) = pid2task(pid) {
         if let Some(flag) = SignalFlags::from_bits(signal) {
-            task.lock().signals |= flag;
+            task.write().signals |= flag;
             Ok(0)
         } else {
             panic!("sys_kill: unsupported signal");
@@ -344,7 +343,7 @@ pub fn sys_tgkill(tgid: isize, tid: usize, sig: isize) -> Result<isize> {
     let master_pid = tgid as usize;
     let son_pid = tid;
     if let Some(parent_task) = pid2task(master_pid) {
-        let inner = parent_task.lock();
+        let inner = parent_task.write();
         if let Some(target_task) = inner.children.iter().find(|child| child.pid() == son_pid) {
             todo!("发送信号")
         } else {
