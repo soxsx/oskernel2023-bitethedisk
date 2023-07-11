@@ -19,7 +19,7 @@ use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
-use spin::{Mutex, MutexGuard};
+use spin::{MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::fs::AbsolutePath;
 
@@ -35,7 +35,7 @@ pub struct TaskControlBlock {
     /// 应用内核栈
     pub kernel_stack: KernelStack,
 
-    inner: Mutex<TaskControlBlockInner>,
+    inner: RwLock<TaskControlBlockInner>,
 }
 
 impl Debug for TaskControlBlock {
@@ -152,8 +152,12 @@ impl TaskControlBlockInner {
 }
 
 impl TaskControlBlock {
-    pub fn lock(&self) -> MutexGuard<TaskControlBlockInner> {
-        self.inner.lock()
+    pub fn write(&self) -> RwLockWriteGuard<'_, TaskControlBlockInner> {
+        self.inner.write()
+    }
+
+    pub fn read(&self) -> RwLockReadGuard<'_, TaskControlBlockInner> {
+        self.inner.read()
     }
 
     /// 通过 elf 数据新建一个任务控制块，目前仅用于内核中手动创建唯一一个初始进程 initproc
@@ -181,7 +185,7 @@ impl TaskControlBlock {
             pid: pid_handle,
             tgid,
             kernel_stack,
-            inner: Mutex::new(TaskControlBlockInner {
+            inner: RwLock::new(TaskControlBlockInner {
                 trap_cx_ppn,
                 task_cx: TaskContext::readied_for_switching(kernel_stack_top),
                 task_status: TaskStatus::Ready,
@@ -211,7 +215,7 @@ impl TaskControlBlock {
         };
         // 初始化位于该进程应用地址空间中的 Trap 上下文，使得第一次进入用户态的时候时候能正
         // 确跳转到应用入口点并设置好用户栈，同时也保证在 Trap 的时候用户态能正确进入内核态
-        let trap_cx = task_control_block.lock().trap_context();
+        let trap_cx = task_control_block.write().trap_context();
         *trap_cx = TrapContext::app_init_context(
             entry_point,
             user_sp,
@@ -229,7 +233,7 @@ impl TaskControlBlock {
         envs: Vec<String>,
         auxv: &mut Vec<AuxEntry>,
     ) -> (usize, usize, usize) {
-        let token = self.lock().get_user_token();
+        let token = self.write().get_user_token();
 
         // 计算共需要多少字节的空间
         let mut total_len = 0;
@@ -338,7 +342,7 @@ impl TaskControlBlock {
             .translate(VirtAddr::from(TRAP_CONTEXT).into())
             .unwrap()
             .ppn();
-        let mut inner = self.lock();
+        let mut inner = self.write();
         inner.memory_set = memory_set;
         // from_copy_on_wirte -> exec
         // 这将导致原有的地址空间生命周期结束, 里面包含的全部物理页帧都会被回收,
@@ -371,7 +375,7 @@ impl TaskControlBlock {
 
     /// 用来实现 fork 系统调用，即当前进程 fork 出来一个与之几乎相同的子进程
     pub fn fork(self: &Arc<TaskControlBlock>, is_create_thread: bool) -> Arc<TaskControlBlock> {
-        let mut parent_inner = self.lock();
+        let mut parent_inner = self.write();
         // copy mmap_area
         let mmap_area = parent_inner.mmap_manager.clone();
         // mmap_area.debug_show();
@@ -407,7 +411,7 @@ impl TaskControlBlock {
             pid: pid_handle,
             tgid,
             kernel_stack,
-            inner: Mutex::new(TaskControlBlockInner {
+            inner: RwLock::new(TaskControlBlockInner {
                 trap_cx_ppn,
                 task_cx: TaskContext::readied_for_switching(kernel_stack_top),
                 task_status: TaskStatus::Ready,
@@ -428,7 +432,7 @@ impl TaskControlBlock {
         // 把新生成的进程加入到子进程向量中
         parent_inner.children.push(task_control_block.clone());
         // 更新子进程 trap 上下文中的栈顶指针
-        let trap_cx = task_control_block.lock().trap_context();
+        let trap_cx = task_control_block.write().trap_context();
         trap_cx.kernel_sp = kernel_stack_top;
 
         task_control_block
@@ -443,7 +447,7 @@ impl TaskControlBlock {
     ///     - `0`：成功加载缺页
     ///     - `-1`：加载缺页失败
     pub fn check_lazy(&self, va: VirtAddr, is_load: bool) -> isize {
-        let inner = self.lock();
+        let inner = self.write();
         let mmap_start = inner.mmap_manager.mmap_start;
         let mmap_end = inner.mmap_manager.mmap_top;
         let heap_start = VirtAddr::from(inner.memory_set.brk_start);
@@ -451,10 +455,10 @@ impl TaskControlBlock {
         drop(inner);
 
         let vpn: VirtPageNum = va.floor();
-        let pte = self.lock().enquire_pte_via_vpn(vpn);
+        let pte = self.write().enquire_pte_via_vpn(vpn);
         if pte.is_some() && pte.unwrap().is_cow() {
             let former_ppn = pte.unwrap().ppn();
-            return self.lock().cow_alloc(vpn, former_ppn);
+            return self.write().cow_alloc(vpn, former_ppn);
         } else {
             if let Some(pte1) = pte {
                 if pte1.is_valid() {
@@ -463,7 +467,7 @@ impl TaskControlBlock {
             }
         }
         if va >= heap_start && va <= heap_end {
-            self.lock().lazy_alloc_heap(va.floor())
+            self.write().lazy_alloc_heap(va.floor())
         } else if va >= mmap_start && va < mmap_end {
             self.lazy_mmap(va, is_load)
         } else {
@@ -487,7 +491,7 @@ impl TaskControlBlock {
     ///     - `0`
     ///     - `-1`
     pub fn lazy_mmap(&self, va: VirtAddr, is_load: bool) -> isize {
-        let mut inner = self.lock();
+        let mut inner = self.write();
         let fd_table = inner.fd_table.clone();
         let token = inner.get_user_token();
         let lazy_result = inner.memory_set.lazy_mmap(va.into());
@@ -512,7 +516,7 @@ impl TaskControlBlock {
             panic!("mmap: addr not aligned");
         }
 
-        let mut inner = self.lock();
+        let mut inner = self.write();
         let fd_table = inner.fd_table.clone();
         let token = inner.get_user_token();
 
@@ -544,7 +548,7 @@ impl TaskControlBlock {
     }
 
     pub fn munmap(&self, addr: usize, length: usize) -> isize {
-        let mut inner = self.lock();
+        let mut inner = self.write();
 
         let mmap_start_va = VirtAddr(addr);
         let mmap_end_va = VirtAddr(addr + length);
@@ -565,26 +569,26 @@ impl TaskControlBlock {
 
     pub fn grow_proc(&self, grow_size: isize) -> usize {
         if grow_size > 0 {
-            let growed_addr: usize = self.inner.lock().memory_set.brk + grow_size as usize;
-            let limit = self.inner.lock().memory_set.brk_start + USER_HEAP_SIZE;
+            let growed_addr: usize = self.inner.write().memory_set.brk + grow_size as usize;
+            let limit = self.inner.write().memory_set.brk_start + USER_HEAP_SIZE;
             if growed_addr > limit {
                 panic!(
                     "process doesn't have enough memsize to grow! limit:0x{:x}, heap_pt:0x{:x}, growed_addr:0x{:x}, pid:{}",
                     limit,
-                    self.inner.lock().memory_set.brk,
+                    self.inner.write().memory_set.brk,
                     growed_addr,
                     self.pid.0
                 );
             }
-            self.inner.lock().memory_set.brk = growed_addr;
+            self.inner.write().memory_set.brk = growed_addr;
         } else {
-            let shrinked_addr: usize = self.inner.lock().memory_set.brk + grow_size as usize;
-            if shrinked_addr < self.inner.lock().memory_set.brk_start {
+            let shrinked_addr: usize = self.inner.write().memory_set.brk + grow_size as usize;
+            if shrinked_addr < self.inner.write().memory_set.brk_start {
                 panic!("Memory shrinked to the lowest boundary!")
             }
-            self.inner.lock().memory_set.brk = shrinked_addr;
+            self.inner.write().memory_set.brk = shrinked_addr;
         }
-        return self.inner.lock().memory_set.brk;
+        return self.inner.write().memory_set.brk;
     }
 }
 

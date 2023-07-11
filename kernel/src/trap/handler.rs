@@ -33,7 +33,7 @@ pub fn user_trap_handler() -> ! {
     let stval = stval::read();
 
     let task = current_task().unwrap();
-    let mut inner = task.lock();
+    let mut inner = task.write();
     let diff = get_timeval() - inner.last_enter_umode_time;
     inner.add_utime(diff);
     inner.set_last_enter_smode(get_timeval());

@@ -47,12 +47,12 @@ pub fn sys_do_fork(
     let _flags = CloneFlags::from_bits(flags).unwrap();
 
     if stack_ptr != 0 {
-        let trap_cx = new_task.lock().trap_context();
+        let trap_cx = new_task.write().trap_context();
         trap_cx.set_sp(stack_ptr);
     }
     let new_pid = new_task.pid.0;
     // modify trap context of new_task, because it returns immediately after switching
-    let trap_cx = new_task.lock().trap_context();
+    let trap_cx = new_task.write().trap_context();
     // we do not have to move to next instruction since we have done it before
     // trap_handler 已经将当前进程 Trap 上下文中的 sepc 向后移动了 4 字节，
     // 使得它回到用户态之后，会从发出系统调用的 ecall 指令的下一条指令开始执行
@@ -125,7 +125,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
 
     let task = current_task().unwrap();
 
-    let inner = task.lock();
+    let inner = task.write();
     let new_path = inner.current_path.clone().join_string(path);
     if let Some(app_inode) = open(new_path.clone(), OpenFlags::O_RDONLY, CreateMode::empty()) {
         drop(inner);
@@ -155,7 +155,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
 pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result<isize> {
     let task = current_task().unwrap();
 
-    let inner = task.lock();
+    let inner = task.write();
 
     // 根据pid参数查找有没有符合要求的进程
     if !inner
@@ -168,11 +168,11 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result<isize> {
     drop(inner);
 
     loop {
-        let mut inner = task.lock();
+        let mut inner = task.write();
         // 查找所有符合PID要求的处于僵尸状态的进程，如果有的话还需要同时找出它在当前进程控制块子进程向量中的下标
         let pair = inner.children.iter().enumerate().find(|(_, p)| {
             // ++++ temporarily access child PCB lock exclusively
-            p.lock().is_zombie() && (pid == -1 || pid as usize == p.pid())
+            p.write().is_zombie() && (pid == -1 || pid as usize == p.pid())
             // ++++ release child PCB
         });
         if let Some((idx, _)) = pair {
@@ -187,7 +187,7 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result<isize> {
             // 收集的子进程信息返回
             let found_pid = child.pid();
             // ++++ temporarily access child TCB exclusively
-            let exit_code = child.lock().exit_code;
+            let mut exit_code = child.write().exit_code;
             // ++++ release child PCB
             // 将子进程的退出码写入到当前进程的应用地址空间中
             if exit_code_ptr as usize != 0 {
@@ -329,7 +329,7 @@ pub fn sys_kill(pid: usize, signal: u32) -> Result<isize> {
     let signal = 1 << signal;
     if let Some(task) = pid2task(pid) {
         if let Some(flag) = SignalFlags::from_bits(signal) {
-            task.lock().signals |= flag;
+            task.write().signals |= flag;
             Ok(0)
         } else {
             panic!("[DEBUG] sys_kill: unsupported signal");
@@ -352,9 +352,31 @@ pub fn sys_getrusage(who: isize, usage: *mut u8) -> Result<isize> {
     ));
     let mut rusage = RUsage::new();
     let task = current_task().unwrap();
-    let mut inner = task.lock();
+    let mut inner = task.write();
     rusage.ru_stime = inner.stime;
     rusage.ru_utime = inner.utime;
     userbuf.write(rusage.as_bytes());
     Ok(0)
+}
+///
+///
+/// ```c
+/// int tgkill(int tgid, int tid, int sig);
+/// ```
+pub fn sys_tgkill(tgid: isize, tid: usize, sig: isize) -> Result<isize> {
+    if tgid == -1 {
+        todo!("给当前tgid对应的线程组里面所有的线程发送对应的信号")
+    }
+    let master_pid = tgid as usize;
+    let son_pid = tid;
+    if let Some(parent_task) = pid2task(master_pid) {
+        let inner = parent_task.write();
+        if let Some(target_task) = inner.children.iter().find(|child| child.pid() == son_pid) {
+            todo!("发送信号")
+        } else {
+            todo!("errno")
+        }
+    } else {
+        todo!("errno")
+    }
 }

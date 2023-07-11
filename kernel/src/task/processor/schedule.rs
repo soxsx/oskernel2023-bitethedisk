@@ -16,7 +16,7 @@ pub fn run_tasks() {
         if let Some(task) = fetch_task() {
             let idle_task_cx_ptr = processor.idle_task_cx_ptr();
             // access coming task TCB exclusively
-            let mut task_inner = task.lock();
+            let mut task_inner = task.write();
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
             drop(task_inner);
@@ -37,11 +37,10 @@ pub fn run_tasks() -> ! {
     loop {
         if let Some(task) = fetch_task() {
             info!("task {} fetched by hart {}", task.pid(), hartid!());
-
             let mut processor = acquire_processor();
             let idle_task_cx_ptr = processor.idle_task_cx_ptr();
 
-            let mut task_inner = task.lock();
+            let mut task_inner = task.write();
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
             drop(task_inner);

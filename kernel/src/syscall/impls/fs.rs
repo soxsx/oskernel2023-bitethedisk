@@ -15,6 +15,7 @@ use alloc::borrow::ToOwned;
 use alloc::{sync::Arc, vec::Vec};
 use core::mem::size_of;
 use fat32::sync_all;
+use spin::RwLock;
 
 use super::super::error::*;
 
@@ -47,7 +48,7 @@ pub struct Iovec {
 pub fn sys_getcwd(buf: *mut u8, size: usize) -> Result<isize> {
     let token = current_user_token();
     let task = current_task().unwrap();
-    let inner = task.lock();
+    let inner = task.write();
 
     if buf as usize == 0 {
         Err(SyscallError::ParamInvalid(
@@ -90,7 +91,7 @@ pub fn sys_pipe2(pipe: *mut i32, _flag: usize) -> Result<isize> {
 
     let task = current_task().unwrap();
     let token = current_user_token();
-    let mut inner = task.lock();
+    let mut inner = task.write();
 
     let (pipe_read, pipe_write) = make_pipe();
 
@@ -130,7 +131,7 @@ pub fn sys_pipe2(pipe: *mut i32, _flag: usize) -> Result<isize> {
 /// ```
 pub fn sys_dup(fd: usize) -> Result<isize> {
     let task = current_task().unwrap();
-    let mut inner = task.lock();
+    let mut inner = task.write();
 
     // 检查传入 fd 的合法性
     if fd >= inner.fd_table.len() || inner.fd_table[fd].is_none() {
@@ -165,7 +166,7 @@ pub fn sys_dup(fd: usize) -> Result<isize> {
 /// ```
 pub fn sys_dup3(old_fd: usize, new_fd: usize) -> Result<isize> {
     let task = current_task().unwrap();
-    let mut inner = task.lock();
+    let mut inner = task.write();
 
     if old_fd >= inner.fd_table.len() || new_fd > FD_LIMIT {
         return Err(SyscallError::FdInvalid(-1, old_fd));
@@ -203,7 +204,7 @@ pub fn sys_dup3(old_fd: usize, new_fd: usize) -> Result<isize> {
 pub fn sys_chdir(path: *const u8) -> Result<isize> {
     let token = current_user_token();
     let task = current_task().unwrap();
-    let mut inner = task.lock();
+    let mut inner = task.write();
     let path = translated_str(token, path);
     let current_path = inner.current_path.clone();
     if let Some(new_path) = current_path.cd(path.clone()) {
@@ -240,7 +241,7 @@ pub fn sys_chdir(path: *const u8) -> Result<isize> {
 pub fn sys_openat(fd: isize, filename: *const u8, flags: u32, mode: u32) -> Result<isize> {
     let task = current_task().unwrap();
     let token = current_user_token();
-    let mut inner = task.lock();
+    let mut inner = task.write();
 
     let path = translated_str(token, filename);
     let mode = CreateMode::from_bits(mode).map_or(CreateMode::empty(), |m| m);
@@ -305,7 +306,7 @@ pub fn sys_openat(fd: isize, filename: *const u8, flags: u32, mode: u32) -> Resu
 /// ```
 pub fn sys_close(fd: usize) -> Result<isize> {
     let task = current_task().unwrap();
-    let mut inner = task.lock();
+    let mut inner = task.write();
     if fd >= inner.fd_table.len() || inner.fd_table[fd].is_none() {
         return Err(SyscallError::FdInvalid(-1, fd));
     }
@@ -348,7 +349,7 @@ pub fn sys_close(fd: usize) -> Result<isize> {
 pub fn sys_getdents64(fd: isize, buf: *mut u8, len: usize) -> Result<isize> {
     let token = current_user_token();
     let task = current_task().unwrap();
-    let inner = task.lock();
+    let inner = task.write();
     let work_path = inner.current_path.clone();
     let buf_vec = translated_bytes_buffer(token, buf, len);
     let mut userbuf = UserBuffer::wrap(buf_vec);
@@ -416,7 +417,7 @@ pub fn sys_getdents64(fd: isize, buf: *mut u8, len: usize) -> Result<isize> {
 pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> Result<isize> {
     let token = current_user_token();
     let task = current_task().unwrap();
-    let inner = task.lock();
+    let inner = task.write();
 
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
@@ -476,8 +477,9 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> Result<isize> {
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> Result<isize> {
     let token = current_user_token();
     let task = current_task().unwrap();
-    let inner = task.lock();
     println!("[DEBUG] sys_write: fd{:?}, buf{:?}, len:{:?}", fd, buf, len);
+    let inner = task.write();
+
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
         warn!("[WARNING] sys_write: fd >= inner.fd_table.len, return -1");
@@ -565,7 +567,7 @@ pub fn sys_linkat(
 pub fn sys_unlinkat(fd: isize, path: *const u8, flags: u32) -> Result<isize> {
     let task = current_task().unwrap();
     let token = current_user_token();
-    let inner = task.lock();
+    let inner = task.write();
     // TODO
     _ = flags;
     let path = translated_str(token, path);
@@ -605,7 +607,7 @@ pub fn sys_unlinkat(fd: isize, path: *const u8, flags: u32) -> Result<isize> {
 pub fn sys_mkdirat(dirfd: isize, path: *const u8, _mode: u32) -> Result<isize> {
     let token = current_user_token();
     let task = current_task().unwrap();
-    let inner = task.lock();
+    let inner = task.write();
     let path = translated_str(token, path);
 
     if dirfd == AT_FDCWD {
@@ -749,7 +751,7 @@ pub fn sys_fstat(fd: isize, buf: *mut u8) -> Result<isize> {
     let token = current_user_token();
     let task = current_task().unwrap();
     let buf_vec = translated_bytes_buffer(token, buf, size_of::<Kstat>());
-    let inner = task.lock();
+    let inner = task.write();
 
     let mut userbuf = UserBuffer::wrap(buf_vec);
     let mut kstat = Kstat::new();
@@ -770,7 +772,7 @@ pub fn sys_fstat(fd: isize, buf: *mut u8) -> Result<isize> {
 pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize> {
     let token = current_user_token();
     let task = current_task().unwrap();
-    let inner = task.lock();
+    let inner = task.write();
     if fd >= inner.fd_table.len() {
         return Err(SyscallError::FdInvalid(-1, fd));
     }
@@ -812,7 +814,7 @@ pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize>
     // println!("time:{}",get_time_ms());
     let token = current_user_token();
     let task = current_task().unwrap();
-    let inner = task.lock();
+    let inner = task.write();
     let mut write_data: Vec<&'static mut [u8]> = Vec::new();
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
@@ -862,7 +864,7 @@ pub fn sys_ioctl(fd: usize, request: usize, argp: *mut u8) -> Result<isize> {
     // println!("enter sys_ioctl: fd:{}, request:0x{:x}, argp:{}", fd, request, argp as usize);
     let token = current_user_token();
     let task = current_task().unwrap();
-    let inner = task.lock();
+    let inner = task.write();
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
         return Err(SyscallError::FdInvalid(-1, fd));
@@ -911,7 +913,7 @@ pub fn sys_fcntl(fd: isize, cmd: usize, arg: Option<usize>) -> Result<isize> {
     let cmd = FcntlFlags::from_bits(cmd).unwrap();
     match cmd {
         FcntlFlags::F_SETFL => {
-            let inner = task.lock();
+            let inner = task.write();
             if let Some(file) = &inner.fd_table[fd as usize] {
                 file.set_flags(OpenFlags::from_bits(arg.unwrap() as u32).unwrap());
             } else {
@@ -921,7 +923,7 @@ pub fn sys_fcntl(fd: isize, cmd: usize, arg: Option<usize>) -> Result<isize> {
         // Currently, only one such flag is defined: FD_CLOEXEC (value: 1)
         FcntlFlags::F_GETFD => {
             // Return (as the function result) the file descriptor flags; arg is ignored.
-            let inner = task.lock();
+            let inner = task.write();
             if let Some(file) = &inner.fd_table[fd as usize] {
                 return Ok(file.available() as isize);
             } else {
@@ -930,7 +932,7 @@ pub fn sys_fcntl(fd: isize, cmd: usize, arg: Option<usize>) -> Result<isize> {
         }
         FcntlFlags::F_SETFD => {
             // Set the file descriptor flags to the value specified by arg.
-            let inner = task.lock();
+            let inner = task.write();
             if let Some(file) = &inner.fd_table[fd as usize] {
                 if arg.unwrap() != 0 {
                     file.set_cloexec();
@@ -945,7 +947,7 @@ pub fn sys_fcntl(fd: isize, cmd: usize, arg: Option<usize>) -> Result<isize> {
             return Ok(04000);
         }
         FcntlFlags::F_DUPFD_CLOEXEC => {
-            let mut inner = task.lock();
+            let mut inner = task.write();
             let start_num = arg.unwrap();
             let mut new_fd = 0;
             _ = new_fd;
@@ -983,7 +985,7 @@ pub fn sys_newfstatat(
 ) -> Result<isize> {
     let token = current_user_token();
     let task = current_task().unwrap();
-    let inner = task.lock();
+    let inner = task.write();
     let path = translated_str(token, pathname);
 
     // println!(
@@ -1035,7 +1037,7 @@ pub fn sys_sendfile(out_fd: usize, in_fd: usize, offset: usize, _count: usize) -
     //     out_fd, in_fd, offset, _count
     // );
     let task = current_task().unwrap();
-    let inner = task.lock();
+    let inner = task.write();
     let fd_table = inner.fd_table.clone();
     drop(inner);
     let mut total_write_size = 0usize;
@@ -1072,7 +1074,7 @@ pub fn sys_utimensat(
     // );
     let token = current_user_token();
     let task = current_task().unwrap();
-    let inner = task.lock();
+    let inner = task.write();
 
     _ = flags;
 
@@ -1126,7 +1128,7 @@ pub fn sys_renameat2(
 ) -> Result<isize> {
     let task = current_task().unwrap();
     let token = current_user_token();
-    let inner = task.lock();
+    let inner = task.write();
     let old_path = translated_str(token, old_path);
     let new_path = translated_str(token, new_path);
 
@@ -1173,7 +1175,7 @@ pub fn sys_lseek(fd: usize, off_t: usize, whence: usize) -> Result<isize> {
     // println!("[DEBUG] enter sys_lseek: fd:{},off_t:{},whence:{}",fd,off_t,whence);
 
     let task = current_task().unwrap();
-    let inner = task.lock();
+    let inner = task.write();
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
         return Err(SyscallError::FdInvalid(-1, fd));
@@ -1236,7 +1238,7 @@ pub fn sys_sync() -> Result<isize> {
 
 pub fn sys_ftruncate64(fd: usize, length: usize) -> Result<isize> {
     let task = current_task().unwrap();
-    let inner = task.lock();
+    let inner = task.write();
     if let Some(file) = &inner.fd_table[fd] {
         file.truncate(length);
         Ok(0)
@@ -1314,7 +1316,7 @@ pub fn sys_pselect6(
     loop {
         /* handle read fd set */
         let task = current_task().unwrap();
-        let inner = task.lock();
+        let inner = task.write();
         let fd_table = &inner.fd_table;
         if readfds as usize != 0 && !r_all_ready {
             for i in 0..rfd_vec.len() {

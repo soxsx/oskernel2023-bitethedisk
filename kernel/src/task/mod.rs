@@ -30,7 +30,7 @@ use self::{initproc::INITPROC, processor::schedule};
 pub fn suspend_current_and_run_next() -> isize {
     // 取出当前正在执行的任务
     let task_cp = current_task().unwrap();
-    let mut task_inner = task_cp.lock();
+    let mut task_inner = task_cp.write();
     if task_inner.signals.contains(SignalFlags::SIGKILL) {
         let exit_code = task_inner.exit_code;
         drop(task_inner);
@@ -60,7 +60,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // 获取访问权限，修改进程状态
     let task = take_current_task().unwrap();
     remove_from_pid2task(task.pid());
-    let mut inner = task.lock();
+    let mut inner = task.write();
     inner.task_status = TaskStatus::Zombie; // 后续才能被父进程在 waitpid 系统调用的时候回收
                                             // 记录退出码，后续父进程在 waitpid 的时候可以收集
     inner.exit_code = exit_code;
@@ -72,9 +72,9 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     }
 
     // 将这个进程的子进程转移到 initproc 进程的子进程中
-    let mut initproc_inner = INITPROC.lock();
+    let mut initproc_inner = INITPROC.write();
     for child in inner.children.iter() {
-        child.lock().parent = Some(Arc::downgrade(&INITPROC));
+        child.write().parent = Some(Arc::downgrade(&INITPROC));
         initproc_inner.children.push(child.clone()); // 引用计数 -1
     }
     drop(initproc_inner);

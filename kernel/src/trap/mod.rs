@@ -59,7 +59,7 @@ pub fn trap_return() -> ! {
     }
 
     let task = current_task().unwrap();
-    let mut inner = task.lock();
+    let mut inner = task.write();
     let diff = get_timeval() - inner.last_enter_smode_time;
     inner.add_stime(diff);
     inner.set_last_enter_umode(get_timeval());
