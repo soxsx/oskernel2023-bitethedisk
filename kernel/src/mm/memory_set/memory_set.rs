@@ -220,7 +220,6 @@ impl MemorySet {
             }
         };
 
-        op(&mut self.vm_areas);
         op(&mut self.mmap_areas);
     }
 
