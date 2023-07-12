@@ -77,7 +77,12 @@ pub fn sys_mmap(
     if length == 0 {
         return Err(SyscallError::MmapLengthNotBigEnough(-1));
     }
-
+    let task = current_task().unwrap();
+    let mut inner = task.lock();
+    if fd as usize >= inner.fd_table.len() || inner.fd_table[fd as usize].is_none() {
+        return Err(SyscallError::FdInvalid(-1, fd as usize));
+    }
+    drop(inner);
     let prot = MmapProts::from_bits(prot).expect("unsupported mmap prot");
     let flags = MmapFlags::from_bits(flags).expect("unsupported mmap flags");
 
