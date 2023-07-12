@@ -93,7 +93,7 @@ pub fn sys_pipe2(pipe: *mut i32, _flag: usize) -> Result<isize> {
 
     let read_fd = inner.alloc_fd();
     if read_fd == FD_LIMIT {
-        return Err(SyscallError::ReachFdLimit(-1));
+        return Err(SyscallError::ReachFdLimit(-EMFILE));
     }
     inner.fd_table[read_fd] = Some(pipe_read);
 
@@ -248,7 +248,7 @@ pub fn sys_openat(fd: isize, filename: *const u8, flags: u32, mode: u32) -> Resu
         if let Some(inode) = open(open_path.clone(), flags, mode) {
             let fd = inner.alloc_fd();
             if fd == FD_LIMIT {
-                return Err(SyscallError::ReachFdLimit(-1));
+                return Err(SyscallError::ReachFdLimit(-EMFILE));
             }
             inner.fd_table[fd] = Some(inode);
             Ok(fd as isize)
@@ -266,7 +266,7 @@ pub fn sys_openat(fd: isize, filename: *const u8, flags: u32, mode: u32) -> Resu
             if let Some(tar_f) = open(open_path.clone(), flags, mode) {
                 let fd = inner.alloc_fd();
                 if fd == FD_LIMIT {
-                    return Err(SyscallError::ReachFdLimit(-1));
+                    return Err(SyscallError::ReachFdLimit(-EMFILE));
                 }
                 inner.fd_table[fd] = Some(tar_f);
                 debug!("[DEBUG] sys_openat return new fd:{}", fd);
@@ -991,7 +991,8 @@ pub fn sys_newfstatat(dirfd: isize, pathname: *const u8, satabuf: *const usize, 
             // panic!();
             Ok(0)
         } else {
-	    Err(SyscallError::NoSuchFile(-1))
+	    // TAG return right errno
+	    Err(SyscallError::NoSuchFile(-ENOENT))
             // -ENOENT
         }
     } else {
@@ -1010,7 +1011,7 @@ pub fn sys_newfstatat(dirfd: isize, pathname: *const u8, satabuf: *const usize, 
 		Err(SyscallError::NoSuchFile(-1))
             }
         } else {
-	    Err(SyscallError::FdInvalid(-1, dirfd))
+	    Err(SyscallError::FdInvalid(-ENOENT, dirfd))
         }
     }
 }
@@ -1066,7 +1067,7 @@ pub fn sys_utimensat(dirfd: isize, pathname: *const u8, time: *const usize, flag
             if let Some(_file) = open(path, OpenFlags::O_RDWR, CreateMode::empty()) {
                 unimplemented!(); // 记得重新制作文件镜像
             } else {
-		Err(SyscallError::NoSuchFile(-1))
+		Err(SyscallError::NoSuchFile(-ENOENT))
 		// Ok(-ENOENT)
             }
         }
