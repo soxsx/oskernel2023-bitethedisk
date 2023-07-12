@@ -73,6 +73,14 @@ pub struct TaskControlBlockInner {
     pub signals: SignalFlags,
 
     pub current_path: AbsolutePath,
+
+    pub utime: TimeVal,
+
+    pub stime: TimeVal,
+
+    pub last_enter_umode_time: TimeVal,
+
+    pub last_enter_smode_time: TimeVal,
 }
 
 impl TaskControlBlockInner {
@@ -123,6 +131,23 @@ impl TaskControlBlockInner {
     pub fn lazy_alloc_heap(&mut self, vpn: VirtPageNum) -> isize {
         self.memory_set.lazy_alloc_heap(vpn)
     }
+
+    pub fn add_utime(&mut self, new_time: TimeVal) {
+        self.utime= self.utime+new_time;
+    }
+
+    pub fn add_stime(&mut self, new_time: TimeVal) {
+        self.stime= self.stime+new_time;
+    }
+
+    pub fn set_last_enter_umode(&mut self, new_time: TimeVal) {
+        self.last_enter_umode_time=new_time;
+    }
+
+    pub fn set_last_enter_smode(&mut self, new_time: TimeVal) {
+        self.last_enter_smode_time=new_time;
+    }
+
 }
 
 impl TaskControlBlock {
@@ -177,6 +202,11 @@ impl TaskControlBlock {
                     VirtAddr::from(MMAP_BASE),
                     VirtAddr::from(MMAP_BASE),
                 ),
+		utime: TimeVal { sec: 0,usec:0},
+		stime: TimeVal { sec: 0,usec:0},
+		last_enter_umode_time: TimeVal { sec: 0,usec:0},
+		last_enter_smode_time: TimeVal { sec: 0,usec:0},
+
             }),
         };
         // 初始化位于该进程应用地址空间中的 Trap 上下文，使得第一次进入用户态的时候时候能正
@@ -391,6 +421,10 @@ impl TaskControlBlock {
                 signals: SignalFlags::empty(),
                 current_path: parent_inner.current_path.clone(),
                 mmap_manager: mmap_area,
+		utime: TimeVal { sec: 0,usec:0},
+		stime: TimeVal { sec: 0,usec:0},
+		last_enter_umode_time: TimeVal { sec: 0,usec:0},
+		last_enter_smode_time: TimeVal { sec: 0,usec:0},
             }),
         });
         // 把新生成的进程加入到子进程向量中

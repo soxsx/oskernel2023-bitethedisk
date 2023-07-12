@@ -3,8 +3,8 @@ pub mod handler;
 
 use self::handler::kernel_trap_handler;
 use crate::consts::{TRAMPOLINE, TRAP_CONTEXT};
-use crate::task::{check_current_signals, current_user_token, exit_current_and_run_next};
-use crate::timer::set_next_trigger;
+use crate::task::{check_current_signals, current_user_token, exit_current_and_run_next, current_task};
+use crate::timer::{set_next_trigger, get_timeval};
 use core::arch::{asm, global_asm};
 use log::debug;
 use riscv::register::scause::{self, Trap};
@@ -56,6 +56,13 @@ pub fn trap_return() -> ! {
         fn user_trapret();
     }
 
+    let task=current_task().unwrap();
+    let mut inner=task.lock();
+    let diff=get_timeval()-inner.last_enter_smode_time;
+    inner.add_stime(diff);
+    inner.set_last_enter_umode(get_timeval());
+    drop(inner);
+    drop(task);
 
     let trapret_addr = user_trapret as usize - user_trapvec as usize + TRAMPOLINE;
     unsafe {
