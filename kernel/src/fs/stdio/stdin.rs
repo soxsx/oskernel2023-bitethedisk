@@ -53,6 +53,6 @@ impl File for Stdin {
         usize::MAX
     }
     fn truncate(&self, new_length: usize) {
-	warn!("Fake truncate for Stdin");
+        warn!("Fake truncate for Stdin");
     }
 }

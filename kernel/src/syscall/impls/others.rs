@@ -135,7 +135,5 @@ pub fn sys_nanosleep(buf: *const u8) -> Result<isize> {
 }
 
 pub fn sys_getrandom(buf: *const u8, buf_size: usize, flags: usize) -> Result<isize> {
-
     Ok(buf_size as isize)
 }
-

@@ -1,19 +1,20 @@
 //! 文件相关的系统调用
 
 use super::super::errno::*;
-use crate::fs::open_flags::CreateMode;
 use crate::fs::fdset::FdSet;
-use crate::fs::{chdir, file::File, make_pipe, open, Dirent, Kstat, OpenFlags, MNT_TABLE,Stdin};
-use crate::mm::{translated_bytes_buffer, translated_mut, translated_ref, translated_str, UserBuffer, VirtAddr};
-use crate::task::{current_task, current_user_token, FD_LIMIT};
-use crate::timer::{Timespec, TimeVal, get_timeval};
+use crate::fs::open_flags::CreateMode;
+use crate::fs::{chdir, file::File, make_pipe, open, Dirent, Kstat, OpenFlags, Stdin, MNT_TABLE};
+use crate::mm::{
+    translated_bytes_buffer, translated_mut, translated_ref, translated_str, UserBuffer, VirtAddr,
+};
 use crate::task::suspend_current_and_run_next;
-
+use crate::task::{current_task, current_user_token, FD_LIMIT};
+use crate::timer::{get_timeval, TimeVal, Timespec};
 
 use alloc::borrow::ToOwned;
 use alloc::{sync::Arc, vec::Vec};
-use fat32::sync_all;
 use core::mem::size_of;
+use fat32::sync_all;
 
 use super::super::error::*;
 
@@ -24,7 +25,6 @@ pub struct Iovec {
     iov_base: usize,
     iov_len: usize,
 }
-
 
 /// #define SYS_getcwd 17
 ///
@@ -477,7 +477,7 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> Result<isize> {
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.lock();
-    println!("[DEBUG] sys_write: fd{:?}, buf{:?}, len:{:?}",fd,buf,len);
+    println!("[DEBUG] sys_write: fd{:?}, buf{:?}, len:{:?}", fd, buf, len);
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
         warn!("[WARNING] sys_write: fd >= inner.fd_table.len, return -1");
@@ -767,7 +767,6 @@ pub fn sys_fstat(fd: isize, buf: *mut u8) -> Result<isize> {
     }
 }
 
-
 pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize> {
     let token = current_user_token();
     let task = current_task().unwrap();
@@ -779,10 +778,12 @@ pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize> 
         if !file.readable() {
             return Err(SyscallError::FdInvalid(-1, fd));
         }
-        let iovp_buf_p = translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>())[0].as_ptr();
+        let iovp_buf_p =
+            translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>())[0]
+                .as_ptr();
         let file = file.clone();
         let file_size = file.file_size();
-	// println!("[DEBUG] sys_readv file_size:{:?}",file_size);
+        // println!("[DEBUG] sys_readv file_size:{:?}",file_size);
         if file_size == 0 {
             warn!("[WARNING] sys_readv: file_size is zero!");
         }
@@ -791,9 +792,13 @@ pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize> 
         drop(inner);
         for _ in 0..iovcnt {
             let iovp = unsafe { &*(addr as *const Iovec) };
-	    // println!("[DEBUG] sys_readv iov:{:?}",iovp);
-            let len = iovp.iov_len.min(file_size-total_read_len);
-            total_read_len += file.read(UserBuffer::wrap(translated_bytes_buffer(token, iovp.iov_base as *const u8, len)));
+            // println!("[DEBUG] sys_readv iov:{:?}",iovp);
+            let len = iovp.iov_len.min(file_size - total_read_len);
+            total_read_len += file.read(UserBuffer::wrap(translated_bytes_buffer(
+                token,
+                iovp.iov_base as *const u8,
+                len,
+            )));
             addr += size_of::<Iovec>();
         }
         Ok(total_read_len as isize)
@@ -808,26 +813,28 @@ pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize>
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.lock();
-    let mut  write_data: Vec<&'static mut [u8]>=Vec::new();
+    let mut write_data: Vec<&'static mut [u8]> = Vec::new();
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
-	return Err(SyscallError::FdInvalid(-1, fd));
+        return Err(SyscallError::FdInvalid(-1, fd));
     }
     if let Some(file) = &inner.fd_table[fd] {
         // 文件不可写
         if !file.writable() {
             return Err(SyscallError::FdInvalid(-1, fd));
         }
-        let iovp_buf_p = translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>())[0].as_ptr();
+        let iovp_buf_p =
+            translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>())[0]
+                .as_ptr();
         let mut addr = iovp_buf_p as *const _ as usize;
         let mut total_write_len = 0;
         for _ in 0..iovcnt {
             let iovp = unsafe { &*(addr as *const Iovec) };
-	    if iovp.iov_len<=0{
-		addr += size_of::<Iovec>();
-		continue;
-	    }
-	    write_data.extend(translated_bytes_buffer(
+            if iovp.iov_len <= 0 {
+                addr += size_of::<Iovec>();
+                continue;
+            }
+            write_data.extend(translated_bytes_buffer(
                 token,
                 iovp.iov_base as *const u8,
                 iovp.iov_len,
@@ -843,7 +850,6 @@ pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize>
         return Err(SyscallError::ReachFdLimit(13));
     }
 }
-
 
 const TCGETS: usize = 0x5401;
 const TCSETS: usize = 0x5402;
@@ -872,7 +878,6 @@ pub fn sys_ioctl(fd: usize, request: usize, argp: *mut u8) -> Result<isize> {
     }
     Ok(0)
 }
-
 
 // 暂时写在这里
 
@@ -970,7 +975,12 @@ pub fn sys_fcntl(fd: isize, cmd: usize, arg: Option<usize>) -> Result<isize> {
     Ok(0)
 }
 
-pub fn sys_newfstatat(dirfd: isize, pathname: *const u8, satabuf: *const usize, _flags: usize) -> Result<isize> {
+pub fn sys_newfstatat(
+    dirfd: isize,
+    pathname: *const u8,
+    satabuf: *const usize,
+    _flags: usize,
+) -> Result<isize> {
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.lock();
@@ -994,14 +1004,14 @@ pub fn sys_newfstatat(dirfd: isize, pathname: *const u8, satabuf: *const usize, 
             // panic!();
             Ok(0)
         } else {
-	    // TAG return right errno
-	    Err(SyscallError::NoSuchFile(-ENOENT))
+            // TAG return right errno
+            Err(SyscallError::NoSuchFile(-ENOENT))
             // -ENOENT
         }
     } else {
         let dirfd = dirfd as usize;
         if dirfd >= inner.fd_table.len() && dirfd > FD_LIMIT {
-	    return Err(SyscallError::FdInvalid(-1, dirfd));
+            return Err(SyscallError::FdInvalid(-1, dirfd));
         }
 
         if let Some(file) = &inner.fd_table[dirfd] {
@@ -1009,12 +1019,12 @@ pub fn sys_newfstatat(dirfd: isize, pathname: *const u8, satabuf: *const usize, 
             if let Some(inode) = open(open_path, OpenFlags::O_RDONLY, CreateMode::empty()) {
                 inode.fstat(&mut kstat);
                 userbuf.write(kstat.as_bytes());
-		Ok(0)
+                Ok(0)
             } else {
-		Err(SyscallError::NoSuchFile(-1))
+                Err(SyscallError::NoSuchFile(-1))
             }
         } else {
-	    Err(SyscallError::FdInvalid(-ENOENT, dirfd))
+            Err(SyscallError::FdInvalid(-ENOENT, dirfd))
         }
     }
 }
@@ -1050,7 +1060,12 @@ pub fn sys_sendfile(out_fd: usize, in_fd: usize, offset: usize, _count: usize) -
     }
 }
 
-pub fn sys_utimensat(dirfd: isize, pathname: *const u8, time: *const usize, flags: usize) -> Result<isize> {
+pub fn sys_utimensat(
+    dirfd: isize,
+    pathname: *const u8,
+    time: *const usize,
+    flags: usize,
+) -> Result<isize> {
     // println!(
     //     "[DEBUG] enter sys_utimensat: dirfd:{}, pathname:{}, time:{}, flags:{}",
     //     dirfd, pathname as usize, time as usize, flags
@@ -1066,12 +1081,16 @@ pub fn sys_utimensat(dirfd: isize, pathname: *const u8, time: *const usize, flag
             unimplemented!();
         } else {
             let pathname = translated_str(token, pathname);
-	    let path=inner.get_work_path().join_string(pathname);
-            if let Some(_file) = open(path, OpenFlags::O_RDWR | OpenFlags::O_CREATE, CreateMode::empty()) {
-		Ok(0)
+            let path = inner.get_work_path().join_string(pathname);
+            if let Some(_file) = open(
+                path,
+                OpenFlags::O_RDWR | OpenFlags::O_CREATE,
+                CreateMode::empty(),
+            ) {
+                Ok(0)
             } else {
-		Err(SyscallError::NoSuchFile(-ENOENT))
-		// Ok(-ENOENT)
+                Err(SyscallError::NoSuchFile(-ENOENT))
+                // Ok(-ENOENT)
             }
         }
     } else {
@@ -1080,13 +1099,16 @@ pub fn sys_utimensat(dirfd: isize, pathname: *const u8, time: *const usize, flag
                 return Ok(0);
             }
             if let Some(file) = &inner.fd_table[dirfd as usize] {
-                let timespec_buf = translated_bytes_buffer(token, time as *const u8, size_of::<Kstat>()).pop().unwrap();
+                let timespec_buf =
+                    translated_bytes_buffer(token, time as *const u8, size_of::<Kstat>())
+                        .pop()
+                        .unwrap();
                 let addr = timespec_buf.as_ptr() as *const _ as usize;
                 let timespec = unsafe { &*(addr as *const Timespec) };
                 file.set_time(timespec);
-		Ok(0)
+                Ok(0)
             } else {
-		Err(SyscallError::FdInvalid(-1, dirfd as usize))
+                Err(SyscallError::FdInvalid(-1, dirfd as usize))
             }
         } else {
             unimplemented!();
@@ -1095,7 +1117,13 @@ pub fn sys_utimensat(dirfd: isize, pathname: *const u8, time: *const usize, flag
 }
 
 // 目前仅支持同当前目录下文件名称更改
-pub fn sys_renameat2(old_dirfd: isize, old_path: *const u8, new_dirfd: isize, new_path: *const u8, _flags: u32) -> Result<isize> {
+pub fn sys_renameat2(
+    old_dirfd: isize,
+    old_path: *const u8,
+    new_dirfd: isize,
+    new_path: *const u8,
+    _flags: u32,
+) -> Result<isize> {
     let task = current_task().unwrap();
     let token = current_user_token();
     let inner = task.lock();
@@ -1106,7 +1134,7 @@ pub fn sys_renameat2(old_dirfd: isize, old_path: *const u8, new_dirfd: isize, ne
     //     "[DEBUG] enter sys_renameat2: old_dirfd:{}, old_path:{}, new_dirfd:{}, new_path:{}, flags:0x{:x}",
     //     old_dirfd, old_path, new_dirfd, new_path, _flags
     // );
-    let old_path=inner.get_work_path().join_string(old_path);
+    let old_path = inner.get_work_path().join_string(old_path);
 
     if old_dirfd == AT_FDCWD {
         if let Some(old_file) = open(old_path, OpenFlags::O_RDWR, CreateMode::empty()) {
@@ -1118,9 +1146,9 @@ pub fn sys_renameat2(old_dirfd: isize, old_path: *const u8, new_dirfd: isize, ne
                 }
             };
             if new_dirfd == AT_FDCWD {
-		let new_path=inner.get_work_path().join_string(new_path);
-		old_file.rename(new_path, flag);
-		Ok(0)
+                let new_path = inner.get_work_path().join_string(new_path);
+                old_file.rename(new_path, flag);
+                Ok(0)
             } else {
                 unimplemented!();
             }
@@ -1131,7 +1159,6 @@ pub fn sys_renameat2(old_dirfd: isize, old_path: *const u8, new_dirfd: isize, ne
         unimplemented!();
     }
 }
-
 
 bitflags! {
     #[derive(PartialEq, Eq)]
@@ -1174,16 +1201,21 @@ pub fn sys_lseek(fd: usize, off_t: usize, whence: usize) -> Result<isize> {
         }
     } else {
         // file not exists
-	Err(SyscallError::FdInvalid(-1, fd))
+        Err(SyscallError::FdInvalid(-1, fd))
         // -3
     }
 }
 
-pub fn sys_readlinkat(dirfd: isize, pathname: *const u8, buf: *const u8, bufsiz: usize) -> Result<isize> {
+pub fn sys_readlinkat(
+    dirfd: isize,
+    pathname: *const u8,
+    buf: *const u8,
+    bufsiz: usize,
+) -> Result<isize> {
     if dirfd == AT_FDCWD {
         let token = current_user_token();
         let path = translated_str(token, pathname);
-	println!("readlinkat path:{:?}",path);
+        println!("readlinkat path:{:?}", path);
         if path.as_str() != "/proc/self/exe" {
             panic!("sys_readlinkat: pathname not support");
         }
@@ -1202,18 +1234,24 @@ pub fn sys_sync() -> Result<isize> {
     Ok(0)
 }
 
-pub fn sys_ftruncate64 (fd: usize, length: usize) -> Result<isize>{
+pub fn sys_ftruncate64(fd: usize, length: usize) -> Result<isize> {
     let task = current_task().unwrap();
     let inner = task.lock();
     if let Some(file) = &inner.fd_table[fd] {
-	file.truncate(length);
-	Ok(0)
-    }else{
-	Err(SyscallError::FdInvalid(-1, fd))
+        file.truncate(length);
+        Ok(0)
+    } else {
+        Err(SyscallError::FdInvalid(-1, fd))
     }
 }
 
-pub fn sys_pselect6(nfds: usize, readfds: *mut u8, writefds: *mut u8, exceptfds: *mut u8, timeout: *mut usize) -> Result<isize> {
+pub fn sys_pselect6(
+    nfds: usize,
+    readfds: *mut u8,
+    writefds: *mut u8,
+    exceptfds: *mut u8,
+    timeout: *mut usize,
+) -> Result<isize> {
     let token = current_user_token();
     let mut r_ready_count = 0;
     let mut w_ready_count = 0;
@@ -1251,7 +1289,11 @@ pub fn sys_pselect6(nfds: usize, readfds: *mut u8, writefds: *mut u8, exceptfds:
 
     let mut ubuf_efds = {
         if exceptfds as usize != 0 {
-            UserBuffer::wrap(translated_bytes_buffer(token, exceptfds, size_of::<FdSet>()))
+            UserBuffer::wrap(translated_bytes_buffer(
+                token,
+                exceptfds,
+                size_of::<FdSet>(),
+            ))
         } else {
             UserBuffer::empty()
         }
@@ -1264,11 +1306,10 @@ pub fn sys_pselect6(nfds: usize, readfds: *mut u8, writefds: *mut u8, exceptfds:
     let mut r_all_ready = false;
     let mut w_all_ready = false;
 
-    let mut rfd_vec:Vec<usize> = rfd_set.get_fd_vec();
-    let mut wfd_vec:Vec<usize> = wfd_set.get_fd_vec();
+    let mut rfd_vec: Vec<usize> = rfd_set.get_fd_vec();
+    let mut wfd_vec: Vec<usize> = wfd_set.get_fd_vec();
     // let mut rfd_vec:Vec<usize> = Vec::new();
     // let mut wfd_vec:Vec<usize> = Vec::new();
-
 
     loop {
         /* handle read fd set */
@@ -1349,11 +1390,11 @@ pub fn sys_pselect6(nfds: usize, readfds: *mut u8, writefds: *mut u8, exceptfds:
             let mut time_remain = get_timeval() - timer;
             if time_remain.is_zero() {
                 // not reach timer (now <= timer)
-		// println!("now:{:?},timer:{:?}",get_timeval(),timer);
+                // println!("now:{:?},timer:{:?}",get_timeval(),timer);
                 drop(fd_table);
                 drop(inner);
                 drop(task);
-		// suspend may nerver end, pipe read, timer
+                // suspend may nerver end, pipe read, timer
                 suspend_current_and_run_next();
             } else {
                 ubuf_rfds.write(rfd_set.as_bytes());

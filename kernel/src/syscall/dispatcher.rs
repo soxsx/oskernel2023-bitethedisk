@@ -1,6 +1,5 @@
 //! 根据 SYS_id 分发具体系统调用
 
-
 use super::{error::SyscallError, impls::*};
 
 // 系统调用号
@@ -51,9 +50,9 @@ const SYS_GETTID: usize = 178;
 const SYS_SENDFILE: usize = 71;
 const SYS_SYSLOG: usize = 116;
 const SYS_FACCESSAT: usize = 48;
-const SYS_SYSINFO: usize =179;
-const SYS_KILL: usize =129;
-const SYS_UTIMENSAT: usize =88;
+const SYS_SYSINFO: usize = 179;
+const SYS_KILL: usize = 129;
+const SYS_UTIMENSAT: usize = 88;
 const SYS_RENAMEAT2: usize = 276;
 const SYS_LSEEK: usize = 62;
 const SYS_GETEGID: usize = 177;
@@ -78,7 +77,7 @@ const SYS_MSYNC: usize = 227;
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     // println!("[DEBUG] syscall:{:?}",syscall_id);
-    let ret: core::result::Result<isize, SyscallError> = match syscall_id {    
+    let ret: core::result::Result<isize, SyscallError> = match syscall_id {
         // TODO: 检查完善
         SYS_CLONE => sys_do_fork(args[0], args[1], args[2], args[3], args[4]),
 
@@ -142,46 +141,82 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         ),
         SYS_MUNMAP => sys_munmap(args[0], args[1]),
         SYS_WAIT4 => sys_wait4(args[0] as isize, args[1] as *mut i32),
-	SYS_SET_TID_ADDRESS => sys_set_tid_address(args[0] as *mut usize),
-	SYS_READV => sys_readv(args[0], args[1] as *const usize, args[2]),
-	SYS_WRITEV => sys_writev(args[0], args[1] as *const usize, args[2]),
-	SYS_EXIT_GROUP => sys_exit_group(args[0] as i32),
-	SYS_GETUID => sys_getuid(),
-	SYS_RT_SIGPROMASK => sys_rt_sigprocmask(args[0] as i32, args[1] as *const usize, args[2] as *const usize, args[3]),
-	SYS_RT_SIGACTION => sys_rt_sigaction(),
-	SYS_IOCTL => sys_ioctl(args[0], args[1], args[2] as *mut u8),
-	SYS_FCNTL => sys_fcntl(args[0] as isize, args[1] as usize, Option::<usize>::from(args[2])),
-	SYS_GETEUID => sys_geteuid(),
-	SYS_PPOLL => sys_ppoll(),
-	SYS_NEWFSTATAT => sys_newfstatat(args[0] as isize, args[1] as *const u8, args[2] as *const usize, args[3]),
-	SYS_CLOCK_GETTIME => sys_clock_gettime(args[0], args[1] as *mut u64),
-	SYS_GETTID => sys_gettid(),
-	SYS_SENDFILE => sys_sendfile(args[0], args[1], args[2], args[3]),
-	SYS_SYSLOG => Ok(0),
-	SYS_FACCESSAT => Ok(0),
-	SYS_SYSINFO => Ok(0),
-	SYS_KILL => sys_kill(args[0], args[1] as u32),
-	SYS_UTIMENSAT => sys_utimensat(args[0] as isize, args[1] as *const u8, args[2] as *const usize, args[3]),
-	SYS_RENAMEAT2 => sys_renameat2(args[0] as isize, args[1] as *const u8, args[2] as isize, args[3] as *const u8, args[4] as u32),
-	SYS_LSEEK => sys_lseek(args[0], args[1], args[2]),
-	SYS_GETEGID => Ok(0),
-	SYS_GETGID => Ok(0),
-	SYS_SET_ROBUST_LIST => Ok(-1),
-	SYS_PRLIMIT64 => Ok(0),
-	SYS_READLINKAT => sys_readlinkat(args[0] as isize,args[1] as *const u8 ,args[2] as *const u8,args[3]),
-	SYS_GETRANDOM => sys_getrandom(args[0] as *const u8, args[1], args[2]),
-	SYS_MPROTECT => Ok(0),
-	SYS_GETPGID => Ok(0),
-	SYS_SETPGID => Ok(0),
-	SYS_SYNC => sys_sync(),
-	SYS_FTRUNCATE64 => sys_ftruncate64(args[0], args[1]),
-	SYS_PSELECT6 => sys_pselect6(args[0] as usize, args[1] as *mut u8, args[2] as *mut u8, args[3] as *mut u8, args[4] as *mut usize),
-	SYS_GETRUSAGE => sys_getrusage(args[0] as isize, args[1] as *mut u8),
-	SYS_SETITIMER => Ok(0),
-	SYS_TGKILL => Ok(0),
-	SYS_UMASK => Ok(0),
-	SYS_FSYNC => Ok(0),
-	SYS_MSYNC => Ok(0),
+        SYS_SET_TID_ADDRESS => sys_set_tid_address(args[0] as *mut usize),
+        SYS_READV => sys_readv(args[0], args[1] as *const usize, args[2]),
+        SYS_WRITEV => sys_writev(args[0], args[1] as *const usize, args[2]),
+        SYS_EXIT_GROUP => sys_exit_group(args[0] as i32),
+        SYS_GETUID => sys_getuid(),
+        SYS_RT_SIGPROMASK => sys_rt_sigprocmask(
+            args[0] as i32,
+            args[1] as *const usize,
+            args[2] as *const usize,
+            args[3],
+        ),
+        SYS_RT_SIGACTION => sys_rt_sigaction(),
+        SYS_IOCTL => sys_ioctl(args[0], args[1], args[2] as *mut u8),
+        SYS_FCNTL => sys_fcntl(
+            args[0] as isize,
+            args[1] as usize,
+            Option::<usize>::from(args[2]),
+        ),
+        SYS_GETEUID => sys_geteuid(),
+        SYS_PPOLL => sys_ppoll(),
+        SYS_NEWFSTATAT => sys_newfstatat(
+            args[0] as isize,
+            args[1] as *const u8,
+            args[2] as *const usize,
+            args[3],
+        ),
+        SYS_CLOCK_GETTIME => sys_clock_gettime(args[0], args[1] as *mut u64),
+        SYS_GETTID => sys_gettid(),
+        SYS_SENDFILE => sys_sendfile(args[0], args[1], args[2], args[3]),
+        SYS_SYSLOG => Ok(0),
+        SYS_FACCESSAT => Ok(0),
+        SYS_SYSINFO => Ok(0),
+        SYS_KILL => sys_kill(args[0], args[1] as u32),
+        SYS_UTIMENSAT => sys_utimensat(
+            args[0] as isize,
+            args[1] as *const u8,
+            args[2] as *const usize,
+            args[3],
+        ),
+        SYS_RENAMEAT2 => sys_renameat2(
+            args[0] as isize,
+            args[1] as *const u8,
+            args[2] as isize,
+            args[3] as *const u8,
+            args[4] as u32,
+        ),
+        SYS_LSEEK => sys_lseek(args[0], args[1], args[2]),
+        SYS_GETEGID => Ok(0),
+        SYS_GETGID => Ok(0),
+        SYS_SET_ROBUST_LIST => Ok(-1),
+        SYS_PRLIMIT64 => Ok(0),
+        SYS_READLINKAT => sys_readlinkat(
+            args[0] as isize,
+            args[1] as *const u8,
+            args[2] as *const u8,
+            args[3],
+        ),
+        SYS_GETRANDOM => sys_getrandom(args[0] as *const u8, args[1], args[2]),
+        SYS_MPROTECT => Ok(0),
+        SYS_GETPGID => Ok(0),
+        SYS_SETPGID => Ok(0),
+        SYS_SYNC => sys_sync(),
+        SYS_FTRUNCATE64 => sys_ftruncate64(args[0], args[1]),
+        SYS_PSELECT6 => sys_pselect6(
+            args[0] as usize,
+            args[1] as *mut u8,
+            args[2] as *mut u8,
+            args[3] as *mut u8,
+            args[4] as *mut usize,
+        ),
+        SYS_GETRUSAGE => sys_getrusage(args[0] as isize, args[1] as *mut u8),
+        SYS_SETITIMER => Ok(0),
+        SYS_TGKILL => Ok(0),
+        SYS_UMASK => Ok(0),
+        SYS_FSYNC => Ok(0),
+        SYS_MSYNC => Ok(0),
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
     // println!("syscall end");

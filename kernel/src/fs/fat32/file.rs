@@ -1,7 +1,8 @@
 use crate::fs::{
+    file::File,
     open_flags::CreateMode,
     stat::{S_IFCHR, S_IFDIR, S_IFREG},
-    AbsolutePath, Dirent, Kstat, OpenFlags, Timespec, file::File,
+    AbsolutePath, Dirent, Kstat, OpenFlags, Timespec,
 };
 use crate::{drivers::BLOCK_DEVICE, mm::UserBuffer};
 use alloc::{
@@ -115,20 +116,20 @@ impl Fat32File {
     }
 
     pub fn rename(&self, new_path: AbsolutePath, flags: OpenFlags) {
-	// duplicate a new file, and set file cluster and file size
-	let inner=self.inner.lock();
-	// check file exits
-	let new_file=open(new_path, flags, CreateMode::empty()).unwrap();
-	let new_inner=new_file.inner.lock();
-	let first_cluster=inner.inode.first_cluster();
-	let file_size=inner.inode.file_size();
+        // duplicate a new file, and set file cluster and file size
+        let inner = self.inner.lock();
+        // check file exits
+        let new_file = open(new_path, flags, CreateMode::empty()).unwrap();
+        let new_inner = new_file.inner.lock();
+        let first_cluster = inner.inode.first_cluster();
+        let file_size = inner.inode.file_size();
 
-	new_inner.inode.set_first_cluster(first_cluster);
-	new_inner.inode.set_file_size(file_size);
+        new_inner.inode.set_first_cluster(first_cluster);
+        new_inner.inode.set_file_size(file_size);
 
-	drop(inner);
-	// clear old direntry
-	self.delete_direntry();
+        drop(inner);
+        // clear old direntry
+        self.delete_direntry();
     }
 }
 
@@ -185,19 +186,19 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Option<A
         match res {
             Ok(inode) => {
                 // 如果文件已存在则清空
-                let name =if let Some(name_) = pathv.pop(){
-		    name_
-		}else{
-		    "/"
-		};
-		// TAG for lzm
-		// 不能清空 direntry
-		if !flags.contains(OpenFlags::O_DIRECTROY){
-		    // 不清空目录
+                let name = if let Some(name_) = pathv.pop() {
+                    name_
+                } else {
+                    "/"
+                };
+                // TAG for lzm
+                // 不能清空 direntry
+                if !flags.contains(OpenFlags::O_DIRECTROY) {
+                    // 不清空目录
                     inode.clear_content();
-		};
-		// TAG for lzm
-		// 丢失 OpenFlag
+                };
+                // TAG for lzm
+                // 丢失 OpenFlag
                 Some(Arc::new(Fat32File::new(
                     readable,
                     writable,
@@ -218,11 +219,11 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Option<A
                 match ROOT_INODE.find(pathv.clone()) {
                     Ok(parent) => match parent.create(name, create_type as VirFileType) {
                         Ok(inode) => Some(Arc::new(Fat32File::new(
-			    readable,
-			    writable,
-			    Arc::new(inode),
-			    path.clone(),
-			    name.to_string(),
+                            readable,
+                            writable,
+                            Arc::new(inode),
+                            path.clone(),
+                            name.to_string(),
                         ))),
                         Err(_) => None,
                     },
@@ -324,10 +325,10 @@ impl File for Fat32File {
         let file_size = self.file_size();
 
         // TODO 如果是目录文件
-	// TAG for lzm
-	// empty file
+        // TAG for lzm
+        // empty file
         if file_size == 0 {
-	    return 0;
+            return 0;
         }
 
         if offset > file_size {
@@ -490,7 +491,7 @@ impl File for Fat32File {
         self.file_size()
     }
 
-    fn truncate(&self, new_length: usize){
+    fn truncate(&self, new_length: usize) {
         let inner = self.inner.lock();
         inner.inode.modify_size(new_length);
     }

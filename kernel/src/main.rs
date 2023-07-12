@@ -24,6 +24,7 @@ mod console; // 控制台模块
 #[path = "boards/qemu.rs"]
 mod board; // 与虚拟机相关的参数
 
+mod cell;
 mod consts;
 mod drivers; // 设备驱动层
 mod error;
@@ -35,7 +36,6 @@ mod syscall;
 mod task;
 mod timer;
 mod trap;
-mod cell;
 
 use core::{arch::global_asm, slice};
 use riscv::register::sstatus::{set_fs, FS};
@@ -53,7 +53,7 @@ pub fn meow() -> ! {
         mm::init();
         trap::init();
         trap::enable_stimer_interrupt();
-	timer::set_next_trigger();
+        timer::set_next_trigger();
         fs::init();
         task::add_initproc();
         task::run_tasks();

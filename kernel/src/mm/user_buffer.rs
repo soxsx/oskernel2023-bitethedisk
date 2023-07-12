@@ -12,7 +12,9 @@ pub struct UserBuffer {
 impl UserBuffer {
     /// 使用 `buffer` 创建一个新的缓冲区实例
     pub fn empty() -> Self {
-        Self { buffers: Vec::new() }
+        Self {
+            buffers: Vec::new(),
+        }
     }
 
     pub fn wrap(buffers: Vec<&'static mut [u8]>) -> Self {

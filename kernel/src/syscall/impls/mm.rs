@@ -88,6 +88,6 @@ pub fn sys_mmap(
     let flags = MmapFlags::from_bits(flags).expect("unsupported mmap flags");
 
     let result_addr = task.mmap(addr, length, prot, flags, fd, offset);
-    
+
     Ok(result_addr as isize)
 }

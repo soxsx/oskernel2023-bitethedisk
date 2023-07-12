@@ -15,7 +15,8 @@ use crate::{
     task::{
         current_add_signal, current_task, current_trap_cx, suspend_current_and_run_next,
         SignalFlags,
-    }, timer::{get_timeval, set_next_trigger},
+    },
+    timer::{get_timeval, set_next_trigger},
 };
 
 use super::{set_kernel_trap_entry, trap_return};
@@ -23,7 +24,7 @@ use super::{set_kernel_trap_entry, trap_return};
 /// 用户态 trap 发生时的处理函数
 #[no_mangle]
 pub fn user_trap_handler() -> ! {
-    let pid=current_task().unwrap().pid();
+    let pid = current_task().unwrap().pid();
     // println!("pid:{:?}",pid);
     set_kernel_trap_entry();
     // 用于描述 Trap 的原因
@@ -31,15 +32,13 @@ pub fn user_trap_handler() -> ! {
     // 给出 Trap 附加信息
     let stval = stval::read();
 
-    let task=current_task().unwrap();
-    let mut inner=task.lock();
-    let diff=get_timeval()-inner.last_enter_umode_time;
+    let task = current_task().unwrap();
+    let mut inner = task.lock();
+    let diff = get_timeval() - inner.last_enter_umode_time;
     inner.add_utime(diff);
     inner.set_last_enter_smode(get_timeval());
     drop(inner);
     drop(task);
-
-
 
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
@@ -120,7 +119,7 @@ pub fn user_trap_handler() -> ! {
         // 时间片到了
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             suspend_current_and_run_next();
-	    set_next_trigger();
+            set_next_trigger();
         }
 
         _ => panic!(

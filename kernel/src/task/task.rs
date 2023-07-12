@@ -6,7 +6,7 @@ use super::{pid_alloc, PidHandle, SignalFlags};
 use crate::consts::*;
 use crate::fs::{file::File, Fat32File, Stdin, Stdout};
 use crate::mm::kernel_vmm::acquire_kvmm;
-use crate::mm::memory_set::{LoadedELF, MMAP_BASE,AuxEntry,AT_NULL,AT_RANDOM};
+use crate::mm::memory_set::{AuxEntry, LoadedELF, AT_NULL, AT_RANDOM, MMAP_BASE};
 use crate::mm::{
     translated_mut, MapPermission, MemorySet, MmapFlags, MmapManager, MmapProts, PageTableEntry,
     PhysPageNum, VirtAddr, VirtPageNum,
@@ -135,21 +135,20 @@ impl TaskControlBlockInner {
     }
 
     pub fn add_utime(&mut self, new_time: TimeVal) {
-        self.utime= self.utime+new_time;
+        self.utime = self.utime + new_time;
     }
 
     pub fn add_stime(&mut self, new_time: TimeVal) {
-        self.stime= self.stime+new_time;
+        self.stime = self.stime + new_time;
     }
 
     pub fn set_last_enter_umode(&mut self, new_time: TimeVal) {
-        self.last_enter_umode_time=new_time;
+        self.last_enter_umode_time = new_time;
     }
 
     pub fn set_last_enter_smode(&mut self, new_time: TimeVal) {
-        self.last_enter_smode_time=new_time;
+        self.last_enter_smode_time = new_time;
     }
-
 }
 
 impl TaskControlBlock {
@@ -164,7 +163,7 @@ impl TaskControlBlock {
             memory_set,
             elf_entry: entry_point,
             user_stack_top: user_sp,
-	    auxs,
+            auxs,
         } = MemorySet::load_elf(initproc.clone());
         initproc.delete();
         // 从地址空间 memory_set 中查多级页表找到应用地址空间中的 Trap 上下文实际被放在哪个物理页帧
@@ -204,11 +203,10 @@ impl TaskControlBlock {
                     VirtAddr::from(MMAP_BASE),
                     VirtAddr::from(MMAP_BASE),
                 ),
-		utime: TimeVal { sec: 0,usec:0},
-		stime: TimeVal { sec: 0,usec:0},
-		last_enter_umode_time: TimeVal { sec: 0,usec:0},
-		last_enter_smode_time: TimeVal { sec: 0,usec:0},
-
+                utime: TimeVal { sec: 0, usec: 0 },
+                stime: TimeVal { sec: 0, usec: 0 },
+                last_enter_umode_time: TimeVal { sec: 0, usec: 0 },
+                last_enter_smode_time: TimeVal { sec: 0, usec: 0 },
             }),
         };
         // 初始化位于该进程应用地址空间中的 Trap 上下文，使得第一次进入用户态的时候时候能正
@@ -250,8 +248,6 @@ impl TaskControlBlock {
         // user_sp -= core::mem::size_of::<usize>();
         // *translated_mut(token, user_sp as *mut usize) = 456;
 
-	
-
         // 分配 envs 的空间, 加入动态链接库位置
         let envs_ptrv: Vec<_> = (0..envs.len())
             .map(|idx| {
@@ -283,7 +279,7 @@ impl TaskControlBlock {
             })
             .collect();
 
-	// padding 0 表示结束 AT_NULL aux entry
+        // padding 0 表示结束 AT_NULL aux entry
         user_sp -= core::mem::size_of::<usize>();
         *translated_mut(token, user_sp as *mut usize) = 0;
 
@@ -292,7 +288,6 @@ impl TaskControlBlock {
             user_sp -= core::mem::size_of::<AuxEntry>();
             *translated_mut(token, user_sp as *mut AuxEntry) = auxv[i];
         }
-
 
         // padding 0 表示结束
         user_sp -= core::mem::size_of::<usize>();
@@ -336,7 +331,7 @@ impl TaskControlBlock {
             memory_set,
             user_stack_top: user_sp,
             elf_entry: entry_point,
-	    mut auxs,
+            mut auxs,
         } = MemorySet::load_elf(elf_file);
 
         let trap_cx_ppn = memory_set
@@ -357,7 +352,7 @@ impl TaskControlBlock {
             .take();
         drop(inner); // 避免接下来的操作导致死锁
 
-        let (user_sp, _args_ptr, _envs_ptr) = self.init_ustack(user_sp, args, envs, & mut auxs);
+        let (user_sp, _args_ptr, _envs_ptr) = self.init_ustack(user_sp, args, envs, &mut auxs);
         // 修改新的地址空间中的 Trap 上下文，将解析得到的应用入口点、用户栈位置以及一些内核的信息进行初始化
         *trap_cx = TrapContext::app_init_context(
             entry_point,
@@ -408,7 +403,6 @@ impl TaskControlBlock {
             }
         }
 
-
         let task_control_block = Arc::new(TaskControlBlock {
             pid: pid_handle,
             tgid,
@@ -425,10 +419,10 @@ impl TaskControlBlock {
                 signals: SignalFlags::empty(),
                 current_path: parent_inner.current_path.clone(),
                 mmap_manager: mmap_area,
-		utime: TimeVal { sec: 0,usec:0},
-		stime: TimeVal { sec: 0,usec:0},
-		last_enter_umode_time: TimeVal { sec: 0,usec:0},
-		last_enter_smode_time: TimeVal { sec: 0,usec:0},
+                utime: TimeVal { sec: 0, usec: 0 },
+                stime: TimeVal { sec: 0, usec: 0 },
+                last_enter_umode_time: TimeVal { sec: 0, usec: 0 },
+                last_enter_smode_time: TimeVal { sec: 0, usec: 0 },
             }),
         });
         // 把新生成的进程加入到子进程向量中
