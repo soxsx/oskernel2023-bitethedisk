@@ -482,4 +482,9 @@ impl File for Fat32File {
     fn file_size(&self) -> usize {
         self.file_size()
     }
+
+    fn truncate(&self, new_length: usize){
+        let inner = self.inner.lock();
+        inner.inode.modify_size(new_length);
+    }
 }

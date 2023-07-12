@@ -80,6 +80,10 @@ pub trait File: Send + Sync {
     fn path(&self) -> AbsolutePath {
         unimplemented!("not implemente yet");
     }
+    fn truncate(&self, new_length: usize) {
+        unimplemented!("not implemente yet");
+    }
+
 }
 
 impl Debug for dyn File + Send + Sync {
