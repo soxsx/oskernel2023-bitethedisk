@@ -277,10 +277,11 @@ impl File for Fat32File {
                 break;
             }
             inner.offset += read_size;
-            v.extend_from_slice(&buffer[..read_size.min(len)]);
             if len > read_size {
                 len -= read_size;
+                v.extend_from_slice(&buffer[..read_size]);
             } else {
+                v.extend_from_slice(&buffer[..len]);
                 break;
             }
         }

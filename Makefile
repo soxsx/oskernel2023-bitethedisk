@@ -27,7 +27,7 @@ clean:
 run:
 	@cd kernel/ && make run
 
-debug-server: check-sdcard
+debug-server:
 	@cd kernel/ && make debug-server
 
 debug: 

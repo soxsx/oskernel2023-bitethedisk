@@ -8,6 +8,8 @@ use core::option::Option::{None, Some};
 use core::{assert, assert_ne, todo};
 use spin::RwLock;
 
+use crate::time2;
+
 use super::cache::get_block_cache;
 
 use super::cache::Cache;
@@ -292,7 +294,6 @@ impl VirFile {
     pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> usize {
         let spc = self.fs.read().bpb.sectors_per_cluster();
         let cluster_size = self.fs.read().cluster_size();
-
         let mut index = offset;
 
         // fat32 规定目录文件大小为 0
@@ -340,7 +341,6 @@ impl VirFile {
                 return 0;
             }
         }
-
         let mut left = pre_cluster_cnt * cluster_size;
         let mut right = left + BLOCK_SIZE;
         let mut already_read = 0;
@@ -362,7 +362,6 @@ impl VirFile {
                             let src = &cache[offset_in_block..offset_in_block + len];
                             dst.copy_from_slice(src);
                         });
-
                     index += len;
                     already_read += len;
 

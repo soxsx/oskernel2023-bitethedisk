@@ -1,12 +1,12 @@
 use core::arch::asm;
 
-const SBI_SET_TIMER: usize = 0;
-const SBI_CONSOLE_PUTCHAR: usize = 1;
-const SBI_CONSOLE_GETCHAR: usize = 2;
-const SBI_SHUTDOWN: usize = 8;
+const SBI_SET_TIMER: i32 = 0;
+const SBI_CONSOLE_PUTCHAR: i32 = 1;
+const SBI_CONSOLE_GETCHAR: i32 = 2;
+const SBI_SHUTDOWN: i32 = 8;
 
 #[inline(always)]
-fn sbi_call(which: usize, arg0: usize, arg1: usize, arg2: usize) -> usize {
+fn sbi_call(which: i32, arg0: i32, arg1: i32, arg2: i32) -> i32 {
     let mut ret;
     unsafe {
         asm!(
@@ -17,19 +17,18 @@ fn sbi_call(which: usize, arg0: usize, arg1: usize, arg2: usize) -> usize {
             in("a7") which,
         );
     }
-
     ret
 }
 
-pub fn set_timer(stime_value: usize) -> isize {
-    sbi_call(SBI_SET_TIMER, stime_value, 0, 0) as isize
+pub fn set_timer(stime_value: i32) -> i32 {
+    sbi_call(SBI_SET_TIMER, stime_value, 0, 0)
 }
 
-pub fn console_putchar(c: usize) -> usize {
+pub fn console_putchar(c: i32) -> i32 {
     sbi_call(SBI_CONSOLE_PUTCHAR, c, 0, 0)
 }
 
-pub fn console_getchar() -> usize {
+pub fn console_getchar() -> i32 {
     sbi_call(SBI_CONSOLE_GETCHAR, 0, 0, 0)
 }
 

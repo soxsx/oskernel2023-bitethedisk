@@ -8,6 +8,7 @@ pub mod fat;
 pub mod file;
 pub mod fmt;
 pub mod fs;
+mod timer;
 pub mod vfs;
 
 use core::convert::TryInto;
@@ -29,6 +30,15 @@ pub use fat::*;
 pub use file::*;
 pub use fs::*;
 pub use vfs::*;
+
+#[macro_export]
+macro_rules! time2 {
+    ($title:literal $($piece:tt)*) => {
+        let timestamp = crate::timer::get_time_ms();
+        $($piece)*
+        $crate::println!("[{}] time cost: {}", $title, crate::timer::get_time_ms() - timestamp);
+    };
+}
 
 // Signature
 pub const LEAD_SIGNATURE: u32 = 0x41615252;

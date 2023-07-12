@@ -2,7 +2,6 @@
 #                         Configuration                          #
 ##################################################################
 TARGET := riscv64gc-unknown-none-elf
-BOOTLOADER = ./bootloader/rustsbi-qemu
 
 KERNEL_ELF := target/$(TARGET)/release/kernel
 KERNEL_ELF_DBG := target/$(TARGET)/debug/kernel
@@ -39,7 +38,7 @@ run: kernel-dbg sdcard
 		-m 128M \
 		-nographic \
 		-smp $(NCPU) \
-		-bios $(BOOTLOADER) \
+		-bios default \
 		-drive file=$(SDCARD),if=none,format=raw,id=x0 \
 		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 
@@ -56,7 +55,6 @@ debug-server: kernel-debug sdcard
 		-m 128M \
 		-nographic \
 		-smp $(NCPU) \
-		-bios $(BOOTLOADER) \
 		-drive file=$(SDCARD),if=none,format=raw,id=x0 \
 		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
 		-s -S

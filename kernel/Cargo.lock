@@ -80,6 +80,7 @@ version = "0.2.0"
 dependencies = [
  "lazy_static",
  "lru",
+ "riscv",
  "spin 0.9.8",
 ]
 
