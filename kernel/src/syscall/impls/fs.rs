@@ -1064,8 +1064,8 @@ pub fn sys_utimensat(dirfd: isize, pathname: *const u8, time: *const usize, flag
         } else {
             let pathname = translated_str(token, pathname);
 	    let path=inner.get_work_path().join_string(pathname);
-            if let Some(_file) = open(path, OpenFlags::O_RDWR, CreateMode::empty()) {
-                unimplemented!(); // 记得重新制作文件镜像
+            if let Some(_file) = open(path, OpenFlags::O_RDWR | OpenFlags::O_CREATE, CreateMode::empty()) {
+		Ok(0)
             } else {
 		Err(SyscallError::NoSuchFile(-ENOENT))
 		// Ok(-ENOENT)
