@@ -53,6 +53,7 @@ pub fn meow() -> ! {
         mm::init();
         trap::init();
         trap::enable_stimer_interrupt();
+	timer::set_next_trigger();
         fs::init();
         task::add_initproc();
         task::run_tasks();
