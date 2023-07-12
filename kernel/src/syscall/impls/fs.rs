@@ -1192,3 +1192,174 @@ pub fn sys_readlinkat(dirfd: isize, pathname: *const u8, buf: *const u8, bufsiz:
         panic!("sys_readlinkat: fd not support");
     }
 }
+
+pub fn sys_sync() -> Result<isize> {
+    sync_all();
+    Ok(0)
+}
+
+pub fn sys_ftruncate64 (fd: usize, length: usize) -> Result<isize>{
+    let task = current_task().unwrap();
+    let inner = task.lock();
+    if let Some(file) = &inner.fd_table[fd] {
+	file.truncate(length);
+	Ok(0)
+    }else{
+	Err(SyscallError::FdInvalid(-1, fd))
+    }
+}
+
+pub fn sys_pselect6(nfds: usize, readfds: *mut u8, writefds: *mut u8, exceptfds: *mut u8, timeout: *mut usize) -> Result<isize> {
+    let token = current_user_token();
+    let mut r_ready_count = 0;
+    let mut w_ready_count = 0;
+    let mut e_ready_count = 0;
+
+    let mut timer_interval = TimeVal::new();
+    unsafe {
+        let sec = translated_ref(token, timeout);
+        let usec = translated_ref(token, timeout.add(1));
+        timer_interval.sec = *sec;
+        timer_interval.usec = *usec;
+    }
+    let timer = timer_interval + get_timeval();
+
+    let mut rfd_set = FdSet::new();
+    let mut wfd_set = FdSet::new();
+
+    let mut ubuf_rfds = {
+        if readfds as usize != 0 {
+            UserBuffer::wrap(translated_bytes_buffer(token, readfds, size_of::<FdSet>()))
+        } else {
+            UserBuffer::empty()
+        }
+    };
+    ubuf_rfds.read(rfd_set.as_bytes_mut());
+
+    let mut ubuf_wfds = {
+        if writefds as usize != 0 {
+            UserBuffer::wrap(translated_bytes_buffer(token, writefds, size_of::<FdSet>()))
+        } else {
+            UserBuffer::empty()
+        }
+    };
+    ubuf_wfds.read(wfd_set.as_bytes_mut());
+
+    let mut ubuf_efds = {
+        if exceptfds as usize != 0 {
+            UserBuffer::wrap(translated_bytes_buffer(token, exceptfds, size_of::<FdSet>()))
+        } else {
+            UserBuffer::empty()
+        }
+    };
+
+    // println!("[DEBUG] enter sys_pselect: nfds:{}, readfds:{:?} ,writefds:{:?}, exceptfds:{:?}, timeout:{:?}",nfds,ubuf_rfds,ubuf_wfds,ubuf_efds,timer_interval);
+
+    let mut r_has_nready = false;
+    let mut w_has_nready = false;
+    let mut r_all_ready = false;
+    let mut w_all_ready = false;
+
+    let mut rfd_vec:Vec<usize> = rfd_set.get_fd_vec();
+    let mut wfd_vec:Vec<usize> = wfd_set.get_fd_vec();
+    // let mut rfd_vec:Vec<usize> = Vec::new();
+    // let mut wfd_vec:Vec<usize> = Vec::new();
+
+
+    loop {
+        /* handle read fd set */
+        let task = current_task().unwrap();
+        let inner = task.lock();
+        let fd_table = &inner.fd_table;
+        if readfds as usize != 0 && !r_all_ready {
+            for i in 0..rfd_vec.len() {
+                let fd = rfd_vec[i];
+                if fd == 1024 {
+                    continue;
+                }
+                if fd > fd_table.len() || fd_table[fd].is_none() || fd >= nfds {
+                    return Err(SyscallError::FdInvalid(-1, fd)); // invalid fd
+                }
+                let fdescript = fd_table[fd].as_ref().unwrap();
+                if fdescript.r_ready() {
+                    r_ready_count += 1;
+                    rfd_set.set_fd(fd);
+                    // marked for being ready
+                    rfd_vec[i] = 1024;
+                } else {
+                    rfd_set.clear_fd(fd);
+                    r_has_nready = true;
+                }
+            }
+            if !r_has_nready {
+                r_all_ready = true;
+                ubuf_rfds.write(rfd_set.as_bytes());
+            }
+        }
+
+        /* handle write fd set */
+        if writefds as usize != 0 && !w_all_ready {
+            if wfd_vec.len() == 0 {
+                wfd_vec = wfd_set.get_fd_vec();
+            }
+
+            for i in 0..wfd_vec.len() {
+                let fd = wfd_vec[i];
+                if fd == 1024 {
+                    continue;
+                }
+                if fd > fd_table.len() || fd_table[fd].is_none() || fd >= nfds {
+                    return Err(SyscallError::FdInvalid(-1, fd)); // invalid fd
+                }
+                let fdescript = fd_table[fd].as_ref().unwrap();
+                if fdescript.w_ready() {
+                    w_ready_count += 1;
+                    wfd_set.set_fd(fd);
+                    wfd_vec[i] = 1024;
+                } else {
+                    wfd_set.clear_fd(fd);
+                    w_has_nready = true;
+                }
+            }
+            if !w_has_nready {
+                w_all_ready = true;
+                ubuf_wfds.write(wfd_set.as_bytes());
+            }
+        }
+
+        /* Cannot handle exceptfds for now */
+        if exceptfds as usize != 0 {
+            let mut efd_set = FdSet::new();
+            ubuf_efds.read(efd_set.as_bytes_mut());
+            e_ready_count = efd_set.count() as isize;
+            efd_set.clear_all();
+            ubuf_efds.write(efd_set.as_bytes());
+        }
+
+        // return anyway
+        // return r_ready_count + w_ready_count + e_ready_count;
+        // if there are some fds not ready, just wait until time up
+        if r_has_nready || w_has_nready {
+            r_has_nready = false;
+            w_has_nready = false;
+            let mut time_remain = get_timeval() - timer;
+            if time_remain.is_zero() {
+                // not reach timer (now <= timer)
+		// println!("now:{:?},timer:{:?}",get_timeval(),timer);
+                drop(fd_table);
+                drop(inner);
+                drop(task);
+		// suspend may nerver end, pipe read, timer
+                suspend_current_and_run_next();
+            } else {
+                ubuf_rfds.write(rfd_set.as_bytes());
+                ubuf_wfds.write(wfd_set.as_bytes());
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    // println!("pselect return: r_ready_count:{}, w_ready_count:{}, e_ready_count:{}",r_ready_count,w_ready_count,e_ready_count);
+    Ok(r_ready_count + w_ready_count + e_ready_count)
+}

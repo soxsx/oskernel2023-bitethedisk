@@ -329,3 +329,19 @@ pub fn sys_kill(pid: usize, signal: u32) -> Result<isize> {
 	Err(SyscallError::PidNotFound(-1, pid as isize))
     }
 }
+
+const RUSAGE_SELF: isize = 0;
+pub fn sys_getrusage(who: isize, usage: *mut u8) -> Result<isize> {
+    if who != RUSAGE_SELF {
+        panic!("sys_getrusage: \"who\" not supported!");
+    }
+    let token = current_user_token();
+    let mut userbuf = UserBuffer::wrap(translated_bytes_buffer(token, usage, core::mem::size_of::<RUsage>()));
+    let mut rusage = RUsage::new();
+    let task=current_task().unwrap();
+    let mut inner=task.lock();
+    rusage.ru_stime=inner.stime;
+    rusage.ru_utime=inner.utime;
+    userbuf.write(rusage.as_bytes());
+    Ok(0)
+}

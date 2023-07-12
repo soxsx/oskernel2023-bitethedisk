@@ -65,6 +65,15 @@ const SYS_GETRANDOM: usize = 278;
 const SYS_MPROTECT: usize = 226;
 const SYS_GETPGID: usize = 155;
 const SYS_SETPGID: usize = 154;
+const SYS_SYNC: usize = 81;
+const SYS_FTRUNCATE64: usize = 46;
+const SYS_PSELECT6: usize = 72;
+const SYS_GETRUSAGE: usize = 165;
+const SYS_SETITIMER: usize = 103;
+const SYS_TGKILL: usize = 131;
+const SYS_UMASK: usize = 166;
+const SYS_FSYNC: usize = 82;
+const SYS_MSYNC: usize = 227;
 
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
@@ -164,6 +173,15 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
 	SYS_MPROTECT => Ok(0),
 	SYS_GETPGID => Ok(0),
 	SYS_SETPGID => Ok(0),
+	SYS_SYNC => sys_sync(),
+	SYS_FTRUNCATE64 => sys_ftruncate64(args[0], args[1]),
+	SYS_PSELECT6 => sys_pselect6(args[0] as usize, args[1] as *mut u8, args[2] as *mut u8, args[3] as *mut u8, args[4] as *mut usize),
+	SYS_GETRUSAGE => sys_getrusage(args[0] as isize, args[1] as *mut u8),
+	SYS_SETITIMER => Ok(0),
+	SYS_TGKILL => Ok(0),
+	SYS_UMASK => Ok(0),
+	SYS_FSYNC => Ok(0),
+	SYS_MSYNC => Ok(0),
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
     // println!("syscall end");
@@ -171,7 +189,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         Ok(success) => success,
         Err(err) => {
             let error_code = err.error_code();
-            warn!("{}", err);
+            warn!("{},syscall:{:?}", err, syscall_id);
             error_code
         }
     }
