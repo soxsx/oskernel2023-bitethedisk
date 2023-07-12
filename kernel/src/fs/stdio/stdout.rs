@@ -36,4 +36,7 @@ impl File for Stdout {
     }
     fn set_cloexec(&self) {
     }
+    fn fstat(&self, _kstat: &mut crate::fs::Kstat) {
+	warn!("Fake fstat for Stdout");
+    }
 }
