@@ -15,7 +15,7 @@ use manager::remove_from_pid2task;
 use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
-pub use info::{CloneFlags, Utsname, UTSNAME};
+pub use info::{CloneFlags, Utsname, UTSNAME, RUsage};
 pub use manager::{add_task, pid2task};
 pub use pid::{pid_alloc, PidHandle};
 pub use processor::{
