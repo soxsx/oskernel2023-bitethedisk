@@ -4,6 +4,7 @@
 #include "unistd.h"
 
 char *argv_sh[] = {"./busybox", "sh", 0};
+char *argv_lua[] = {"./lua", 0, 0};
 
 int main() {
     int npid = fork();
@@ -12,6 +13,7 @@ int main() {
     int child_return;
     if (npid == 0) {
       execve("./busybox", argv_sh, NULL);
+      /* execve("./lua", argv_lua, NULL); */
     } else {
       child_return = -1;
       waitpid(npid, &child_return, 0);

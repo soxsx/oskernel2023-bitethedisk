@@ -2,14 +2,15 @@
 
 use crate::fs::open_flags::CreateMode;
 use crate::fs::{open, OpenFlags};
-use crate::mm::{translated_mut, translated_ref, translated_str};
+use crate::mm::{translated_mut, translated_ref, translated_str, UserBuffer, translated_bytes_buffer};
 use crate::task::{
     add_task, current_task, current_user_token, exit_current_and_run_next,
-    suspend_current_and_run_next, pid2task, SignalFlags,
+    suspend_current_and_run_next, pid2task, SignalFlags, RUsage,
 };
 pub use crate::task::{CloneFlags, Utsname, UTSNAME};
+use crate::timer::{get_time, get_timeval};
 
-use alloc::{string::String, sync::Arc, vec::Vec};
+use alloc::{string::String, sync::Arc, vec::Vec, string::ToString};
 
 use super::super::error::*;
 
@@ -315,6 +316,7 @@ pub fn sys_clock_gettime(_clk_id: usize, ts: *mut u64) -> Result<isize> {
 }
 pub fn sys_kill(pid: usize, signal: u32) -> Result<isize> {
     // println!("[KERNEL] enter sys_kill: pid:{} send to pid:{}, signal:0x{:x}",current_task().unwrap().pid.0, pid, signal);
+    //TODO pid==-1
     if signal == 0 {
         return Ok(0);
     }

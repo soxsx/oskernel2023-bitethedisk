@@ -11,6 +11,8 @@ use crate::mm::{
     translated_mut, MapPermission, MemorySet, MmapFlags, MmapManager, MmapProts, PageTableEntry,
     PhysPageNum, VirtAddr, VirtPageNum,
 };
+use crate::task::kernel_stack::kernel_stack_position;
+use crate::timer::TimeVal;
 use crate::trap::handler::user_trap_handler;
 use crate::trap::TrapContext;
 use alloc::string::String;
@@ -394,7 +396,7 @@ impl TaskControlBlock {
             tgid = pid_handle.0;
         }
         // 根据 PID 创建一个应用内核栈
-        let kernel_stack = KernelStack::new(&pid_handle); // use 2 pages
+        let kernel_stack = KernelStack::new(&pid_handle); // use 8 pages
         let kernel_stack_top = kernel_stack.top();
         // copy fd table
         let mut new_fd_table = Vec::new();
@@ -405,6 +407,8 @@ impl TaskControlBlock {
                 new_fd_table.push(None);
             }
         }
+
+
         let task_control_block = Arc::new(TaskControlBlock {
             pid: pid_handle,
             tgid,
@@ -523,18 +527,15 @@ impl TaskControlBlock {
         // "prot<<1" 右移一位以符合 MapPermission 的权限定义
         // "1<<4" 增加 MapPermission::U 权限
         let map_flags = (((prot.bits() & 0b111) << 1) + (1 << 4)) as u16;
-
         if addr == 0 {
             start_va = inner.mmap_manager.get_mmap_top();
             end_va = VirtAddr::from(start_va.0 + length);
         }
-
         inner.memory_set.insert_mmap_area(
             start_va,
             end_va,
             MapPermission::from_bits(map_flags).unwrap(),
         );
-
         inner.mmap_manager.push(
             start_va.0,
             length,
@@ -545,7 +546,6 @@ impl TaskControlBlock {
             fd_table,
             token,
         );
-
         start_va.0
     }
 
@@ -559,11 +559,8 @@ impl TaskControlBlock {
 
         // 可能会有 mmap 后没有访问直接 munmap 的情况，需要检查是否访问过 mmap 的区域(即
         // 是否引发了 lazy_mmap)，防止 unmap 页表中不存在的页表项引发 panic
-        if inner.memory_set.is_lazy_mapped(mmap_start_vpn)
-            && inner.memory_set.is_lazy_mapped(mmap_end_vpn)
-        {
-            inner.memory_set.remove_area(mmap_start_va, mmap_end_va);
-        }
+
+        inner.memory_set.remove_area(mmap_start_va, mmap_end_va);
 
         inner.mmap_manager.remove(addr, length)
     }

@@ -2,6 +2,7 @@
 
 use spin::Mutex;
 
+use crate::timer::TimeVal;
 pub struct Utsname {
     pub sysname: [u8; 65],
     pub nodename: [u8; 65],

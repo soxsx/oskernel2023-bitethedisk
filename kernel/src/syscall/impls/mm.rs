@@ -74,6 +74,7 @@ pub fn sys_mmap(
     fd: isize,
     offset: usize,
 ) -> Result<isize> {
+    // println!("[DEBUG] addr:{:?},length:{:?},prot:{:?},flags:{:?},fd:{:?},offset:{:?}",addr,length,prot,flags,fd,offset);
     if length == 0 {
         return Err(SyscallError::MmapLengthNotBigEnough(-1));
     }
@@ -86,8 +87,7 @@ pub fn sys_mmap(
     let prot = MmapProts::from_bits(prot).expect("unsupported mmap prot");
     let flags = MmapFlags::from_bits(flags).expect("unsupported mmap flags");
 
-    let task = current_task().unwrap();
     let result_addr = task.mmap(addr, length, prot, flags, fd, offset);
-
+    
     Ok(result_addr as isize)
 }

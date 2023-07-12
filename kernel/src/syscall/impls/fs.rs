@@ -4,12 +4,15 @@ use super::super::errno::*;
 use crate::fs::open_flags::CreateMode;
 use crate::fs::fdset::FdSet;
 use crate::fs::{chdir, file::File, make_pipe, open, Dirent, Kstat, OpenFlags, MNT_TABLE,Stdin};
-use crate::mm::{translated_bytes_buffer, translated_mut, translated_str, UserBuffer, VirtAddr};
+use crate::mm::{translated_bytes_buffer, translated_mut, translated_ref, translated_str, UserBuffer, VirtAddr};
 use crate::task::{current_task, current_user_token, FD_LIMIT};
-use crate::timer::Timespec;
+use crate::timer::{Timespec, TimeVal, get_timeval};
+use crate::task::suspend_current_and_run_next;
+
 
 use alloc::borrow::ToOwned;
 use alloc::{sync::Arc, vec::Vec};
+use fat32::sync_all;
 use core::mem::size_of;
 
 use super::super::error::*;
@@ -474,7 +477,7 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> Result<isize> {
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.lock();
-
+    println!("[DEBUG] sys_write: fd{:?}, buf{:?}, len:{:?}",fd,buf,len);
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
         warn!("[WARNING] sys_write: fd >= inner.fd_table.len, return -1");

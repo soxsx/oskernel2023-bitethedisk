@@ -62,10 +62,10 @@ pub fn user_trap_handler() -> ! {
         | Trap::Exception(Exception::LoadFault)
         | Trap::Exception(Exception::LoadPageFault) => {
             debug!(
-                "user_trap_handler: memory fault, task: {} at {:?}, {:?}",
+                "user_trap_handler: memory fault, task: {} at {:x?}, {:x?}",
                 current_task().unwrap().pid(),
                 VirtAddr::from(stval as usize),
-                VirtAddr::from(stval as usize).floor(),
+                current_trap_cx().sepc,
             );
 
             let is_load: bool;
