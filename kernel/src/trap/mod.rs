@@ -56,9 +56,6 @@ pub fn trap_return() -> ! {
         fn user_trapret();
     }
 
-    if is_time_intr_trap() {
-        set_next_trigger();
-    }
 
     let trapret_addr = user_trapret as usize - user_trapvec as usize + TRAMPOLINE;
     unsafe {
@@ -71,10 +68,4 @@ pub fn trap_return() -> ! {
             options(noreturn)
         );
     }
-}
-
-/// 是否是由于时间片耗尽导致的 trap
-fn is_time_intr_trap() -> bool {
-    let scause = scause::read();
-    scause.cause() == Trap::Interrupt(scause::Interrupt::SupervisorTimer)
 }
