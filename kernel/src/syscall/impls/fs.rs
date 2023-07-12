@@ -100,11 +100,10 @@ pub fn sys_pipe2(pipe: *mut i32, _flag: usize) -> Result<isize> {
     let write_fd = inner.alloc_fd();
     inner.fd_table[write_fd] = Some(pipe_write);
 
-    let fd0_phys_addr = translated_mut(token, fd0 as *mut _);
-    let fd1_phys_addr = translated_mut(token, fd1 as *mut _);
-
-    *fd0_phys_addr = read_fd as isize;
-    *fd1_phys_addr = write_fd as isize;
+    let fd0_phys_addr = translated_mut(token, fd0);
+    let fd1_phys_addr = translated_mut(token, fd1);
+    *fd0_phys_addr = read_fd as i32;
+    *fd1_phys_addr = write_fd as i32;
 
     Ok(0)
 }
