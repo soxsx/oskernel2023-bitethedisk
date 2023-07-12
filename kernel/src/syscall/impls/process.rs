@@ -305,7 +305,7 @@ pub fn sys_clock_gettime(_clk_id: usize, ts: *mut u64) -> Result<isize> {
         return Ok(0);
     }
     let token = current_user_token();
-    let ticks = 0;
+    let ticks = get_time();
     let sec = (ticks / CLOCK_FREQ) as u64;
     let nsec = ((ticks % CLOCK_FREQ) * (NSEC_PER_SEC / CLOCK_FREQ)) as u64;
     *translated_mut(token, ts) = sec;
