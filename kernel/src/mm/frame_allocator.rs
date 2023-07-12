@@ -91,7 +91,7 @@ impl FrameAllocator for StackFrameAllocator {
     fn alloc(&mut self) -> Option<PhysPageNum> {
         // 首先检查栈 recycled 内有没有之前回收的物理页号，如果有的话直接弹出栈顶并返回
         if let Some(ppn) = self.recycled.pop() {
-            self.refcounter.insert(ppn, 1);
+            self.refcounter.insert(ppn, 0);
             Some(ppn.into())
         }
         // 空间满返回 None
