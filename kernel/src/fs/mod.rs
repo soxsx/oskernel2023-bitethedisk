@@ -9,6 +9,7 @@ mod path;
 mod pipe;
 mod stat;
 mod stdio;
+pub mod fdset;
 
 use alloc::string::ToString;
 pub use path::*;
