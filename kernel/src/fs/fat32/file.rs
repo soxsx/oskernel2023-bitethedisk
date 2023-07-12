@@ -185,7 +185,11 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Option<A
         match res {
             Ok(inode) => {
                 // 如果文件已存在则清空
-                let name = pathv.pop().unwrap();
+                let name =if let Some(name_) = pathv.pop(){
+		    name_
+		}else{
+		    "/"
+		};
 		// TAG for lzm
 		// 不能清空 direntry
                 inode.clear_content();
