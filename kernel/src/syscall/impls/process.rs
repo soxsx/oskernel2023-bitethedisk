@@ -118,6 +118,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
             }
         }
     }
+    envs_vec.push("PATH=/".to_string());
 
     let task = current_task().unwrap();
 
