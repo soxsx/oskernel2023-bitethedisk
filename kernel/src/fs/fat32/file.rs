@@ -192,7 +192,10 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Option<A
 		};
 		// TAG for lzm
 		// 不能清空 direntry
-                inode.clear_content();
+		if !flags.contains(OpenFlags::O_DIRECTROY){
+		    // 不清空目录
+                    inode.clear_content();
+		};
 		// TAG for lzm
 		// 丢失 OpenFlag
                 Some(Arc::new(Fat32File::new(
