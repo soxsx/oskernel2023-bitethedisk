@@ -44,6 +44,7 @@ pub fn sys_do_fork(
     let new_task = current_task.fork(false);
 
     // let tid = new_task.getpid();
+    let flags = 17;
     let _flags = CloneFlags::from_bits(flags).unwrap();
 
     if stack_ptr != 0 {
