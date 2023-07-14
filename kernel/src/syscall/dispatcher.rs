@@ -1,5 +1,7 @@
 //! 根据 SYS_id 分发具体系统调用
 
+use crate::task::current_task;
+
 use super::{error::SyscallError, impls::*};
 
 // 系统调用号
@@ -76,7 +78,7 @@ const SYS_MSYNC: usize = 227;
 
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
-    // println!("[DEBUG] syscall:{:?}",syscall_id);
+    // println!("[DEBUG] syscall:{:?} pid:{:?}",syscall_id,current_task().unwrap().pid.0);
     let ret: core::result::Result<isize, SyscallError> = match syscall_id {
         // TODO: 检查完善
         SYS_CLONE => sys_do_fork(args[0], args[1], args[2], args[3], args[4]),
@@ -219,7 +221,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_MSYNC => Ok(0),
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
-    // println!("syscall end");
+    // println!("[DEBUG] syscall end pid:{:?}",current_task().unwrap().pid.0);
     match ret {
         Ok(success) => success,
         Err(err) => {

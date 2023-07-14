@@ -129,7 +129,7 @@ impl AbsolutePath {
     // 一般来说, path 是相对路径
     pub fn join_string(&self, path: String) -> Self {
         if path.starts_with('/') {
-            warn!("join_string: path starts with /");
+            // warn!("join_string: path starts with /");
             return Self::from_string(path);
         }
         let mut new = self.clone();
