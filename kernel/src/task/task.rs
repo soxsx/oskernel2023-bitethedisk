@@ -23,7 +23,7 @@ use spin::{MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::fs::AbsolutePath;
 
-pub const FD_LIMIT: usize = 128;
+pub const FD_LIMIT: usize = 1024;
 
 pub struct TaskControlBlock {
     /// 进程标识符
