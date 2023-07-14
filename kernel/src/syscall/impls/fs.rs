@@ -509,6 +509,8 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> Result<isize> {
                 file.name().to_owned(),
             ));
         }
+        let file = file.clone();
+        drop(inner);
 
         let write_size =
             file.write(UserBuffer::wrap(translated_bytes_buffer(token, buf, len))) as isize;
