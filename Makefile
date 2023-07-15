@@ -12,7 +12,6 @@ endef
 
 # submit 分支被拉取后由测试机自行执行该命令获取到编译后的内核
 # 要求该操作生成 kernel-qemu
-.PHONY: all
 all:
 	$(recover-cargo-config)
 	$(make-kernel-submit)
