@@ -1323,10 +1323,11 @@ pub fn sys_pselect6(
         if readfds as usize != 0 && !r_all_ready {
             for i in 0..rfd_vec.len() {
                 let fd = rfd_vec[i];
-                if fd == 1024 {
+                if fd >= nfds || fd == 1024 {
                     continue;
                 }
-                if fd > fd_table.len() || fd_table[fd].is_none() || fd >= nfds {
+
+                if fd > fd_table.len() || fd_table[fd].is_none() {
                     return Err(SyscallError::FdInvalid(-1, fd)); // invalid fd
                 }
                 let fdescript = fd_table[fd].as_ref().unwrap();
@@ -1354,10 +1355,10 @@ pub fn sys_pselect6(
 
             for i in 0..wfd_vec.len() {
                 let fd = wfd_vec[i];
-                if fd == 1024 {
+                if fd >= nfds || fd == 1024 {
                     continue;
                 }
-                if fd > fd_table.len() || fd_table[fd].is_none() || fd >= nfds {
+                if fd > fd_table.len() || fd_table[fd].is_none() {
                     return Err(SyscallError::FdInvalid(-1, fd)); // invalid fd
                 }
                 let fdescript = fd_table[fd].as_ref().unwrap();
