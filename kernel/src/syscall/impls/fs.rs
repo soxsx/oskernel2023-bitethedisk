@@ -255,6 +255,7 @@ pub fn sys_openat(fd: isize, filename: *const u8, flags: u32, mode: u32) -> Resu
                 return Err(SyscallError::ReachFdLimit(-EMFILE));
             }
             inner.fd_table[fd] = Some(inode);
+            // println!("[DEBUG] sys_openat return new fd:{}", fd);
             Ok(fd as isize)
         } else {
             Err(SyscallError::OpenInodeFailed(-1, open_path))
@@ -273,6 +274,7 @@ pub fn sys_openat(fd: isize, filename: *const u8, flags: u32, mode: u32) -> Resu
                     return Err(SyscallError::ReachFdLimit(-EMFILE));
                 }
                 inner.fd_table[fd] = Some(tar_f);
+                // println!("[DEBUG] sys_openat return new fd:{}", fd);
                 debug!("[DEBUG] sys_openat return new fd:{}", fd);
                 Ok(fd as isize)
             } else {
@@ -477,7 +479,7 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> Result<isize> {
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> Result<isize> {
     let token = current_user_token();
     let task = current_task().unwrap();
-    println!("[DEBUG] sys_write: fd{:?}, buf{:?}, len:{:?}", fd, buf, len);
+    // println!("[DEBUG] sys_write: fd{:?}, buf{:?}, len:{:?}", fd, buf, len);
     let inner = task.write();
 
     // 文件描述符不合法
@@ -1312,6 +1314,7 @@ pub fn sys_pselect6(
 
     let mut rfd_vec: Vec<usize> = rfd_set.get_fd_vec();
     let mut wfd_vec: Vec<usize> = wfd_set.get_fd_vec();
+    // println!("[DEBUG] sys_pselect: nfds:{:?},readfds:{:?} ,writefds:{:?}",nfds,rfd_vec,wfd_vec);
     // let mut rfd_vec:Vec<usize> = Vec::new();
     // let mut wfd_vec:Vec<usize> = Vec::new();
 

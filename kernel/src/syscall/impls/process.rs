@@ -93,6 +93,11 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
         path = "/busybox".to_string();
         args_vec.push("sh".to_string());
     }
+    // if path == "/bin/sh"{
+    // // for lmbench_all lat_proc -P 1 shell
+    // 	warn!("/bin/sh redirect to /busybox");
+    //     path = "/busybox".to_string();
+    // }
     if argv as usize != 0 {
         loop {
             let arg_str_ptr = *translated_ref(token, argv);

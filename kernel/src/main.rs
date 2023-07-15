@@ -158,4 +158,9 @@ pub mod lang_items {
                 .init(KERNEL_HEAP.as_ptr() as usize, KERNEL_HEAP_SIZE);
         }
     }
+    pub fn heap_usage() {
+        let usage_actual = HEAP_ALLOCATOR.lock().stats_alloc_actual();
+        let usage_all = HEAP_ALLOCATOR.lock().stats_total_bytes();
+        println!("[kernel] HEAP USAGE:{:?} {:?}", usage_actual, usage_all);
+    }
 }

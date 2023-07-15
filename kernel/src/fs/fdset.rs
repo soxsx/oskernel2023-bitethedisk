@@ -26,6 +26,7 @@ impl FdSet {
     }
 
     pub fn clear_fd(&mut self, fd: usize) {
+        // TODO wrong implement
         if Self::check_fd(fd) {
             let index = fd >> 8;
             let offset = fd - (index << 8);
