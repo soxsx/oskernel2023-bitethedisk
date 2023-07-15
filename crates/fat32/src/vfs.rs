@@ -8,8 +8,6 @@ use core::option::Option::{None, Some};
 use core::{assert, assert_ne, todo};
 use spin::RwLock;
 
-use crate::time2;
-
 use super::cache::get_block_cache;
 
 use super::cache::Cache;

@@ -20,16 +20,15 @@ RUST_LOG := info
 ##################################################################
 initproc:
 	@cd ../crates/libd && cargo build --release
-
-kernel: initproc
-	@cargo build --release --offline
-
-kernel-dbg: initproc
-	@RUST_LOG=$(RUST_LOG) cargo build --release --offline
-
 sdcard:
 	@rm -f $(SDCARD)
 	@cp $(SDCARD_BAK) $(SDCARD)
+
+kernel: initproc
+	@RUST_LOG=warn cargo build --release --offline
+
+kernel-dbg: initproc
+	@RUST_LOG=$(RUST_LOG) cargo build --release --offline
 
 run: kernel-dbg sdcard
 	@$(QEMU) \
