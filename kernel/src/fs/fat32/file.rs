@@ -185,20 +185,11 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Option<A
         let res = ROOT_INODE.find(pathv.clone());
         match res {
             Ok(inode) => {
-                // 如果文件已存在则清空
                 let name = if let Some(name_) = pathv.pop() {
                     name_
                 } else {
                     "/"
                 };
-                // TAG for lzm
-                // 不能清空 direntry
-                if !flags.contains(OpenFlags::O_DIRECTROY) {
-                    // 不清空目录
-                    inode.clear_content();
-                };
-                // TAG for lzm
-                // 丢失 OpenFlag
                 Some(Arc::new(Fat32File::new(
                     readable,
                     writable,
