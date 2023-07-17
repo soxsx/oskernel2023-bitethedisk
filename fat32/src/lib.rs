@@ -6,6 +6,7 @@ pub mod dir;
 pub mod entry;
 pub mod fat;
 pub mod file;
+#[macro_use]
 pub mod fmt;
 pub mod fs;
 pub mod vfs;
