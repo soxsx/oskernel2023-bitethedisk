@@ -189,7 +189,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[3] as *const u8,
             args[4] as u32,
         ),
-        SYS_LSEEK => sys_lseek(args[0], args[1], args[2]),
+        SYS_LSEEK => sys_lseek(args[0], args[1] as isize, args[2]),
         SYS_GETEGID => Ok(0),
         SYS_GETGID => Ok(0),
         SYS_SET_ROBUST_LIST => Ok(-1),

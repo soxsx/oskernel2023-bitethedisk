@@ -1175,7 +1175,7 @@ bitflags! {
     }
 }
 
-pub fn sys_lseek(fd: usize, off_t: usize, whence: usize) -> Result<isize> {
+pub fn sys_lseek(fd: usize, off_t: isize, whence: usize) -> Result<isize> {
     // println!("[DEBUG] enter sys_lseek: fd:{},off_t:{},whence:{}",fd,off_t,whence);
 
     let task = current_task().unwrap();
@@ -1189,17 +1189,37 @@ pub fn sys_lseek(fd: usize, off_t: usize, whence: usize) -> Result<isize> {
         let flag = SeekFlags::from_bits(whence).unwrap();
         match flag {
             SeekFlags::SEEK_SET => {
-                file.set_offset(off_t);
+                if off_t < 0 {
+                    return Err(SyscallError::ParamInvalid(
+                        -EINVAL,
+                        "offset is negtive".to_string(),
+                    ));
+                }
+                file.set_offset(off_t as usize);
                 Ok(off_t as isize)
             }
             SeekFlags::SEEK_CUR => {
-                let current_offset = file.offset();
-                file.set_offset(off_t + current_offset);
+                let current_offset = file.offset() as isize;
+                if current_offset + off_t < 0 {
+                    return Err(SyscallError::ParamInvalid(
+                        -EINVAL,
+                        "new offset is negtive".to_string(),
+                    ));
+                }
+
+                file.set_offset((off_t + current_offset) as usize);
                 Ok((off_t + current_offset) as isize)
             }
             SeekFlags::SEEK_END => {
-                let end = file.file_size();
-                file.set_offset(end + off_t);
+                let end = file.file_size() as isize;
+                if end + off_t < 0 {
+                    return Err(SyscallError::ParamInvalid(
+                        -EINVAL,
+                        "new offset is negtive".to_string(),
+                    ));
+                }
+
+                file.set_offset((end + off_t) as usize);
                 Ok((end + off_t) as isize)
             }
             // flag wrong
