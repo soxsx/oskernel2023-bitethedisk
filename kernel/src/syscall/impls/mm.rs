@@ -80,12 +80,14 @@ pub fn sys_mmap(
     }
     let task = current_task().unwrap();
     let inner = task.read();
-    if fd as usize >= inner.fd_table.len() || inner.fd_table[fd as usize].is_none() {
+    let prot = MmapProts::from_bits(prot).expect("unsupported mmap prot");
+    let flags = MmapFlags::from_bits(flags).expect("unsupported mmap flags");
+    if !flags.contains(MmapFlags::MAP_ANONYMOUS)
+        && (fd as usize >= inner.fd_table.len() || inner.fd_table[fd as usize].is_none())
+    {
         return Err(SyscallError::FdInvalid(-1, fd as usize));
     }
     drop(inner);
-    let prot = MmapProts::from_bits(prot).expect("unsupported mmap prot");
-    let flags = MmapFlags::from_bits(flags).expect("unsupported mmap flags");
 
     let result_addr = task.mmap(addr, length, prot, flags, fd, offset);
 
