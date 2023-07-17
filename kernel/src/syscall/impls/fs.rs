@@ -258,7 +258,7 @@ pub fn sys_openat(fd: isize, filename: *const u8, flags: u32, mode: u32) -> Resu
             // println!("[DEBUG] sys_openat return new fd:{}", fd);
             Ok(fd as isize)
         } else {
-            Err(SyscallError::OpenInodeFailed(-1, open_path))
+            Err(SyscallError::OpenInodeFailed(-ENOENT, open_path))
         }
     } else {
         let dirfd = fd as usize;
@@ -310,7 +310,7 @@ pub fn sys_close(fd: usize) -> Result<isize> {
     let task = current_task().unwrap();
     let mut inner = task.write();
     if fd >= inner.fd_table.len() || inner.fd_table[fd].is_none() {
-        return Err(SyscallError::FdInvalid(-1, fd));
+        return Err(SyscallError::FdInvalid(-EBADF, fd));
     }
     // 把 fd 对应的值取走，变为 None
     inner.fd_table[fd].take();
