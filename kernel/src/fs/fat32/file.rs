@@ -314,19 +314,22 @@ impl File for Fat32File {
     fn read(&self, mut buf: UserBuffer) -> usize {
         let offset = self.inner.lock().offset;
         let file_size = self.file_size();
+        let mut inner = self.inner.lock();
+        let mut total_read_size = 0usize;
 
         // TODO 如果是目录文件
         // TAG for lzm
         // empty file
         if file_size == 0 {
+            if self.name == "zero" {
+                buf.write_zeros();
+            }
             return 0;
         }
 
         if offset > file_size {
             return 0;
         }
-        let mut inner = self.inner.lock();
-        let mut total_read_size = 0usize;
 
         // 这边要使用 iter_mut(), 因为要将数据写入
         for slice in buf.buffers.iter_mut() {
