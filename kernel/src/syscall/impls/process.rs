@@ -165,6 +165,10 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result<isize> {
     let inner = task.write();
 
     // 根据pid参数查找有没有符合要求的进程
+    // println!("[DEBUG] children size:{:?}",inner.children.len());
+    if pid == -1 && inner.children.len() == 0 {
+        return Ok(0);
+    }
     if !inner
         .children
         .iter()
