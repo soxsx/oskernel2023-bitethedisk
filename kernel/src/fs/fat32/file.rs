@@ -327,7 +327,7 @@ impl File for Fat32File {
             return 0;
         }
 
-        if offset > file_size {
+        if offset >= file_size {
             return 0;
         }
 

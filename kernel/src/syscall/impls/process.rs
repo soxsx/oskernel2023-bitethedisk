@@ -44,6 +44,7 @@ pub fn sys_do_fork(
     let new_task = current_task.fork(false);
 
     // let tid = new_task.getpid();
+    // println!("[DEBUG] clone flags:{:?}", flags);
     let flags = 17;
     let _flags = CloneFlags::from_bits(flags).unwrap();
 
@@ -193,7 +194,7 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result<isize> {
             // 收集的子进程信息返回
             let found_pid = child.pid();
             // ++++ temporarily access child TCB exclusively
-            let mut exit_code = child.write().exit_code;
+            let exit_code = child.write().exit_code;
             // ++++ release child PCB
             // 将子进程的退出码写入到当前进程的应用地址空间中
             if exit_code_ptr as usize != 0 {

@@ -26,6 +26,7 @@ pub fn sys_times(buf: *const u8) -> Result<isize> {
     let token = current_user_token();
     let buffers = translated_bytes_buffer(token, buf, core::mem::size_of::<tms>());
     let mut userbuf = UserBuffer::wrap(buffers);
+    // TODO tms rusage
     userbuf.write(
         tms {
             tms_stime: sec,
