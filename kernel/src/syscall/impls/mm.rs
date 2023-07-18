@@ -4,6 +4,7 @@ use crate::{
     mm::{MmapFlags, MmapProts},
     task::current_task,
 };
+use nix::ipc::{ShmFlags, IPC_PRIVATE, IPC_RMID};
 
 use super::super::error::*;
 
