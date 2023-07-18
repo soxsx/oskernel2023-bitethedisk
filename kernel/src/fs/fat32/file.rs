@@ -369,7 +369,7 @@ impl File for Fat32File {
         let mut inner = self.inner.lock();
         if inner.flags.contains(OpenFlags::O_APPEND) {
             for slice in buf.buffers.iter() {
-                let write_size = inner.inode.write_at(filesize, *slice);
+                let write_size = inner.inode.write_at(filesize + total_write_size, *slice);
                 inner.offset += write_size;
                 total_write_size += write_size;
             }
