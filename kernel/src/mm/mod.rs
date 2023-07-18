@@ -3,6 +3,7 @@ mod frame_allocator; // 物理页帧管理器
 pub mod kernel_vmm;
 pub mod memory_set; // 地址空间模块
 mod page_table; // 页表
+pub mod shared_memory;
 mod user_buffer;
 mod vma; // 虚拟内存地址映射空间
 
@@ -16,6 +17,7 @@ pub use page_table::{PageTable, PageTableEntry};
 use riscv::register::satp;
 pub use user_buffer::{UserBuffer, UserBufferIterator};
 pub use vma::*;
+// pub use shared_memory::*;
 
 use crate::{consts::PAGE_SIZE, task::current_task};
 
