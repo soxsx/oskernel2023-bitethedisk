@@ -79,6 +79,8 @@ const SYS_SHMGET: usize = 194;
 const SYS_SHMCTL: usize = 195;
 const SYS_SHMAT: usize = 196;
 const SYS_SHMDT: usize = 197;
+const SYS_PREAD64: usize = 67;
+const SYS_PWRITE64: usize = 68;
 
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
@@ -227,6 +229,8 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_SHMCTL => sys_shmctl(args[0], args[1], args[2] as *const u8),
         SYS_SHMAT => sys_shmat(args[0], args[1], args[2]),
         SYS_SHMDT => sys_shmdt(args[0]),
+        SYS_PREAD64 => sys_pread64(args[0], args[1] as *const u8, args[2], args[3]),
+        SYS_PWRITE64 => sys_pwrite64(args[0], args[1] as *const u8, args[2], args[3]),
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
     // println!("[DEBUG] syscall end pid:{:?}",current_task().unwrap().pid.0);

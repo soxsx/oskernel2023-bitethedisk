@@ -459,6 +459,51 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> Result<isize> {
         return Err(SyscallError::FdInvalid(-1, fd));
     }
 }
+pub fn sys_pread64(fd: usize, buf: *const u8, len: usize, offset: usize) -> Result<isize> {
+    let token = current_user_token();
+    let task = current_task().unwrap();
+    let inner = task.write();
+
+    // 文件描述符不合法
+    if fd >= inner.fd_table.len() {
+        warn!("[WARNING] sys_read: fd >= inner.fd_table.len, return -1");
+        return Err(SyscallError::FdInvalid(-1, fd));
+    }
+    if let Some(file) = &inner.fd_table[fd] {
+        // 文件不可读
+        if !file.readable() {
+            warn!("[WARNING] sys_read: file can't read, return -1");
+            return Err(SyscallError::FdInvalid(-1, fd));
+        }
+        let file = file.clone();
+
+        drop(inner); // 释放以避免死锁
+        drop(task); // 需要及时释放减少引用数
+
+        // 对 /dev/zero 的处理，暂时先加在这里
+        if file.name() == "zero" {
+            let mut userbuffer = UserBuffer::wrap(translated_bytes_buffer(token, buf, len));
+            let zero: Vec<u8> = (0..userbuffer.buffers.len()).map(|_| 0).collect();
+            userbuffer.write(zero.as_slice());
+            return Ok(userbuffer.buffers.len() as isize);
+        }
+
+        let file_size = file.file_size();
+        if file_size == 0 {
+            warn!("[WARNING] sys_read: file_size is zero!");
+        }
+        let len = file_size.min(len);
+        let readsize = file.pread(
+            UserBuffer::wrap(translated_bytes_buffer(token, buf, len)),
+            offset,
+        ) as isize;
+        // println!("[DEBUG] sys_read: return readsize: {}",readsize);
+        Ok(readsize)
+    } else {
+        warn!("[WARNING] sys_read: fd {} is none, return -1", fd);
+        return Err(SyscallError::FdInvalid(-1, fd));
+    }
+}
 
 /// #define SYS_write 64
 ///
@@ -516,6 +561,54 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> Result<isize> {
 
         let write_size =
             file.write(UserBuffer::wrap(translated_bytes_buffer(token, buf, len))) as isize;
+        Ok(write_size)
+    } else {
+        Err(SyscallError::FdInvalid(-1, fd))
+    }
+}
+
+pub fn sys_pwrite64(fd: usize, buf: *const u8, len: usize, offset: usize) -> Result<isize> {
+    let token = current_user_token();
+    let task = current_task().unwrap();
+    // println!("[DEBUG] sys_write: fd{:?}, buf{:?}, len:{:?}", fd, buf, len);
+    let inner = task.write();
+
+    // 文件描述符不合法
+    if fd >= inner.fd_table.len() {
+        warn!("[WARNING] sys_write: fd >= inner.fd_table.len, return -1");
+        return Err(SyscallError::FdInvalid(-1, fd));
+    }
+
+    let is_va_range_valid = inner
+        .memory_set
+        .check_va_range(VirtAddr::from(buf as usize), len);
+    if !is_va_range_valid {
+        return Err(SyscallError::InvalidVirtAddress(
+            -1,
+            VirtAddr::from(buf as usize),
+        ));
+    }
+
+    if let Some(file) = &inner.fd_table[fd] {
+        // 文件不可写
+        if !file.writable() {
+            warn!(
+                "sys_write: file can't write, return -1, filename: {}",
+                file.name()
+            );
+            return Err(SyscallError::FileCannotWrite(
+                -1,
+                fd as isize,
+                file.name().to_owned(),
+            ));
+        }
+        let file = file.clone();
+        drop(inner);
+
+        let write_size = file.pwrite(
+            UserBuffer::wrap(translated_bytes_buffer(token, buf, len)),
+            offset,
+        ) as isize;
         Ok(write_size)
     } else {
         Err(SyscallError::FdInvalid(-1, fd))
