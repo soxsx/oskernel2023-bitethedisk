@@ -1533,3 +1533,49 @@ pub fn sys_pselect6(
     // println!("pselect return: r_ready_count:{}, w_ready_count:{}, e_ready_count:{}",r_ready_count,w_ready_count,e_ready_count);
     Ok(r_ready_count + w_ready_count + e_ready_count)
 }
+#[repr(C)]
+pub struct Statfs {
+    f_type: u64,
+    f_bsize: u64,
+    f_blocks: u64,
+    f_bfree: u64,
+    f_bavail: u64,
+    f_files: u64,
+    f_ffree: u64,
+    f_fsid: u64,
+    f_namelen: u64,
+    f_frsize: u64,
+    f_flag: u64,
+    f_spare: [u64; 4],
+}
+
+impl Statfs {
+    pub fn new() -> Self {
+        Self {
+            f_type: 1,
+            f_bsize: 512,
+            f_blocks: 12345,
+            f_bfree: 1234,
+            f_bavail: 123,
+            f_files: 1000,
+            f_ffree: 100,
+            f_fsid: 1,
+            f_namelen: 123,
+            f_frsize: 4096,
+            f_flag: 123,
+            f_spare: [0; 4],
+        }
+    }
+    pub fn as_bytes(&self) -> &[u8] {
+        let size = core::mem::size_of::<Self>();
+        unsafe { core::slice::from_raw_parts(self as *const _ as usize as *const u8, size) }
+    }
+}
+
+pub fn sys_statfs(path: *const u8, buf: *const u8) -> Result<isize> {
+    let token = current_user_token();
+
+    let mut userbuf = UserBuffer::wrap(translated_bytes_buffer(token, buf, size_of::<Statfs>()));
+    userbuf.write(Statfs::new().as_bytes());
+    Ok(0)
+}

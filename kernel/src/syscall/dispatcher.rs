@@ -81,6 +81,17 @@ const SYS_SHMAT: usize = 196;
 const SYS_SHMDT: usize = 197;
 const SYS_PREAD64: usize = 67;
 const SYS_PWRITE64: usize = 68;
+const SYS_STATFS: usize = 43;
+const SYS_FUTEX: usize = 98;
+const SYS_RT_SIGTIMEDWAIT: usize = 137;
+const SYS_RT_SIGRETURN: usize = 139;
+
+const SYS_SOCKET: usize = 198;
+const SYS_BIND: usize = 200;
+const SYS_LISTEN: usize = 201;
+const SYS_ACCEPT: usize = 202;
+const SYS_CONNECT: usize = 203;
+const SYS_GETSOCKNAME: usize = 204;
 
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
@@ -235,6 +246,10 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_SHMDT => sys_shmdt(args[0]),
         SYS_PREAD64 => sys_pread64(args[0], args[1] as *const u8, args[2], args[3]),
         SYS_PWRITE64 => sys_pwrite64(args[0], args[1] as *const u8, args[2], args[3]),
+        SYS_STATFS => sys_statfs(args[0] as *const u8, args[1] as *const u8),
+        SYS_FUTEX => Ok(0),
+        SYS_RT_SIGTIMEDWAIT => Ok(0),
+        SYS_RT_SIGRETURN => Ok(0),
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
     // println!(
