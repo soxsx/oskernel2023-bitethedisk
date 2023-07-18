@@ -177,6 +177,7 @@ impl MemorySet {
     }
 
     pub fn remove_area(&mut self, start_va: VirtAddr, end_va: VirtAddr) {
+        // println!("[DEBUG] remove area 0x{:x?},0x{:0x?}", start_va, end_va);
         let mut op = |areas: &mut Vec<VmArea>| {
             let mut len = areas.len();
             let mut idx = 0;
@@ -370,6 +371,9 @@ impl MemorySet {
         // 遍历程序段进行加载
         for i in 0..ph_count as u16 {
             let ph = elf.program_header(i).unwrap();
+            // let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
+            // let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
+            // println!("[DEBUG] start:0x{:x?},end:0x{:x?},type:{:?}",start_va,end_va,ph.get_type().unwrap());
             match ph.get_type().unwrap() {
                 xmas_elf::program::Type::Load => {
                     let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
@@ -388,6 +392,7 @@ impl MemorySet {
                     if ph_flags.is_execute() {
                         map_perm |= MapPermission::X;
                     }
+                    // println!("[DEBUG] rwx:{:?},{:?},{:?}",ph_flags.is_read(),ph_flags.is_write(),ph_flags.is_execute());
                     let map_area = VmArea::new(
                         start_va,
                         end_va,
@@ -471,6 +476,7 @@ impl MemorySet {
         // 分配用户堆，懒加载
         let user_heap_bottom: usize = usize::from(brk_start_va) + PAGE_SIZE;
         let user_heap_top: usize = user_heap_bottom + USER_HEAP_SIZE;
+        // println!("[DEBUG] user heap:0x{:x?},0x{:x?}",user_heap_bottom,user_heap_top);
         memory_set.heap_areas = VmArea::new(
             user_heap_bottom.into(),
             user_heap_top.into(),

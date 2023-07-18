@@ -25,7 +25,6 @@ use super::{set_kernel_trap_entry, trap_return};
 #[no_mangle]
 pub fn user_trap_handler() -> ! {
     let pid = current_task().unwrap().pid();
-    // println!("pid:{:?}",pid);
     set_kernel_trap_entry();
     // 用于描述 Trap 的原因
     let scause = scause::read();
@@ -42,6 +41,12 @@ pub fn user_trap_handler() -> ! {
 
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
+            // println!(
+            // 	"[DEBUG] pid :{:?}, syscall at 0x{:x?}",
+            // 	current_task().unwrap().pid(),
+            // 	current_trap_cx().sepc,
+            // );
+
             let mut cx = current_trap_cx();
 
             cx.sepc += 4;

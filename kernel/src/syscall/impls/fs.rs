@@ -12,6 +12,7 @@ use crate::task::{current_task, current_user_token, FD_LIMIT};
 use crate::timer::{get_timeval, TimeVal, Timespec};
 
 use alloc::borrow::ToOwned;
+use alloc::string::ToString;
 use alloc::{sync::Arc, vec::Vec};
 use core::mem::size_of;
 use fat32::sync_all;
@@ -23,6 +24,7 @@ const AT_FDCWD: isize = -100;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Iovec {
+    // TODO type wrong, not usize
     iov_base: usize,
     iov_len: usize,
 }
@@ -244,6 +246,7 @@ pub fn sys_openat(fd: isize, filename: *const u8, flags: u32, mode: u32) -> Resu
     let mut inner = task.write();
 
     let path = translated_str(token, filename);
+    // println!("[DEBUG] sys_openat path:{:?}, flags:{:?}", path, flags);
     let mode = CreateMode::from_bits(mode).map_or(CreateMode::empty(), |m| m);
     let flags = OpenFlags::from_bits(flags).map_or(OpenFlags::empty(), |f| f);
     if fd == AT_FDCWD {
@@ -922,6 +925,7 @@ pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize>
         if !file.writable() {
             return Err(SyscallError::FdInvalid(-1, fd));
         }
+        // TODO do not use raw ptr in translated_bytes_buffer, u8 buffer not continuous
         let iovp_buf_p =
             translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>())[0]
                 .as_ptr();

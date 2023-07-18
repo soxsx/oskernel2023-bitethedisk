@@ -26,6 +26,7 @@ use super::super::error::*;
 /// uintptr_t ret = syscall(SYS_brk, brk);
 /// ```
 pub fn sys_brk(brk: usize) -> Result<isize> {
+    // println!("[DEBUG] brk size:0x{:x?}",brk);
     let task = current_task().unwrap();
     if brk == 0 {
         Ok(task.grow_proc(0) as isize)

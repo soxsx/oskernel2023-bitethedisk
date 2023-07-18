@@ -1,7 +1,7 @@
 use core::fmt::Debug;
 
 use super::kernel_stack::KernelStack;
-use super::TaskContext;
+use super::{current_task, TaskContext};
 use super::{pid_alloc, PidHandle, SignalFlags};
 use crate::consts::*;
 use crate::fs::{file::File, Fat32File, Stdin, Stdout};
@@ -11,7 +11,6 @@ use crate::mm::{
     translated_mut, MapPermission, MemorySet, MmapFlags, MmapManager, MmapProts, PageTableEntry,
     PhysPageNum, VirtAddr, VirtPageNum,
 };
-use crate::task::kernel_stack::kernel_stack_position;
 use crate::timer::TimeVal;
 use crate::trap::handler::user_trap_handler;
 use crate::trap::TrapContext;

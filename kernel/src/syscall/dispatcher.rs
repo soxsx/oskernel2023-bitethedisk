@@ -84,7 +84,11 @@ const SYS_PWRITE64: usize = 68;
 
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
-    // println!("[DEBUG] syscall:{:?} pid:{:?}",syscall_id,current_task().unwrap().pid.0);
+    // println!(
+    //     "[DEBUG] syscall:{:?} pid:{:?}",
+    //     syscall_id,
+    //     current_task().unwrap().pid.0
+    // );
     let ret: core::result::Result<isize, SyscallError> = match syscall_id {
         // TODO: 检查完善
         SYS_CLONE => sys_do_fork(args[0], args[1], args[2], args[3], args[4]),
@@ -233,7 +237,11 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_PWRITE64 => sys_pwrite64(args[0], args[1] as *const u8, args[2], args[3]),
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
-    // println!("[DEBUG] syscall end pid:{:?}",current_task().unwrap().pid.0);
+    // println!(
+    //     "[DEBUG] syscall end pid:{:?},return:{:?}",
+    //     current_task().unwrap().pid.0,
+    //     &ret
+    // );
     match ret {
         Ok(success) => success,
         Err(err) => {
