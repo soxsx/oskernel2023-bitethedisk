@@ -342,6 +342,38 @@ impl File for Fat32File {
         }
         total_read_size
     }
+    fn pread(&self, mut buf: UserBuffer, offset: usize) -> usize {
+        let mut inner = self.inner.lock();
+        let mut index = inner.offset;
+        let file_size = inner.inode.file_size();
+
+        let mut total_read_size = 0usize;
+
+        // TODO 如果是目录文件
+        // TAG for lzm
+        // empty file
+        if file_size == 0 {
+            if self.name == "zero" {
+                buf.write_zeros();
+            }
+            return 0;
+        }
+
+        if offset >= file_size {
+            return 0;
+        }
+
+        // 这边要使用 iter_mut(), 因为要将数据写入
+        for slice in buf.buffers.iter_mut() {
+            let read_size = inner.inode.read_at(index, *slice);
+            if read_size == 0 {
+                break;
+            }
+            index += read_size;
+            total_read_size += read_size;
+        }
+        total_read_size
+    }
 
     fn read_kernel_space(&self) -> Vec<u8> {
         let file_size = self.file_size();
@@ -378,6 +410,27 @@ impl File for Fat32File {
                 let write_size = inner.inode.write_at(inner.offset, *slice);
                 assert_eq!(write_size, slice.len());
                 inner.offset += write_size;
+                total_write_size += write_size;
+            }
+        }
+        total_write_size
+    }
+    fn pwrite(&self, buf: UserBuffer, offset: usize) -> usize {
+        let mut inner = self.inner.lock();
+        let mut index = offset;
+        let file_size = inner.inode.file_size();
+
+        let mut total_write_size = 0usize;
+        if inner.flags.contains(OpenFlags::O_APPEND) {
+            for slice in buf.buffers.iter() {
+                let write_size = inner.inode.write_at(file_size + total_write_size, *slice);
+                total_write_size += write_size;
+            }
+        } else {
+            for slice in buf.buffers.iter() {
+                let write_size = inner.inode.write_at(index, *slice);
+                assert_eq!(write_size, slice.len());
+                index += write_size;
                 total_write_size += write_size;
             }
         }

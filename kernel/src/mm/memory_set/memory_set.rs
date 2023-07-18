@@ -12,10 +12,15 @@ use crate::mm::{
     alloc_frame, FrameTracker, PageTable, PageTableEntry, PhysAddr, PhysPageNum, VirtAddr,
     VirtPageNum,
 };
+use alloc::collections::BTreeMap;
 use alloc::{sync::Arc, vec::Vec};
 
+use crate::mm::shared_memory::{
+    shm_get_address_and_size, shm_get_nattch, SharedMemoryArea, SharedMemoryTracker,
+};
 pub const MMAP_BASE: usize = 0x60000000;
 pub const MMAP_END: usize = 0x68000000; // mmap 区大小为 128 MiB
+pub const SHM_BASE: usize = 0x70000000;
 
 #[derive(Clone, Copy, Debug)]
 pub struct AuxEntry(pub usize, pub usize);
@@ -96,6 +101,11 @@ pub struct MemorySet {
 
     heap_areas: VmArea,
 
+    shm_areas: Vec<VmArea>,
+
+    shm_trackers: BTreeMap<VirtAddr, SharedMemoryTracker>,
+    pub shm_top: usize,
+
     pub brk_start: usize,
     pub brk: usize,
 }
@@ -115,6 +125,9 @@ impl MemorySet {
                 0,
             ),
             mmap_areas: Vec::new(),
+            shm_areas: Vec::new(),
+            shm_trackers: BTreeMap::new(),
+            shm_top: SHM_BASE,
             brk_start: 0,
             brk: 0,
         }
@@ -584,6 +597,31 @@ impl MemorySet {
         }
         new_memory_set.brk_start = user_space.brk_start;
         new_memory_set.brk = user_space.brk;
+
+        for shm_area in user_space.shm_areas.iter() {
+            let mut new_shm_area = VmArea::from_another(shm_area);
+
+            for vpn in shm_area.vpn_range.into_iter() {
+                // change the map permission of both pagetable
+                // get the former flags and ppn
+
+                // 只对已经map过的进行cow
+                if let Some(pte) = parent_page_table.translate(vpn) {
+                    let pte_flags = pte.flags();
+                    let src_ppn = pte.ppn();
+                    new_memory_set.page_table.map(vpn, src_ppn, pte_flags);
+                }
+            }
+            new_memory_set.shm_areas.push(new_shm_area);
+        }
+        new_memory_set.shm_top = user_space.shm_top;
+        for (va, shm_tracker) in user_space.shm_trackers.iter() {
+            let new_shm_tracker = SharedMemoryTracker::new(shm_tracker.key);
+            new_memory_set
+                .shm_trackers
+                .insert(va.clone(), new_shm_tracker);
+        }
+
         new_memory_set
     }
 
@@ -717,6 +755,50 @@ impl MemorySet {
 
     pub fn is_lazy_mapped(&self, addr_vpn: VirtPageNum) -> bool {
         self.page_table.find_pte(addr_vpn).is_some()
+    }
+    pub fn attach_shm(&mut self, key: usize, start_va: VirtAddr) {
+        let (start_pa, size) = shm_get_address_and_size(key);
+        let mut flags = PTEFlags::V | PTEFlags::U | PTEFlags::W | PTEFlags::R;
+        let mut offset = 0;
+
+        while offset < size {
+            let va: VirtAddr = (start_va.0 + offset).into();
+            let pa: PhysAddr = (start_pa.0 + offset).into();
+            // println!("attach map va:{:x?} to pa{:x?}",va,pa);
+            self.page_table.map(va.into(), pa.into(), flags);
+            offset += PAGE_SIZE;
+        }
+        self.shm_top = self.shm_top.max(start_va.0 + size);
+        let page_table = &self.page_table;
+        let shm_tracker = SharedMemoryTracker::new(key);
+
+        self.shm_trackers.insert(start_va, shm_tracker);
+        let vma = VmArea::new(
+            start_va,
+            (start_va.0 + size).into(),
+            MapType::Framed,
+            MapPermission::R | MapPermission::W,
+            None,
+            0,
+        );
+        self.shm_areas.push(vma);
+    }
+    pub fn detach_shm(&mut self, start_va: VirtAddr) -> usize {
+        // println!("detach start_va:{:?}",start_va);
+        let key = self.shm_trackers.get(&start_va).unwrap().key;
+        let (_, size) = shm_get_address_and_size(key);
+        // println!("detach size:{:?}",size);
+        let mut offset = 0;
+        while offset < size {
+            let va: VirtAddr = (start_va.0 + offset).into();
+            // println!("detach va:{:?}",va);
+            self.page_table.unmap(va.into());
+            offset += PAGE_SIZE
+        }
+        self.shm_trackers.remove(&start_va);
+        let vpn: VirtPageNum = start_va.into();
+        self.shm_areas.retain(|x| x.start_vpn() != vpn);
+        shm_get_nattch(key)
     }
 }
 
