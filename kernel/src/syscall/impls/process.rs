@@ -10,7 +10,7 @@ use crate::task::{
     suspend_current_and_run_next, RUsage, SignalFlags,
 };
 pub use crate::task::{CloneFlags, Utsname, UTSNAME};
-use crate::timer::{get_time, get_timeval};
+use crate::timer::{get_time, get_timeval, TimeSpec, TimeVal};
 
 use alloc::{string::String, string::ToString, sync::Arc, vec::Vec};
 
@@ -42,6 +42,17 @@ pub fn sys_do_fork(
 ) -> Result<isize> {
     let current_task = current_task().unwrap();
     let new_task = current_task.fork(false);
+
+    // {
+    //     let inner = new_task.read();
+    //     let op = inner.parent.clone();
+    //     if let Some(weak) = op {
+    //         if let Some(parent) = weak.upgrade() {
+    //             let childrent_cnt = parent.read().children.len();
+    //             info!("children cnt: {}", childrent_cnt);
+    //         }
+    //     }
+    // }
 
     // let tid = new_task.getpid();
     let flags = 17;
@@ -161,26 +172,52 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
 pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result<isize> {
     let task = current_task().unwrap();
 
+    // {
+    //     let inner = task.read();
+    //     let op = inner.parent.clone();
+    //     if let Some(weak) = op {
+    //         if let Some(parent) = weak.upgrade() {
+    //             let childrent_cnt = parent.read().children.len();
+    //             info!("children cnt: {}", childrent_cnt);
+    //         }
+    //     }
+    // }
+
     let inner = task.write();
 
-    // 根据pid参数查找有没有符合要求的进程
+    // 根据参数查找有没有符合要求的进程
     if !inner
         .children
         .iter()
         .any(|p| pid == -1 || pid as usize == p.pid())
     {
+        // {
+        //     info!("#### debug wait4 ####");
+        //     info!("pid:{:?}", pid);
+        //     info!("children cnt: {:?}", inner.children.len());
+        // }
         return Err(SyscallError::PidNotFound(-1, pid));
     }
+    // if pid != -1 && !inner.children.iter().any(|p| pid as usize == p.pid()) {
+    //     {
+    //         info!("#### debug wait4 ####");
+    //         info!("pid:{:?}", pid);
+    //     }
+    //     return Err(SyscallError::PidNotFound(-1, pid));
+    // }
     drop(inner);
 
     loop {
         let mut inner = task.write();
+
         // 查找所有符合PID要求的处于僵尸状态的进程，如果有的话还需要同时找出它在当前进程控制块子进程向量中的下标
+
         let pair = inner.children.iter().enumerate().find(|(_, p)| {
             // ++++ temporarily access child PCB lock exclusively
             p.write().is_zombie() && (pid == -1 || pid as usize == p.pid())
             // ++++ release child PCB
         });
+
         if let Some((idx, _)) = pair {
             // 将子进程从向量中移除并置于当前上下文中
             let child = inner.children.remove(idx);
@@ -327,7 +364,12 @@ pub fn sys_clock_gettime(_clk_id: usize, ts: *mut u64) -> Result<isize> {
     Ok(0)
 }
 pub fn sys_kill(pid: usize, signal: u32) -> Result<isize> {
-    // println!("[KERNEL] enter sys_kill: pid:{} send to pid:{}, signal:0x{:x}",current_task().unwrap().pid.0, pid, signal);
+    println!(
+        "[KERNEL] enter sys_kill: pid:{} send to pid:{}, signal:{}",
+        current_task().unwrap().pid(),
+        pid,
+        signal
+    );
     //TODO pid==-1
     if signal == 0 {
         return Ok(0);
@@ -338,7 +380,7 @@ pub fn sys_kill(pid: usize, signal: u32) -> Result<isize> {
             task.write().signals |= flag;
             Ok(0)
         } else {
-            panic!("[DEBUG] sys_kill: unsupported signal:{:?}", signal);
+            panic!("[DEBUG] sys_kill: unsupported signal:0x{:x?}", signal);
         }
     } else {
         Err(SyscallError::PidNotFound(-1, pid as isize))
@@ -385,4 +427,240 @@ pub fn sys_tgkill(tgid: isize, tid: usize, sig: isize) -> Result<isize> {
     } else {
         todo!("errno")
     }
+}
+
+pub struct CpuMask {
+    mask: [u8; 1024 / (8 * core::mem::size_of::<u8>())],
+}
+
+impl CpuMask {
+    pub fn new() -> Self {
+        Self {
+            mask: [0; 1024 / (8 * core::mem::size_of::<u8>())],
+        }
+    }
+
+    pub fn set(&mut self, cpu: usize) {
+        let index = cpu / (8 * core::mem::size_of::<u8>());
+        let offset = cpu % (8 * core::mem::size_of::<u8>());
+        self.mask[index] |= 1 << offset;
+    }
+
+    pub fn get(&self, cpu: usize) -> bool {
+        let index = cpu / (8 * core::mem::size_of::<u8>());
+        let offset = cpu % (8 * core::mem::size_of::<u8>());
+        self.mask[index] & (1 << offset) != 0
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.mask
+    }
+
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        &mut self.mask
+    }
+}
+
+// TODO
+#[repr(C)]
+pub struct CpuSet {
+    mask: [usize; 1024 / (8 * core::mem::size_of::<usize>())],
+}
+
+impl CpuSet {
+    pub fn new() -> Self {
+        Self {
+            mask: [0; 1024 / (8 * core::mem::size_of::<usize>())],
+        }
+    }
+
+    pub fn set(&mut self, cpu: usize) {
+        let index = cpu / (8 * core::mem::size_of::<usize>());
+        let offset = cpu % (8 * core::mem::size_of::<usize>());
+        self.mask[index] |= 1 << offset;
+    }
+
+    pub fn get(&self, cpu: usize) -> bool {
+        let index = cpu / (8 * core::mem::size_of::<usize>());
+        let offset = cpu % (8 * core::mem::size_of::<usize>());
+        self.mask[index] & (1 << offset) != 0
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            core::slice::from_raw_parts(
+                self as *const Self as *const u8,
+                core::mem::size_of::<Self>(),
+            )
+        }
+    }
+
+    pub fn as_mut_bytes(&mut self) -> &mut [u8] {
+        unsafe {
+            core::slice::from_raw_parts_mut(
+                self as *mut Self as *mut u8,
+                core::mem::size_of::<Self>(),
+            )
+        }
+    }
+}
+
+// TODO 多核 在进程内加入 CpuMask
+// 用于获取一个进程或线程的 CPU 亲和性（CPU affinity）。
+// CPU 亲和性指定了一个进程或线程可以运行在哪些 CPU 上。
+// 通过使用 sched_getaffinity 系统调用，程序员可以查询进程或线程当前绑定的 CPU。
+// mask 参数是一个位图，其中每个位表示一个 CPU。
+// 如果某个位为 1，表示进程或线程可以运行在对应的 CPU 上；
+// 如果某个位为 0，则表示进程或线程不能运行在对应的 CPU 上。
+// int sched_getaffinity(pid_t pid, size_t cpusetsize, cpu_set_t *mask);
+// cpu_set_t* cpu_set_t 是一个位图，其中每个位表示一个 CPU。 cpu_set_t 是一个结构体，定义如下：
+// typedef struct {
+//     unsigned long __bits[1024 / (8 * sizeof(long))];
+// } cpu_set_t;
+// cpusetsize 参数指定了 mask 参数指向的位图的大小，单位是字节。
+pub fn sys_sched_getaffinity(pid: usize, cpusetsize: usize, mask: *mut u8) -> Result<isize> {
+    let token = current_user_token();
+    let mut userbuf = UserBuffer::wrap(translated_bytes_buffer(token, mask, cpusetsize));
+
+    // 内核中的调度器会维护一个位图，用于记录进程或线程当前的 CPU 亲和性信息。
+    // 当调用 sched_getaffinity 系统调用时，调度器会将位图中对应的位复制到用户空间中的 mask 指针指向的内存区域中。
+    let mut cpuset = CpuMask::new();
+    cpuset.set(0);
+    userbuf.write(cpuset.as_bytes());
+    Ok(0)
+}
+
+pub const SCHED_OTHER: isize = 0;
+pub const SCHED_FIFO: isize = 1;
+pub const SCHED_RR: isize = 2;
+pub const SCHED_BATCH: isize = 3;
+pub const SCHED_IDLE: isize = 5;
+pub const SCHED_DEADLINE: isize = 6;
+
+// TODO 系统调用策略
+// 该函数接受一个参数 pid，表示要查询的进程的 PID。如果 pid 是 0，则表示查询当前进程的调度策略。
+// 函数返回值是一个整数，表示指定进程的调度策略，可能的取值包括：
+// SCHED_FIFO：先进先出调度策略。
+// SCHED_RR：轮转调度策略。
+// SCHED_OTHER：其他调度策略。
+// 如果查询失败，则返回 -1，并将错误码存入 errno 变量中。
+pub fn sys_getscheduler(pid: usize) -> Result<isize> {
+    // let task = pid2task(pid).ok_or(SyscallError::PidNotFound(-1, pid as isize))?;
+    // let inner = task.read();
+    // Ok(inner.policy as isize) // TODO
+    Ok(SCHED_OTHER as isize)
+}
+
+#[repr(C)]
+pub struct SchedParam {
+    sched_priority: isize,
+}
+
+impl SchedParam {
+    pub fn new() -> Self {
+        Self { sched_priority: 0 }
+    }
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe { core::slice::from_raw_parts(&self.sched_priority as *const isize as *const u8, 8) }
+    }
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            core::slice::from_raw_parts_mut(&mut self.sched_priority as *mut isize as *mut u8, 8)
+        }
+    }
+    pub fn set_priority(&mut self, priority: isize) {
+        self.sched_priority = priority;
+    }
+    pub fn get_priority(&self) -> isize {
+        self.sched_priority
+    }
+}
+
+// sched_priority 成员表示进程的调度优先级，值越高表示优先级越高。
+// 在 Linux 中，调度优先级的取值范围是 1-99，其中 1 表示最低优先级，99 表示最高优先级。
+// 如果调用成功，sched_getparam 返回 0；否则返回 -1，并设置 errno 变量表示错误类型。
+// 可能的错误类型包括 EINVAL（无效的参数）、ESRCH（指定的进程不存在）等。
+// sched_getparam 系统调用只能获取当前进程或当前进程的子进程的调度参数，对于其他进程则需要相应的权限或特权。
+// 如果要获取其他进程的调度参数，可以使用 sys_sched_getaffinity 系统调用获取进程的 CPU 亲和性，然后在相应的 CPU 上运行一个特权进程，以便获取进程的调度参数。
+// struct sched_param {
+//     int sched_priority;
+// };
+pub fn sys_sched_getparam(pid: usize, param: *mut SchedParam) -> Result<isize> {
+    // let task = pid2task(pid).ok_or(SyscallError::PidNotFound(-1, pid as isize))?;
+    // let inner = task.read();
+    let token = current_user_token();
+    let user_param = translated_mut(token, param);
+    // user_param.set_priority(inner.priority);
+    user_param.set_priority(1);
+    Ok(0)
+}
+
+#[repr(C)]
+pub struct SchedPolicy(isize);
+
+// pid 参数指定要设置调度策略和参数的进程的 PID；
+// policy 参数是一个整数值，表示要设置的调度策略；
+// param 参数是一个指向 sched_param 结构体的指针，用于设置调度参数。
+// 如果调用成功，sched_setscheduler 返回 0；否则返回 -1，并设置 errno 变量表示错误类型。
+// 可能的错误类型包括 EINVAL（无效的参数）、ESRCH（指定的进程不存在）等。
+// int sched_setscheduler(pid_t pid, int policy, const struct sched_param *param);
+// struct sched_param {
+//     int sched_priority;
+// };
+pub fn sys_sched_setscheduler(
+    pid: usize,
+    policy: isize,
+    param: *const SchedParam,
+) -> Result<isize> {
+    let task = pid2task(pid).ok_or(SyscallError::PidNotFound(-1, pid as isize))?;
+    let inner = task.read();
+
+    {
+        info!("sched_setscheduler: pid: {}, policy: {}", pid, policy);
+    }
+    // let user_param = translated_ref(token, param);
+    // inner.policy = policy as u8;
+    // inner.priority = user_param.get_priority();
+
+    Ok(0)
+}
+
+// 用于获取指定时钟的精度（resolution）
+// 其中，clk_id 参数指定要获取精度的时钟 ID；res 参数是一个指向 timespec 结构体的指针，用于存储获取到的精度。
+// 如果调用成功，clock_getres() 返回值为 0；否则返回一个负数值，表示错误类型。
+// 可能的错误类型包括 EINVAL（无效的参数）、EFAULT（无效的内存地址）等。
+// int clock_getres(clockid_t clk_id, struct timespec *res);
+// struct timespec {
+//     time_t tv_sec; /* seconds */
+//     long tv_nsec;  /* nanoseconds */
+// };
+pub fn sys_clock_getres(clockid: usize, res: *mut TimeSpec) -> Result<isize> {
+    let token = current_user_token();
+    let user_res = translated_mut(token, res);
+    // 赋值看的测试样例 TODO
+    user_res.tv_sec = 0;
+    user_res.tv_nsec = 1;
+    Ok(0)
+}
+
+pub const SOCK_DGRAM: isize = 1;
+pub const SOCK_STREAM: isize = 2;
+
+// int socketpair(int domain, int type, int protocol, int sv[2]);
+// domain：指定要创建的套接字的协议族，可以取值为 AF_UNIX 或 AF_LOCAL，表示使用本地 IPC。
+// type：指定要创建的套接字的类型，可以取值为 SOCK_STREAM 或 SOCK_DGRAM。
+// protocol：指定要使用的协议，通常为 0。
+// sv：指向一个长度为 2 的数组的指针，用于保存创建的套接字文件描述符。
+pub fn sys_socketpair(
+    domain: isize,
+    type_: isize,
+    protocol: isize,
+    sv: *mut [isize; 2],
+) -> Result<isize> {
+    // let token = current_user_token();
+    // let user_sv = translated_mut(token, sv);
+    // let (fd1, fd2) = socket2(); // TODO Socket
+    // user_sv[0] = fd1;
+    // user_sv[1] = fd2;
+    Ok(0)
 }

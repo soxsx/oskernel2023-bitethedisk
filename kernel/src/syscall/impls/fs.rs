@@ -9,7 +9,7 @@ use crate::mm::{
 };
 use crate::task::suspend_current_and_run_next;
 use crate::task::{current_task, current_user_token, FD_LIMIT};
-use crate::timer::{get_timeval, TimeVal, Timespec};
+use crate::timer::{get_timeval, TimeSpec, TimeVal};
 
 use alloc::borrow::ToOwned;
 use alloc::{sync::Arc, vec::Vec};
@@ -130,6 +130,11 @@ pub fn sys_pipe2(pipe: *mut i32, _flag: usize) -> Result<isize> {
 /// int ret = syscall(SYS_dup, fd);
 /// ```
 pub fn sys_dup(fd: usize) -> Result<isize> {
+    // {
+    //     info!("#### debug sys_dup ####");
+    //     info!("fd: {}", fd);
+    // }
+
     let task = current_task().unwrap();
     let mut inner = task.write();
 
@@ -165,6 +170,11 @@ pub fn sys_dup(fd: usize) -> Result<isize> {
 /// int ret = syscall(SYS_dup3, old, new, 0);
 /// ```
 pub fn sys_dup3(old_fd: usize, new_fd: usize) -> Result<isize> {
+    // {
+    //     info!("#### debug sys_dup3 ####");
+    //     info!("old_fd: {}", old_fd);
+    //     info!("new_fd: {}", new_fd);
+    // }
     let task = current_task().unwrap();
     let mut inner = task.write();
 
@@ -202,6 +212,9 @@ pub fn sys_dup3(old_fd: usize, new_fd: usize) -> Result<isize> {
 /// int ret = syscall(SYS_chdir, path);
 /// ```
 pub fn sys_chdir(path: *const u8) -> Result<isize> {
+    // {
+    //     info!("#### sys_chdir: {:?} ####", path);
+    // }
     let token = current_user_token();
     let task = current_task().unwrap();
     let mut inner = task.write();
@@ -239,6 +252,12 @@ pub fn sys_chdir(path: *const u8) -> Result<isize> {
 /// int ret = syscall(SYS_openat, fd, filename, flags, mode);
 /// ```
 pub fn sys_openat(fd: isize, filename: *const u8, flags: u32, mode: u32) -> Result<isize> {
+    // {
+    //     // debug
+    //     info!("##### debug openat #####");
+    //     info!("fd: {}", fd);
+    //     info!("filename: {:?}", filename);
+    // }
     let task = current_task().unwrap();
     let token = current_user_token();
     let mut inner = task.write();
@@ -275,7 +294,7 @@ pub fn sys_openat(fd: isize, filename: *const u8, flags: u32, mode: u32) -> Resu
                 }
                 inner.fd_table[fd] = Some(tar_f);
                 // println!("[DEBUG] sys_openat return new fd:{}", fd);
-                debug!("[DEBUG] sys_openat return new fd:{}", fd);
+                info!("[DEBUG] sys_openat return new fd:{}", fd);
                 Ok(fd as isize)
             } else {
                 warn!("[WARNING] sys_openat: can't open file:{}, return -1", path);
@@ -307,6 +326,10 @@ pub fn sys_openat(fd: isize, filename: *const u8, flags: u32, mode: u32) -> Resu
 /// int ret = syscall(SYS_close, fd);
 /// ```
 pub fn sys_close(fd: usize) -> Result<isize> {
+    // {
+    //     info!("#### sys_close: fd: {} ####", fd);
+    // }
+
     let task = current_task().unwrap();
     let mut inner = task.write();
     if fd >= inner.fd_table.len() || inner.fd_table[fd].is_none() {
@@ -349,6 +372,11 @@ pub fn sys_close(fd: usize) -> Result<isize> {
 /// int ret = syscall(SYS_getdents64, fd, buf, len);
 /// ```
 pub fn sys_getdents64(fd: isize, buf: *mut u8, len: usize) -> Result<isize> {
+    // {
+    //     // debug
+    //     info!("##### debug sys_getdent64 #####");
+    //     info!("fd: {}", fd);
+    // }
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.write();
@@ -417,6 +445,9 @@ pub fn sys_getdents64(fd: isize, buf: *mut u8, len: usize) -> Result<isize> {
 /// ssize_t ret = syscall(SYS_read, fd, buf, count);
 /// ```
 pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> Result<isize> {
+    // {
+    //     info!("#### sys_read: fd: {} ####", fd);
+    // }
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.write();
@@ -477,6 +508,9 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> Result<isize> {
 /// ssize_t ret = syscall(SYS_write, fd, buf, count);
 /// ```
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> Result<isize> {
+    // {
+    //     info!("#### sys_write: fd: {} ####", fd);
+    // }
     let token = current_user_token();
     let task = current_task().unwrap();
     // println!("[DEBUG] sys_write: fd{:?}, buf{:?}, len:{:?}", fd, buf, len);
@@ -609,6 +643,10 @@ pub fn sys_unlinkat(fd: isize, path: *const u8, flags: u32) -> Result<isize> {
 /// int ret = syscall(SYS_mkdirat, dirfd, path, mode);
 /// ```
 pub fn sys_mkdirat(dirfd: isize, path: *const u8, _mode: u32) -> Result<isize> {
+    // {
+    //     info!("#### debug mkdirat ####");
+    //     info!("dirfd: {}", dirfd);
+    // }
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.write();
@@ -752,6 +790,10 @@ pub fn sys_mount(
 /// int ret = syscall(SYS_fstat, fd, &kst);
 /// ```
 pub fn sys_fstat(fd: isize, buf: *mut u8) -> Result<isize> {
+    // {
+    //     info!("#### debug sys_fstat ####");
+    //     info!("fd: {}", fd);
+    // }
     let token = current_user_token();
     let task = current_task().unwrap();
     let buf_vec = translated_bytes_buffer(token, buf, size_of::<Kstat>());
@@ -774,6 +816,10 @@ pub fn sys_fstat(fd: isize, buf: *mut u8) -> Result<isize> {
 }
 
 pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize> {
+    // {
+    //     info!("#### debug sys_readv ####");
+    //     info!("fd: {}", fd);
+    // }
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.write();
@@ -816,6 +862,12 @@ pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize> 
 pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize> {
     // println!("[DEBUG] enter sys_writev: fd:{}, iovp:0x{:x}, iovcnt:{}",fd,iovp as usize,iovcnt);
     // println!("time:{}",get_time_ms());
+
+    // {
+    //     info!("#### debug sys_writev ####");
+    //     info!("fd: {}", fd);
+    // }
+
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.write();
@@ -865,6 +917,10 @@ const TIOCGWINSZ: usize = 0x5413;
 const RTC_RD_TIME: usize = 0xffffffff80247009; // 这个值还需考量
 
 pub fn sys_ioctl(fd: usize, request: usize, argp: *mut u8) -> Result<isize> {
+    // {
+    //     info!("#### debug sys_ioctl ####");
+    //     info!("fd: {}", fd);
+    // }
     // println!("enter sys_ioctl: fd:{}, request:0x{:x}, argp:{}", fd, request, argp as usize);
     let token = current_user_token();
     let task = current_task().unwrap();
@@ -987,6 +1043,10 @@ pub fn sys_newfstatat(
     satabuf: *const usize,
     _flags: usize,
 ) -> Result<isize> {
+    // {
+    //     info!("#### sys_newfstatat ####");
+    //     info!("dirfd: {}", dirfd);
+    // }
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.write();
@@ -1072,6 +1132,10 @@ pub fn sys_utimensat(
     time: *const usize,
     flags: usize,
 ) -> Result<isize> {
+    // {
+    //     info!("#### sys_utimensat ####");
+    //     info!("dirfd: {}", dirfd);
+    // }
     // println!(
     //     "[DEBUG] enter sys_utimensat: dirfd:{}, pathname:{}, time:{}, flags:{}",
     //     dirfd, pathname as usize, time as usize, flags
@@ -1110,7 +1174,7 @@ pub fn sys_utimensat(
                         .pop()
                         .unwrap();
                 let addr = timespec_buf.as_ptr() as *const _ as usize;
-                let timespec = unsafe { &*(addr as *const Timespec) };
+                let timespec = unsafe { &*(addr as *const TimeSpec) };
                 file.set_time(timespec);
                 Ok(0)
             } else {
@@ -1176,6 +1240,10 @@ bitflags! {
 }
 
 pub fn sys_lseek(fd: usize, off_t: usize, whence: usize) -> Result<isize> {
+    // {
+    //     info!("#### sys_lseek ####");
+    //     info!("fd: {}", fd);
+    // }
     // println!("[DEBUG] enter sys_lseek: fd:{},off_t:{},whence:{}",fd,off_t,whence);
 
     let task = current_task().unwrap();
@@ -1241,6 +1309,10 @@ pub fn sys_sync() -> Result<isize> {
 }
 
 pub fn sys_ftruncate64(fd: usize, length: usize) -> Result<isize> {
+    // {
+    //     info!("#### sys_ftruncate64 ####");
+    //     info!("fd: {}", fd);
+    // }
     let task = current_task().unwrap();
     let inner = task.write();
     if let Some(file) = &inner.fd_table[fd] {
@@ -1258,6 +1330,10 @@ pub fn sys_pselect6(
     exceptfds: *mut u8,
     timeout: *mut usize,
 ) -> Result<isize> {
+    // {
+    //     info!("#### sys_pselect6 ####");
+    //     info!("nfds: {}", nfds);
+    // }
     let token = current_user_token();
     let mut r_ready_count = 0;
     let mut w_ready_count = 0;

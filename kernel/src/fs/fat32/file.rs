@@ -2,7 +2,7 @@ use crate::fs::{
     file::File,
     open_flags::CreateMode,
     stat::{S_IFCHR, S_IFDIR, S_IFREG},
-    AbsolutePath, Dirent, Kstat, OpenFlags, Timespec,
+    AbsolutePath, Dirent, Kstat, OpenFlags, TimeSpec,
 };
 use crate::{drivers::BLOCK_DEVICE, mm::UserBuffer};
 use alloc::{
@@ -409,7 +409,7 @@ impl File for Fat32File {
         base
     }
 
-    fn set_time(&self, timespec: &Timespec) {
+    fn set_time(&self, timespec: &TimeSpec) {
         let tv_sec = timespec.tv_sec;
         let tv_nsec = timespec.tv_nsec;
 

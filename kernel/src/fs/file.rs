@@ -3,7 +3,7 @@ use core::fmt::{self, Formatter};
 
 use alloc::vec::Vec;
 
-use crate::{mm::UserBuffer, timer::Timespec};
+use crate::{mm::UserBuffer, timer::TimeSpec};
 
 use super::{AbsolutePath, Dirent, Kstat, OpenFlags};
 
@@ -31,7 +31,7 @@ pub trait File: Send + Sync {
         panic!("{} not implement get_fstat", self.name());
     }
 
-    fn set_time(&self, _timespec: &Timespec) {
+    fn set_time(&self, _timespec: &TimeSpec) {
         panic!("{} not implement set_time", self.name());
     }
 

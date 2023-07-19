@@ -1,8 +1,8 @@
 use super::current_task;
 
-pub mod signal_flags;
+pub mod siginfo;
 
-pub use signal_flags::SignalFlags;
+pub use siginfo::*;
 
 pub fn check_current_signals() -> Option<(i32, &'static str)> {
     let task = current_task().unwrap();

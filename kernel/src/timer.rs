@@ -77,6 +77,8 @@ impl TimeVal {
     }
 }
 
+// TODO 3: timeval/timesepc form-to tms
+
 /// Linux 间隔计数
 ///
 /// - `tms_utime`：用户态时间
@@ -86,13 +88,13 @@ impl TimeVal {
 #[allow(non_camel_case_types)]
 pub struct tms {
     /// 用户态时间
-    pub tms_utime: isize,
+    pub utime: isize,
     /// 内核态时间
-    pub tms_stime: isize,
+    pub stime: isize,
     /// 已回收子进程的用户态时间
-    pub tms_cutime: isize,
+    pub cutime: isize,
     /// 已回收子进程的内核态时间
-    pub tms_cstime: isize,
+    pub cstime: isize,
 }
 
 impl tms {
@@ -139,7 +141,21 @@ pub fn set_next_trigger() {
     set_timer(get_time() + CLOCK_FREQ / TICKS_PER_SEC);
 }
 
-pub struct Timespec {
+pub struct TimeSpec {
     pub tv_sec: u64,  // 秒
     pub tv_nsec: u64, // 纳秒
+}
+
+impl TimeSpec {
+    pub fn new() -> Self {
+        Self {
+            tv_sec: 0,
+            tv_nsec: 0,
+        }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        let size = core::mem::size_of::<Self>();
+        unsafe { core::slice::from_raw_parts(self as *const _ as usize as *const u8, size) }
+    }
 }

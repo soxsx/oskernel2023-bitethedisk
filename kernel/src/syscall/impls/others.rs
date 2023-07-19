@@ -28,15 +28,17 @@ pub fn sys_times(buf: *const u8) -> Result<isize> {
     let mut userbuf = UserBuffer::wrap(buffers);
     userbuf.write(
         tms {
-            tms_stime: sec,
-            tms_utime: sec,
-            tms_cstime: sec,
-            tms_cutime: sec,
+            stime: sec,
+            utime: sec,
+            cstime: sec,
+            cutime: sec,
         }
         .as_bytes(),
     );
     Ok(0)
 }
+
+// TODO 2 tms 没有处理
 
 /// struct utsname {
 /// 	char sysname\[65\];
@@ -78,6 +80,8 @@ pub fn sys_sched_yield() -> Result<isize> {
     suspend_current_and_run_next();
     Ok(0)
 }
+
+// TODO 1 规范里面写的 timeval
 
 /// ```c
 /// struct timespec {

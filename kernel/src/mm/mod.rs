@@ -12,7 +12,7 @@ pub use address::*;
 use alloc::{string::String, vec::Vec};
 pub use frame_allocator::{alloc_frame, dealloc_frame, FrameTracker};
 pub use memory_set::{MapPermission, MemorySet};
-pub use page_table::{PageTable, PageTableEntry};
+pub use page_table::*;
 use riscv::register::satp;
 pub use user_buffer::{UserBuffer, UserBufferIterator};
 pub use vma::*;

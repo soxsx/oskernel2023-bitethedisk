@@ -12,7 +12,7 @@ use crate::mm::{
     PhysPageNum, VirtAddr, VirtPageNum,
 };
 use crate::task::kernel_stack::kernel_stack_position;
-use crate::timer::TimeVal;
+use crate::timer::{get_time, TimeVal};
 use crate::trap::handler::user_trap_handler;
 use crate::trap::TrapContext;
 use alloc::string::String;
@@ -25,12 +25,16 @@ use crate::fs::AbsolutePath;
 
 pub const FD_LIMIT: usize = 1024;
 
+// TODO futex, chan, sigmask, sigpending, rubustlist, rlimt,
 pub struct TaskControlBlock {
     /// 进程标识符
     pub pid: PidHandle,
 
     /// thread group id
     pub tgid: usize,
+
+    pub set_child_tid: usize,   /* CLONE_CHILD_SETTID */
+    pub clear_child_tid: usize, /* CLONE_CHILD_CLEARTID */
 
     /// 应用内核栈
     pub kernel_stack: KernelStack,
@@ -73,7 +77,7 @@ pub struct TaskControlBlockInner {
     pub fd_table: Vec<Option<Arc<dyn File>>>,
 
     pub signals: SignalFlags,
-
+    // pub sigactions: [SigAction; MAX_SIGNUM as usize],
     pub current_path: AbsolutePath,
 
     pub utime: TimeVal,
@@ -185,6 +189,10 @@ impl TaskControlBlock {
             pid: pid_handle,
             tgid,
             kernel_stack,
+
+            set_child_tid: 0,
+            clear_child_tid: 0,
+
             inner: RwLock::new(TaskControlBlockInner {
                 trap_cx_ppn,
                 task_cx: TaskContext::readied_for_switching(kernel_stack_top),
@@ -410,6 +418,10 @@ impl TaskControlBlock {
         let task_control_block = Arc::new(TaskControlBlock {
             pid: pid_handle,
             tgid,
+
+            set_child_tid: 0,
+            clear_child_tid: 0,
+
             kernel_stack,
             inner: RwLock::new(TaskControlBlockInner {
                 trap_cx_ppn,
@@ -446,6 +458,10 @@ impl TaskControlBlock {
     /// - 返回值：
     ///     - `0`：成功加载缺页
     ///     - `-1`：加载缺页失败
+    ///
+    /// 分别用于：
+    ///     - 用户态：handler page fault
+    ///     - 内核态： translate_bytes_buffer
     pub fn check_lazy(&self, va: VirtAddr, is_load: bool) -> isize {
         let inner = self.write();
         let mmap_start = inner.mmap_manager.mmap_start;
@@ -454,29 +470,41 @@ impl TaskControlBlock {
         let heap_end = VirtAddr::from(inner.memory_set.brk_start + USER_HEAP_SIZE);
         drop(inner);
 
+        // fork
         let vpn: VirtPageNum = va.floor();
         let pte = self.write().enquire_pte_via_vpn(vpn);
         if pte.is_some() && pte.unwrap().is_cow() {
             let former_ppn = pte.unwrap().ppn();
+            info!("pte1 is readabled: {:?}", pte.unwrap().readable());
+            info!("pte1 is writable: {:?}", pte.unwrap().writable());
+            info!("pte1 is executable: {:?}", pte.unwrap().executable());
             return self.write().cow_alloc(vpn, former_ppn);
         } else {
             if let Some(pte1) = pte {
                 if pte1.is_valid() {
+                    info!("pte1 is readabled: {:?}", pte1.readable());
+                    info!("pte1 is writable: {:?}", pte1.writable());
+                    info!("pte1 is executable: {:?}", pte1.executable());
                     return -4;
                 }
             }
         }
+
+        println!("check_lazy: va: {:#x}", va.0);
+
+        // lazy map / lazy alloc heap
         if va >= heap_start && va <= heap_end {
             self.write().lazy_alloc_heap(va.floor())
         } else if va >= mmap_start && va < mmap_end {
+            println!("########## into lazy mmap ##########");
             self.lazy_mmap(va, is_load)
         } else {
+            println!("[check_lazy] pid: {:?}", self.pid());
             println!("[check_lazy] {:x?}", va);
             println!("[check_lazy] mmap_start: 0x{:x}", mmap_start.0);
             println!("[check_lazy] mmap_end: 0x{:x}", mmap_end.0);
             println!("[check_lazy] heap_start: 0x{:x}", heap_start.0);
             println!("[check_lazy] heap_end: 0x{:x}", heap_end.0);
-            println!("[check_lazy] current vma layout:");
 
             -2
         }
@@ -525,6 +553,7 @@ impl TaskControlBlock {
         // "prot<<1" 右移一位以符合 MapPermission 的权限定义
         // "1<<4" 增加 MapPermission::U 权限
         let map_flags = (((prot.bits() & 0b111) << 1) + (1 << 4)) as u16;
+
         if addr == 0 {
             start_va = inner.mmap_manager.get_mmap_top();
             end_va = VirtAddr::from(start_va.0 + length);
@@ -534,6 +563,23 @@ impl TaskControlBlock {
             end_va,
             MapPermission::from_bits(map_flags).unwrap(),
         );
+
+        // if end_va.0 >= 0x600234f0 {
+        //     let map_perm = MapPermission::from_bits(map_flags).unwrap();
+        //     info!("########### mmap ###########");
+        //     info!(
+        //         "addr: {:#x?}, length: {:#x}, addr + length: {:#x}",
+        //         start_va.0, length, end_va.0
+        //     );
+        //     info!("map_perm is readable: {}", map_perm.readable());
+        //     info!("map_perm is writable: {}", map_perm.writable());
+        //     info!("map_perm is executable: {}", map_perm.executable());
+        // }
+
+        // {
+        //     info!("start va: {:#x?}", start_va);
+        //     info!("end va: {:#x?}", end_va);
+        // }
         inner.mmap_manager.push(
             start_va.0,
             length,
@@ -552,8 +598,19 @@ impl TaskControlBlock {
 
         let mmap_start_va = VirtAddr(addr);
         let mmap_end_va = VirtAddr(addr + length);
-        let mmap_start_vpn: VirtPageNum = mmap_start_va.floor();
-        let mmap_end_vpn: VirtPageNum = mmap_end_va.ceil();
+
+        {
+            info!("munmap_start_va: {:#x?}", mmap_start_va);
+            info!("munmap_end_va: {:#x?}", mmap_end_va);
+        }
+
+        for mmap_area in inner.memory_set.mmap_areas.iter_mut() {
+            info!("mmap area");
+            let start: VirtAddr = mmap_area.vpn_range.get_start().into();
+            let end: VirtAddr = mmap_area.vpn_range.get_end().into();
+            info!("start: {:#x}", start.0);
+            info!("end: {:#x}", end.0);
+        }
 
         // 可能会有 mmap 后没有访问直接 munmap 的情况，需要检查是否访问过 mmap 的区域(即
         // 是否引发了 lazy_mmap)，防止 unmap 页表中不存在的页表项引发 panic

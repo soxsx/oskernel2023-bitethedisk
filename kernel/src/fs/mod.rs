@@ -16,7 +16,7 @@ pub use path::*;
 
 use crate::{
     fs::{fat32::list_apps, open_flags::CreateMode},
-    timer::Timespec,
+    timer::TimeSpec,
 };
 
 pub use crate::fs::fat32::{chdir, open, Fat32File};
@@ -81,6 +81,23 @@ pub fn init() {
         OpenFlags::O_CREATE,
         CreateMode::empty(),
     );
+
+    // sys_clock_getres
+    // 应用程序可以通过打开 /dev/cpu_dma_latency 设备文件，并向其写入一个非负整数，来请求将 CPU 切换到低延迟模式。
+    // 写入的整数值表示请求的最大延迟时间，单位为微秒
+    open(
+        "/dev/cpu_dma_latency".into(),
+        OpenFlags::O_CREATE,
+        CreateMode::empty(),
+    );
+
+    open(
+        "/etc/passwd".into(),
+        OpenFlags::O_CREATE,
+        CreateMode::empty(),
+    );
+
+    open("/dev/tty".into(), OpenFlags::O_CREATE, CreateMode::empty());
 
     println!("===+ Files Loaded +===");
     list_apps(AbsolutePath::from_string("/".to_string()));

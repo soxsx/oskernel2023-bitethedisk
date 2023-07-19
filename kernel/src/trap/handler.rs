@@ -5,7 +5,7 @@
 use log::{debug, error};
 use riscv::register::{
     scause::{self, Exception, Interrupt, Trap},
-    stval,
+    sepc, stval,
 };
 
 use crate::{
@@ -60,8 +60,8 @@ pub fn user_trap_handler() -> ! {
         | Trap::Exception(Exception::StorePageFault)
         | Trap::Exception(Exception::LoadFault)
         | Trap::Exception(Exception::LoadPageFault) => {
-            debug!(
-                "user_trap_handler: memory fault, task: {} at {:x?}, {:x?}",
+            println!(
+                "#########################\nuser_trap_handler: memory fault, task: {} at {:x?}, {:x?}",
                 current_task().unwrap().pid(),
                 VirtAddr::from(stval as usize),
                 current_trap_cx().sepc,
@@ -83,11 +83,14 @@ pub fn user_trap_handler() -> ! {
             }
             let task = current_task().unwrap();
 
-            debug!("user_trap_handler: lazy mapping, task: {:?}", task.pid());
+            println!("######### check_lazy ##############");
 
             let lazy = task.check_lazy(va, is_load);
 
+            println!("############### handler ##################\nlazy: {}", lazy);
+
             if lazy != 0 {
+                println!("lazy != 0");
                 current_add_signal(SignalFlags::SIGSEGV);
             }
         }

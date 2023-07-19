@@ -1,6 +1,6 @@
 //! 根据 SYS_id 分发具体系统调用
 
-use crate::task::current_task;
+use crate::{console, task::current_task, timer::TimeSpec};
 
 use super::{error::SyscallError, impls::*};
 
@@ -76,9 +76,20 @@ const SYS_UMASK: usize = 166;
 const SYS_FSYNC: usize = 82;
 const SYS_MSYNC: usize = 227;
 
+const SYS_SCHED_GETAFFINITY: usize = 123;
+const SYS_SCHEED_GETSCHEDULER: usize = 120;
+const SYS_SCHED_GETPARAM: usize = 121;
+const SYS_SCHED_SETSCHEDULER: usize = 119;
+const SYS_CLOCK_GETRES: usize = 114;
+const SYS_SOCKETPAIR: usize = 199;
+
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
-    // println!("[DEBUG] syscall:{:?} pid:{:?}",syscall_id,current_task().unwrap().pid.0);
+    println!(
+        "[DEBUG] syscall:{:?} pid:{:?}",
+        syscall_id,
+        current_task().unwrap().pid.0
+    );
     let ret: core::result::Result<isize, SyscallError> = match syscall_id {
         // TODO: 检查完善
         SYS_CLONE => sys_do_fork(args[0], args[1], args[2], args[3], args[4]),
@@ -201,7 +212,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[3],
         ),
         SYS_GETRANDOM => sys_getrandom(args[0] as *const u8, args[1], args[2]),
-        SYS_MPROTECT => Ok(0),
+        SYS_MPROTECT => sys_mprotect(args[0], args[1], args[2]),
         SYS_GETPGID => Ok(0),
         SYS_SETPGID => Ok(0),
         SYS_SYNC => sys_sync(),
@@ -219,9 +230,30 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_UMASK => Ok(0),
         SYS_FSYNC => Ok(0),
         SYS_MSYNC => Ok(0),
+
+        SYS_SCHED_GETAFFINITY => {
+            sys_sched_getaffinity(args[0] as usize, args[1] as usize, args[2] as *mut u8)
+        }
+        SYS_SCHEED_GETSCHEDULER => sys_getscheduler(args[0] as usize),
+        SYS_SCHED_GETPARAM => sys_sched_getparam(args[0] as usize, args[1] as *mut SchedParam),
+        SYS_SCHED_SETSCHEDULER => sys_sched_setscheduler(
+            args[0] as usize,
+            args[1] as isize,
+            args[2] as *const SchedParam,
+        ),
+        SYS_CLOCK_GETRES => sys_clock_getres(args[0] as usize, args[1] as *mut TimeSpec),
+        SYS_SOCKETPAIR => sys_socketpair(
+            args[0] as isize,
+            args[1] as isize,
+            args[2] as isize,
+            args[3] as *mut [isize; 2],
+        ),
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
-    // println!("[DEBUG] syscall end pid:{:?}",current_task().unwrap().pid.0);
+    println!(
+        "[DEBUG] syscall end pid:{:?}",
+        current_task().unwrap().pid.0
+    );
     match ret {
         Ok(success) => success,
         Err(err) => {

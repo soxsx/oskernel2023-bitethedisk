@@ -46,7 +46,7 @@ impl Utsname {
 
 bitflags! {
     pub struct CloneFlags: usize{
-        const SIGCHLD = 17;
+        const SIGCHLD = 17; // 实际没有这个标志位
     }
 }
 

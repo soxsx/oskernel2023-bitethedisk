@@ -92,7 +92,7 @@ pub struct MemorySet {
 
     vm_areas: Vec<VmArea>,
 
-    mmap_areas: Vec<VmArea>,
+    pub mmap_areas: Vec<VmArea>,
 
     heap_areas: VmArea,
 
@@ -540,6 +540,13 @@ impl MemorySet {
 
                 // 只对已经map过的进行cow
                 if let Some(pte) = parent_page_table.translate(vpn) {
+                    // {
+                    //     info!("########### debug cow pte flags ###########");
+                    //     info!("pte is readable: {}", pte.readable());
+                    //     info!("pte is writable: {}", pte.writable());
+                    //     info!("pte is executable: {}", pte.executable());
+                    //     info!("############################################");
+                    // }
                     let pte_flags = pte.flags() & !PTEFlags::W;
                     let src_ppn = pte.ppn();
                     // frame_add_ref(src_ppn);
@@ -646,6 +653,16 @@ impl MemorySet {
                 mmap_area.lazy_map_vpn(stval.floor(), &mut self.page_table);
                 return 0;
             }
+        }
+
+        println!("lazy mmap");
+        println!("stval: {:#x}", stval.0);
+        for mmap_area in self.mmap_areas.iter_mut() {
+            info!("mmap area");
+            let start: VirtAddr = mmap_area.vpn_range.get_start().into();
+            let end: VirtAddr = mmap_area.vpn_range.get_end().into();
+            info!("start: {:#x}", start.0);
+            info!("end: {:#x}", end.0);
         }
         -1
     }
