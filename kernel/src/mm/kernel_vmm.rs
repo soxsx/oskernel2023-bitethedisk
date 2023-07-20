@@ -28,6 +28,8 @@ lazy_static! {
         let mut memory_set = MemorySet::new_bare();
         // map trampoline
         memory_set.map_trampoline();
+        // map signal trampoline
+        memory_set.map_signal_trampoline();
         macro_rules! insert_kernel_vm_areas {
             ($kvmm:ident,$($start:expr, $end:expr, $permission:expr, $file:expr, $page_offset:expr)*) => {
                 $(
