@@ -48,6 +48,9 @@ pub enum SyscallError {
 
     #[error("No such file or directory")]
     NoSuchFile(isize),
+
+    #[error("invalid param: {1}")]
+    InvalidParam(isize, u32),
 }
 
 impl SyscallError {
@@ -66,6 +69,8 @@ impl SyscallError {
             SyscallError::ReachMountLimit(error_code) => *error_code,
             SyscallError::UnmountFailed(error_code) => *error_code,
             SyscallError::NoSuchFile(error_code) => *error_code,
+
+            SyscallError::InvalidParam(error_code, _) => *error_code,
         }
     }
 }
