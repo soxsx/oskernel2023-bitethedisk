@@ -1289,7 +1289,7 @@ pub fn sys_readlinkat(
     if dirfd == AT_FDCWD {
         let token = current_user_token();
         let path = translated_str(token, pathname);
-        println!("readlinkat path:{:?}", path);
+        // println!("readlinkat path:{:?}", path);
         if path.as_str() != "/proc/self/exe" {
             panic!("sys_readlinkat: pathname not support");
         }
