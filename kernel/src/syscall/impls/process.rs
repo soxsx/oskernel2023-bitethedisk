@@ -1,5 +1,7 @@
 //! 进程相关系统调用
 
+use core::usize;
+
 use crate::fs::open_flags::CreateMode;
 use crate::fs::{open, OpenFlags};
 use crate::mm::{
@@ -7,14 +9,17 @@ use crate::mm::{
 };
 use crate::task::{
     add_task, current_task, current_user_token, exit_current_and_run_next, pid2task,
-    suspend_current_and_run_next, RUsage, SignalFlags,
+    suspend_current_and_run_next, RUsage, SigAction, SigMask, SignalContext, MAX_SIGNUM,
 };
 pub use crate::task::{CloneFlags, Utsname, UTSNAME};
 use crate::timer::{get_time, get_timeval, TimeSpec, TimeVal};
 
 use alloc::{string::String, string::ToString, sync::Arc, vec::Vec};
 
+use super::super::errno::*;
 use super::super::error::*;
+
+use crate::task::*;
 
 /// #define SYS_clone 220
 ///
@@ -312,22 +317,22 @@ pub fn sys_gettid() -> Result<isize> {
     Ok(0)
 }
 
-pub fn sys_rt_sigprocmask(
-    how: i32,
-    set: *const usize,
-    oldset: *const usize,
-    _sigsetsize: usize,
-) -> Result<isize> {
-    Ok(0)
-}
+// pub fn sys_rt_sigprocmask(
+//     how: i32,
+//     set: *const usize,
+//     oldset: *const usize,
+//     _sigsetsize: usize,
+// ) -> Result<isize> {
+//     Ok(0)
+// }
 
-pub fn sys_rt_sigreturn(_setptr: *mut usize) -> Result<isize> {
-    Ok(0)
-}
+// pub fn sys_rt_sigreturn(_setptr: *mut usize) -> Result<isize> {
+//     Ok(0)
+// }
 
-pub fn sys_rt_sigaction() -> Result<isize> {
-    Ok(0)
-}
+// pub fn sys_rt_sigaction() -> Result<isize> {
+//     Ok(0)
+// }
 
 pub fn sys_rt_sigtimedwait() -> Result<isize> {
     Ok(0)
@@ -364,20 +369,20 @@ pub fn sys_clock_gettime(_clk_id: usize, ts: *mut u64) -> Result<isize> {
     Ok(0)
 }
 pub fn sys_kill(pid: usize, signal: u32) -> Result<isize> {
-    println!(
-        "[KERNEL] enter sys_kill: pid:{} send to pid:{}, signal:{}",
-        current_task().unwrap().pid(),
-        pid,
-        signal
-    );
+    // println!(
+    //     "[KERNEL] enter sys_kill: pid:{} send to pid:{}, signal:{}",
+    //     current_task().unwrap().pid(),
+    //     pid,
+    //     signal
+    // );
     //TODO pid==-1
     if signal == 0 {
         return Ok(0);
     }
     let signal = 1 << signal;
     if let Some(task) = pid2task(pid) {
-        if let Some(flag) = SignalFlags::from_bits(signal) {
-            task.write().signals |= flag;
+        if let Some(flag) = SigMask::from_bits(signal) {
+            task.write().pending_signals |= flag;
             Ok(0)
         } else {
             panic!("[DEBUG] sys_kill: unsupported signal:0x{:x?}", signal);
@@ -662,5 +667,125 @@ pub fn sys_socketpair(
     // let (fd1, fd2) = socket2(); // TODO Socket
     // user_sv[0] = fd1;
     // user_sv[1] = fd2;
+    Ok(0)
+}
+
+/*********** SIGNAL ******************/
+// 用于在信号处理程序中恢复被中断的程序执行流程。
+// 当一个进程收到一个信号时，内核会为该进程保存信号处理程序的上下文（如寄存器的值、栈指针等），并将程序的执行流程转移到信号处理程序中。
+// 在信号处理程序中，如果需要返回到被中断的程序执行流程中，可以使用 sigreturn 系统调用
+pub fn sys_sigreturn() -> Result<isize> {
+    let token = current_user_token();
+    let task = current_task().unwrap();
+    let mut task_inner = task.write();
+
+    let trap_cx = task_inner.trap_context();
+
+    // 还原被保存的 signal_context
+    let sig_context_ptr = trap_cx.x[2]; // 函数调用保证了 x[2] 的值是 sig_context 的地址 (user signal handler 执行前后 x[2] 值不变)
+    let sig_context = translated_ref(token, sig_context_ptr as *mut SignalContext);
+    let sigmask = sig_context.mask.clone();
+    // 还原 signal handler 之前的 trap context
+    *trap_cx = sig_context.context.clone();
+    // 还原 signal handler 之前的 signal mask
+    task_inner.sigmask = sigmask;
+
+    Ok(0)
+}
+
+// 用于设置和修改信号
+// sig 表示要设置或修改的信号的编号，act 是一个指向 sigaction 结构体的指针，用于指定新的信号处理方式，
+// oact 是一个指向 sigaction 结构体的指针，用于保存原来的信号处理方式
+// ```c
+// asmlinkage long sys_sigaction(int sig, const struct sigaction __user *act, struct sigaction __user *oact);
+// struct sigaction {
+//     void (*sa_handler)(int);
+//     void (*sa_sigaction)(int, siginfo_t *, void *);
+//     unsigned long sa_flags;
+//     void (*sa_restorer)(void);
+//     struct old_sigaction __user *sa_restorer_old;
+//     sigset_t sa_mask;
+// };
+// ```
+pub fn sys_sigaction(
+    signum: isize,
+    act: *const SigAction,
+    oldact: *mut SigAction,
+) -> Result<isize> {
+    let token = current_user_token();
+    let task = current_task().unwrap();
+    let mut inner = task.write();
+    let signum = signum as u32;
+
+    // signum 超出范围，返回错误
+    if signum > MAX_SIGNUM || signum == Signal::SIGKILL as u32 || signum == Signal::SIGSTOP as u32 {
+        println!(
+            "[Kernel] syscall/impl/process: sys_sigaction(signum: {}, sigaction = {:#x?}, old_sigaction = {:#x?} ) = {}",
+            signum, act, oldact, -EINVAL
+        );
+        return Err(SyscallError::InvalidParam(-EINVAL, signum));
+    }
+
+    // 当 sigaction 存在时， 在 pcb 中注册给定的 signaction
+    if act as usize != 0 {
+        if oldact as usize != 0 {
+            *translated_mut(token, oldact) = inner.sigactions[signum as usize];
+        }
+        //在 pcb 中注册给定的 signaction
+        let mut sa = translated_ref(token, act).clone();
+        // kill 和 stop 信号不能被屏蔽
+        sa.sa_mask.sub(Signal::SIGKILL as u32); // sub 函数保证即使不存在 SIGKILL 也无影响
+        sa.sa_mask.sub(Signal::SIGSTOP as u32);
+        inner.sigactions[signum as usize] = sa;
+    }
+
+    // println!(
+    //     "[Kernel] syscall/impl/process: sys_sigaction(signum: {}, sigaction = {:#x?}, old_sigaction = {:#x?} ) = {}",
+    //     signum,
+    //     act, // sigact,
+    //     oldact,
+    //     0
+    // );
+    Ok(0)
+}
+
+// 用于设置和修改进程的信号屏蔽字。
+// 信号屏蔽字是一个位图，用于指定哪些信号在当前进程中被屏蔽，即在进程处理某些信号时，屏蔽掉一些信号，以避免这些信号的干扰。
+// ```c
+// int sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
+// ```
+// how 参数指定了如何修改进程的信号屏蔽字，可以取以下三个值之一：
+// - SIG_BLOCK：将 set 中指定的信号添加到进程的信号屏蔽字中。
+// - SIG_UNBLOCK：将 set 中指定的信号从进程的信号屏蔽字中移除。
+// - SIG_SETMASK：将进程的信号屏蔽字设置为 set 中指定的信号。
+pub fn sys_sigprocmask(how: usize, set: *const usize, old_set: *mut usize) -> Result<isize> {
+    let token = current_user_token();
+    let task = current_task().unwrap();
+    let mut task_inner = task.write();
+    let mut old_mask = task_inner.sigmask.clone();
+
+    if old_set as usize != 0 {
+        *translated_mut(token, old_set as *mut SigMask) = old_mask;
+    }
+
+    if set as usize != 0 {
+        // let mut new_set = translated_ref(token, set as *const SigMask).clone();
+        // new_set.sub(Signal::SIGKILL as u32); // sub 函数保证即使不存在 SIGKILL 也无影响
+        // new_set.sub(Signal::SIGSTOP as u32);
+        let new_set = translated_ref(token, set as *const SigMask).clone();
+        let how = MaskFlags::from_how(how);
+        match how {
+            MaskFlags::SIG_BLOCK => old_mask |= new_set,
+            MaskFlags::SIG_UNBLOCK => old_mask &= !new_set,
+            MaskFlags::SIG_SETMASK => old_mask = new_set,
+            _ => panic!("ENOSYS"),
+        }
+        task_inner.sigmask = old_mask;
+    }
+
+    // println!(
+    //     "[Kernel] syscall/impls/process: sys_sigprocmask(how: {}, set: {:#x?}, old_set: {:#x?}) = 0",
+    //     how, set, old_set
+    // );
     Ok(0)
 }
