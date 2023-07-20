@@ -1,6 +1,6 @@
 //! 根据 SYS_id 分发具体系统调用
 
-use crate::{console, task::current_task, timer::TimeSpec};
+use crate::{task::SigAction, timer::TimeSpec};
 
 use super::{error::SyscallError, impls::*};
 
@@ -40,8 +40,8 @@ const SYS_READV: usize = 65;
 const SYS_WRITEV: usize = 66;
 const SYS_EXIT_GROUP: usize = 94;
 const SYS_GETUID: usize = 174;
-const SYS_RT_SIGPROMASK: usize = 135;
-const SYS_RT_SIGACTION: usize = 134;
+// const SYS_RT_SIGPROMASK: usize = 135;
+// const SYS_RT_SIGACTION: usize = 134;
 const SYS_IOCTL: usize = 29;
 const SYS_FCNTL: usize = 25;
 const SYS_GETEUID: usize = 175;
@@ -53,7 +53,7 @@ const SYS_SENDFILE: usize = 71;
 const SYS_SYSLOG: usize = 116;
 const SYS_FACCESSAT: usize = 48;
 const SYS_SYSINFO: usize = 179;
-const SYS_KILL: usize = 129;
+// const SYS_KILL: usize = 129;
 const SYS_UTIMENSAT: usize = 88;
 const SYS_RENAMEAT2: usize = 276;
 const SYS_LSEEK: usize = 62;
@@ -83,13 +83,19 @@ const SYS_SCHED_SETSCHEDULER: usize = 119;
 const SYS_CLOCK_GETRES: usize = 114;
 const SYS_SOCKETPAIR: usize = 199;
 
+pub const SYS_KILL: usize = 129;
+// const SYS_TKILL: usize = 130;
+const SYS_SIGACTION: usize = 134;
+const SYS_SIGPROCMASK: usize = 135;
+pub const SYS_SIGRETURN: usize = 139;
+
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
-    println!(
-        "[DEBUG] syscall:{:?} pid:{:?}",
-        syscall_id,
-        current_task().unwrap().pid.0
-    );
+    // println!(
+    //     "[DEBUG] syscall:{:?} pid:{:?}",
+    //     syscall_id,
+    //     current_task().unwrap().pid.0
+    // );
     let ret: core::result::Result<isize, SyscallError> = match syscall_id {
         // TODO: 检查完善
         SYS_CLONE => sys_do_fork(args[0], args[1], args[2], args[3], args[4]),
@@ -159,13 +165,13 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_WRITEV => sys_writev(args[0], args[1] as *const usize, args[2]),
         SYS_EXIT_GROUP => sys_exit_group(args[0] as i32),
         SYS_GETUID => sys_getuid(),
-        SYS_RT_SIGPROMASK => sys_rt_sigprocmask(
-            args[0] as i32,
-            args[1] as *const usize,
-            args[2] as *const usize,
-            args[3],
-        ),
-        SYS_RT_SIGACTION => sys_rt_sigaction(),
+        // SYS_RT_SIGPROMASK => sys_rt_sigprocmask(
+        //     args[0] as i32,
+        //     args[1] as *const usize,
+        //     args[2] as *const usize,
+        //     args[3],
+        // ),
+        // SYS_RT_SIGACTION => sys_rt_sigaction(),
         SYS_IOCTL => sys_ioctl(args[0], args[1], args[2] as *mut u8),
         SYS_FCNTL => sys_fcntl(
             args[0] as isize,
@@ -248,12 +254,24 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[2] as isize,
             args[3] as *mut [isize; 2],
         ),
+
+        SYS_SIGACTION => sys_sigaction(
+            args[0] as isize,
+            args[1] as *const SigAction,
+            args[2] as *mut SigAction,
+        ),
+        SYS_SIGPROCMASK => sys_sigprocmask(
+            args[0] as usize,
+            args[1] as *const usize,
+            args[2] as *mut usize,
+        ),
+        SYS_SIGRETURN => sys_sigreturn(),
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
-    println!(
-        "[DEBUG] syscall end pid:{:?}",
-        current_task().unwrap().pid.0
-    );
+    // println!(
+    //     "[DEBUG] syscall end pid:{:?}",
+    //     current_task().unwrap().pid.0
+    // );
     match ret {
         Ok(success) => success,
         Err(err) => {
