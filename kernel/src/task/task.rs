@@ -1,8 +1,8 @@
 use core::fmt::Debug;
 
 use super::kernel_stack::KernelStack;
-use super::TaskContext;
-use super::{pid_alloc, PidHandle, SignalFlags};
+use super::{pid_alloc, PidHandle, SigMask, SigSet, Signal};
+use super::{SigAction, TaskContext, MAX_SIGNUM};
 use crate::consts::*;
 use crate::fs::{file::File, Fat32File, Stdin, Stdout};
 use crate::mm::kernel_vmm::acquire_kvmm;
@@ -11,7 +11,6 @@ use crate::mm::{
     translated_mut, MapPermission, MemorySet, MmapFlags, MmapManager, MmapProts, PageTableEntry,
     PhysPageNum, VirtAddr, VirtPageNum,
 };
-use crate::task::kernel_stack::kernel_stack_position;
 use crate::timer::{get_time, TimeVal};
 use crate::trap::handler::user_trap_handler;
 use crate::trap::TrapContext;
@@ -76,8 +75,12 @@ pub struct TaskControlBlockInner {
     /// 文件描述符表
     pub fd_table: Vec<Option<Arc<dyn File>>>,
 
-    pub signals: SignalFlags,
-    // pub sigactions: [SigAction; MAX_SIGNUM as usize],
+    pub sigactions: [SigAction; MAX_SIGNUM as usize],
+
+    pub pending_signals: SigSet,
+
+    pub sigmask: SigMask,
+
     pub current_path: AbsolutePath,
 
     pub utime: TimeVal,
@@ -209,7 +212,11 @@ impl TaskControlBlock {
                     // 2 -> stderr
                     Some(Arc::new(Stdout)),
                 ],
-                signals: SignalFlags::empty(),
+
+                sigactions: [SigAction::new(); MAX_SIGNUM as usize],
+                sigmask: SigMask::empty(),
+                pending_signals: SigSet::empty(),
+
                 current_path: AbsolutePath::from_str("/"),
                 mmap_manager: MmapManager::new(
                     VirtAddr::from(MMAP_BASE),
@@ -403,7 +410,7 @@ impl TaskControlBlock {
             tgid = pid_handle.0;
         }
         // 根据 PID 创建一个应用内核栈
-        let kernel_stack = KernelStack::new(&pid_handle); // use 8 pages
+        let kernel_stack = KernelStack::new(&pid_handle);
         let kernel_stack_top = kernel_stack.top();
         // copy fd table
         let mut new_fd_table = Vec::new();
@@ -432,7 +439,12 @@ impl TaskControlBlock {
                 children: Vec::new(),
                 exit_code: 0,
                 fd_table: new_fd_table,
-                signals: SignalFlags::empty(),
+
+                // [signal: msg about fork](https://man7.org/linux/man-pages/man7/signal.7.html)
+                sigactions: parent_inner.sigactions.clone(),
+                sigmask: parent_inner.sigmask.clone(),
+                pending_signals: SigSet::empty(),
+
                 current_path: parent_inner.current_path.clone(),
                 mmap_manager: mmap_area,
                 utime: TimeVal { sec: 0, usec: 0 },
@@ -475,28 +487,28 @@ impl TaskControlBlock {
         let pte = self.write().enquire_pte_via_vpn(vpn);
         if pte.is_some() && pte.unwrap().is_cow() {
             let former_ppn = pte.unwrap().ppn();
-            info!("pte1 is readabled: {:?}", pte.unwrap().readable());
-            info!("pte1 is writable: {:?}", pte.unwrap().writable());
-            info!("pte1 is executable: {:?}", pte.unwrap().executable());
+            // info!("pte1 is readabled: {:?}", pte.unwrap().readable());
+            // info!("pte1 is writable: {:?}", pte.unwrap().writable());
+            // info!("pte1 is executable: {:?}", pte.unwrap().executable());
             return self.write().cow_alloc(vpn, former_ppn);
         } else {
             if let Some(pte1) = pte {
                 if pte1.is_valid() {
-                    info!("pte1 is readabled: {:?}", pte1.readable());
-                    info!("pte1 is writable: {:?}", pte1.writable());
-                    info!("pte1 is executable: {:?}", pte1.executable());
+                    // info!("pte1 is readabled: {:?}", pte1.readable());
+                    // info!("pte1 is writable: {:?}", pte1.writable());
+                    // info!("pte1 is executable: {:?}", pte1.executable());
                     return -4;
                 }
             }
         }
 
-        println!("check_lazy: va: {:#x}", va.0);
+        // println!("check_lazy: va: {:#x}", va.0);
 
         // lazy map / lazy alloc heap
         if va >= heap_start && va <= heap_end {
             self.write().lazy_alloc_heap(va.floor())
         } else if va >= mmap_start && va < mmap_end {
-            println!("########## into lazy mmap ##########");
+            // println!("########## into lazy mmap ##########");
             self.lazy_mmap(va, is_load)
         } else {
             println!("[check_lazy] pid: {:?}", self.pid());
