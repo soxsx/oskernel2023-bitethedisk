@@ -5,16 +5,16 @@
 use log::{debug, error};
 use riscv::register::{
     scause::{self, Exception, Interrupt, Trap},
-    sepc, stval,
+    stval,
 };
 
 use crate::{
     consts::TRAMPOLINE,
     mm::VirtAddr,
-    syscall::dispatcher::syscall,
+    syscall::dispatcher::{syscall, SYS_SIGRETURN},
     task::{
-        current_add_signal, current_task, current_trap_cx, suspend_current_and_run_next,
-        SignalFlags,
+        current_add_signal, current_task, current_trap_cx, exec_signal_handlers,
+        suspend_current_and_run_next, SigMask,
     },
     timer::{get_timeval, set_next_trigger},
 };
@@ -24,7 +24,7 @@ use super::{set_kernel_trap_entry, trap_return};
 /// 用户态 trap 发生时的处理函数
 #[no_mangle]
 pub fn user_trap_handler() -> ! {
-    let pid = current_task().unwrap().pid();
+    // let pid = current_task().unwrap().pid();
     // println!("pid:{:?}",pid);
     set_kernel_trap_entry();
     // 用于描述 Trap 的原因
@@ -40,11 +40,19 @@ pub fn user_trap_handler() -> ! {
     drop(inner);
     drop(task);
 
+    let mut is_sigreturn = false;
+
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
             let mut cx = current_trap_cx();
 
             cx.sepc += 4;
+
+            let syscall_id = cx.x[17];
+            // get system call return value
+            if syscall_id == SYS_SIGRETURN {
+                is_sigreturn = true;
+            }
 
             let result = syscall(
                 cx.a7(),
@@ -60,12 +68,12 @@ pub fn user_trap_handler() -> ! {
         | Trap::Exception(Exception::StorePageFault)
         | Trap::Exception(Exception::LoadFault)
         | Trap::Exception(Exception::LoadPageFault) => {
-            println!(
-                "#########################\nuser_trap_handler: memory fault, task: {} at {:x?}, {:x?}",
-                current_task().unwrap().pid(),
-                VirtAddr::from(stval as usize),
-                current_trap_cx().sepc,
-            );
+            // println!(
+            //     "user_trap_handler: memory fault, task: {} at {:x?}, {:x?}",
+            //     current_task().unwrap().pid(),
+            //     VirtAddr::from(stval as usize),
+            //     current_trap_cx().sepc,
+            // );
 
             let is_load: bool;
             if scause.cause() == Trap::Exception(Exception::LoadFault)
@@ -79,19 +87,19 @@ pub fn user_trap_handler() -> ! {
             let va: VirtAddr = (stval as usize).into();
             if va > TRAMPOLINE.into() {
                 println!("[kernel trap] VirtAddr out of range!");
-                current_add_signal(SignalFlags::SIGSEGV);
+                current_add_signal(SigMask::SIGSEGV);
             }
             let task = current_task().unwrap();
 
-            println!("######### check_lazy ##############");
+            // println!("######### check_lazy ##############");
 
             let lazy = task.check_lazy(va, is_load);
 
-            println!("############### handler ##################\nlazy: {}", lazy);
+            // println!("############### handler ##################\nlazy: {}", lazy);
 
             if lazy != 0 {
-                println!("lazy != 0");
-                current_add_signal(SignalFlags::SIGSEGV);
+                // println!("lazy != 0");
+                current_add_signal(SigMask::SIGSEGV);
             }
         }
 
@@ -107,7 +115,7 @@ pub fn user_trap_handler() -> ! {
             );
             drop(task);
 
-            current_add_signal(SignalFlags::SIGSEGV);
+            current_add_signal(SigMask::SIGSEGV);
         }
 
         Trap::Exception(Exception::IllegalInstruction) => {
@@ -116,7 +124,7 @@ pub fn user_trap_handler() -> ! {
             let sepc = riscv::register::sepc::read();
             println!("sepc:0x{:x}", sepc);
 
-            current_add_signal(SignalFlags::SIGILL);
+            current_add_signal(SigMask::SIGILL);
         }
 
         // 时间片到了
@@ -130,6 +138,10 @@ pub fn user_trap_handler() -> ! {
             scause.cause(),
             stval
         ),
+    }
+
+    if !is_sigreturn {
+        exec_signal_handlers()
     }
 
     trap_return();
