@@ -183,7 +183,7 @@ impl PageTable {
 // 可以将一个 u8 封装成一个标志位的集合类型，支持一些常见的集合运算
 bitflags! {
     /// PTEFlags 一共 10 bits
-    #[derive(Clone, Copy)]
+    #[derive(Clone, Copy, Debug)]
     pub struct PTEFlags: u16 {
         /// 如果该位置零，则当前 [`PTE`] 的其他位将失去其应有的意义，具体意义由软件决定
         ///

@@ -37,6 +37,11 @@ impl Drop for FrameTracker {
         dealloc_frame(self.ppn);
     }
 }
+impl Clone for FrameTracker {
+    fn clone(&self) -> Self {
+        FrameTracker::from_ppn(self.ppn)
+    }
+}
 
 /// 物理页帧管理器
 trait FrameAllocator {

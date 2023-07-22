@@ -1,13 +1,15 @@
 //! 内存管理系统调用
 
 use crate::mm::shared_memory::{attach_shm, create_shm, detach_shm};
+use crate::mm::VirtPageNum;
 use crate::{
+    consts::PAGE_SIZE,
     fs::open_flags::CreateMode,
     mm::{
-        shared_memory::{remove_shm, shm_get_nattch},
-        MmapFlags, MmapProts,
+        shared_memory::remove_shm, MapPermission, MmapFlags, MmapProts, PTEFlags, PageTable,
+        VPNRange, VirtAddr,
     },
-    task::current_task,
+    task::{current_task, current_user_token},
 };
 use nix::ipc::{ShmFlags, IPC_PRIVATE, IPC_RMID};
 
@@ -81,10 +83,19 @@ pub fn sys_mmap(
     fd: isize,
     offset: usize,
 ) -> Result<isize> {
-    // println!("[DEBUG] addr:{:?},length:{:?},prot:{:?},flags:{:?},fd:{:?},offset:{:?}",addr,length,prot,flags,fd,offset);
+    // println!(
+    //     "[DEBUG] addr:{:x?},length:{:?},prot:{:?},flags:{:?},fd:{:?},offset:{:?}",
+    //     addr, length, prot, flags, fd, offset
+    // );
     if length == 0 {
         return Err(Errno::EINVAL);
     }
+    // let padding=PAGE_SIZE-(length-1)%PAGE_SIZE-1;
+    let mut padding = PAGE_SIZE - length % PAGE_SIZE;
+    if padding == PAGE_SIZE {
+        padding = 0;
+    }
+    let length = length + padding;
     let task = current_task().unwrap();
     let inner = task.read();
     let prot = MmapProts::from_bits(prot).expect("unsupported mmap prot");

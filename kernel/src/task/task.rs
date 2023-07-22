@@ -70,8 +70,6 @@ pub struct TaskControlBlockInner {
     /// 应用地址空间
     pub memory_set: MemorySet,
 
-    pub mmap_manager: MmapManager,
-
     /// 文件描述符表
     pub fd_table: Vec<Option<Arc<dyn File>>>,
 
@@ -210,10 +208,6 @@ impl TaskControlBlock {
                 ],
                 signals: SignalFlags::empty(),
                 current_path: AbsolutePath::from_str("/"),
-                mmap_manager: MmapManager::new(
-                    VirtAddr::from(MMAP_BASE),
-                    VirtAddr::from(MMAP_BASE),
-                ),
                 utime: TimeVal { sec: 0, usec: 0 },
                 stime: TimeVal { sec: 0, usec: 0 },
                 last_enter_umode_time: TimeVal { sec: 0, usec: 0 },
@@ -252,9 +246,10 @@ impl TaskControlBlock {
             total_len += args[i].len() + 1;
         }
 
+        let mut user_sp = user_sp;
         // 先进行进行对齐
-        let align = core::mem::size_of::<usize>() / core::mem::size_of::<u8>(); // 8
-        let mut user_sp = user_sp - (align - total_len % align) * core::mem::size_of::<u8>();
+        // let align = core::mem::size_of::<usize>() / core::mem::size_of::<u8>(); // 8
+        // let mut user_sp = user_sp - (align - total_len % align) * core::mem::size_of::<u8>();
         // user_sp -= core::mem::size_of::<usize>();
         // *translated_mut(token, user_sp as *mut usize) = 123;
         // user_sp -= core::mem::size_of::<usize>();
@@ -379,7 +374,6 @@ impl TaskControlBlock {
     pub fn fork(self: &Arc<TaskControlBlock>, is_create_thread: bool) -> Arc<TaskControlBlock> {
         let mut parent_inner = self.write();
         // copy mmap_area
-        let mmap_area = parent_inner.mmap_manager.clone();
         // mmap_area.debug_show();
         // 拷贝用户地址空间
         let memory_set = MemorySet::from_copy_on_write(&mut parent_inner.memory_set); // use 4 pages
@@ -424,7 +418,6 @@ impl TaskControlBlock {
                 fd_table: new_fd_table,
                 signals: SignalFlags::empty(),
                 current_path: parent_inner.current_path.clone(),
-                mmap_manager: mmap_area,
                 utime: TimeVal { sec: 0, usec: 0 },
                 stime: TimeVal { sec: 0, usec: 0 },
                 last_enter_umode_time: TimeVal { sec: 0, usec: 0 },
@@ -451,12 +444,11 @@ impl TaskControlBlock {
     ///     - `-1`：加载缺页失败
     pub fn check_lazy(&self, va: VirtAddr, is_load: bool) -> isize {
         let inner = self.write();
-        let mmap_start = inner.mmap_manager.mmap_start;
-        let mmap_end = inner.mmap_manager.mmap_top;
+        let mmap_start = inner.memory_set.mmap_manager.mmap_start;
+        let mmap_end = inner.memory_set.mmap_manager.mmap_top;
         let heap_start = VirtAddr::from(inner.memory_set.brk_start);
         let heap_end = VirtAddr::from(inner.memory_set.brk_start + USER_HEAP_SIZE);
         drop(inner);
-
         let vpn: VirtPageNum = va.floor();
         let pte = self.write().enquire_pte_via_vpn(vpn);
         if pte.is_some() && pte.unwrap().is_cow() {
@@ -472,7 +464,8 @@ impl TaskControlBlock {
         if va >= heap_start && va <= heap_end {
             self.write().lazy_alloc_heap(va.floor())
         } else if va >= mmap_start && va < mmap_end {
-            self.lazy_mmap(va, is_load)
+            self.write().memory_set.lazy_mmap(vpn);
+            0
         } else {
             warn!("[check_lazy] {:x?}", va);
             warn!("[check_lazy] mmap_start: 0x{:x}", mmap_start.0);
@@ -481,26 +474,6 @@ impl TaskControlBlock {
             warn!("[check_lazy] heap_end: 0x{:x}", heap_end.0);
             -2
         }
-    }
-
-    /// 用时加载mmap缺页
-    ///
-    /// - 参数：
-    ///     - `stval`：缺页中的虚拟地址
-    ///     - `is_load`：加载(1)/写入(0)
-    /// - 返回值：
-    ///     - `0`
-    ///     - `-1`
-    pub fn lazy_mmap(&self, va: VirtAddr, is_load: bool) -> isize {
-        let mut inner = self.write();
-        let fd_table = inner.fd_table.clone();
-        let token = inner.get_user_token();
-        let lazy_result = inner.memory_set.lazy_mmap(va.into());
-
-        if lazy_result == 0 && is_load {
-            inner.mmap_manager.lazy_map_page(va, fd_table, token);
-        }
-        return lazy_result;
     }
 
     // 在进程虚拟地址空间中分配创建一片虚拟内存地址映射
@@ -519,49 +492,39 @@ impl TaskControlBlock {
 
         let mut inner = self.write();
         let fd_table = inner.fd_table.clone();
-        let token = inner.get_user_token();
-
         let mut start_va = VirtAddr::from(0);
-        let mut end_va = VirtAddr::from(0);
         // "prot<<1" 右移一位以符合 MapPermission 的权限定义
         // "1<<4" 增加 MapPermission::U 权限
-        let map_flags = (((prot.bits() & 0b111) << 1) + (1 << 4)) as u16;
         if addr == 0 {
-            start_va = inner.mmap_manager.get_mmap_top();
-            end_va = VirtAddr::from(start_va.0 + length);
+            start_va = inner.memory_set.mmap_manager.get_mmap_top();
         }
-        inner.memory_set.insert_mmap_area(
-            start_va,
-            end_va,
-            MapPermission::from_bits(map_flags).unwrap(),
-        );
-        inner.mmap_manager.push(
-            start_va.0,
-            length,
-            prot.bits(),
-            flags.bits(),
-            fd,
-            offset,
-            fd_table,
-            token,
-        );
+        // println!("mmap start va{:x?}",start_va);
+
+        if flags.contains(MmapFlags::MAP_FIXED) {
+            start_va = VirtAddr::from(addr);
+            inner.memory_set.mmap_manager.remove(start_va, length);
+        }
+        let file = if flags.contains(MmapFlags::MAP_ANONYMOUS) {
+            None
+        } else {
+            fd_table[fd as usize].clone()
+        };
+        inner
+            .memory_set
+            .mmap_manager
+            .push(start_va, length, prot, flags, offset, file);
         start_va.0
     }
 
     pub fn munmap(&self, addr: usize, length: usize) -> isize {
         let mut inner = self.write();
 
-        let mmap_start_va = VirtAddr(addr);
-        let mmap_end_va = VirtAddr(addr + length);
-        let mmap_start_vpn: VirtPageNum = mmap_start_va.floor();
-        let mmap_end_vpn: VirtPageNum = mmap_end_va.ceil();
+        let start_va = VirtAddr(addr);
 
         // 可能会有 mmap 后没有访问直接 munmap 的情况，需要检查是否访问过 mmap 的区域(即
         // 是否引发了 lazy_mmap)，防止 unmap 页表中不存在的页表项引发 panic
-
-        inner.memory_set.remove_area(mmap_start_va, mmap_end_va);
-
-        inner.mmap_manager.remove(addr, length)
+        inner.memory_set.mmap_manager.remove(start_va, length);
+        0
     }
 
     pub fn pid(&self) -> usize {
