@@ -53,4 +53,4 @@ clean:
 	@cd testsuits/ && make clean
 	@echo 'All cleaned, if you want to run the kernel, do make sdcard first :-)'
 
-.PHONY: all clean sdcard
+.PHONY: all clean sdcard init debug-server debug submit

@@ -1,15 +1,19 @@
-# 这里需要开启相应拓展以使用 mul
+# Attributes are used to record information about an object file/binary that a
+# linker or runtime loader needs to check compatibility.
 #
 # Reference:
 # <https://github.com/riscv-non-isa/riscv-asm-manual/blob/master/riscv-asm.md#-attribute>
 .attribute arch, "rv64gc"
+
+.equ NCPU, 2            # number of CPU
+.equ KSTACK_SIZ, 0x4000 # size of stack size per hart
 
 .section .text.entry
 .globl _entry
 _entry:
         mv tp, a0
         la sp, stack0
-        li a0, 0x4000  # 16KiB
+        li a0, KSTACK_SIZ  # 16KiB
 
         addi a1, tp, 1
         mul a0, a0, a1
@@ -22,4 +26,4 @@ spin:
 
 .section .bss.stack
 stack0:                 
-        .space 0x4000 * 2  # -smp 2
+        .space KSTACK_SIZ * NCPU  # -smp 2

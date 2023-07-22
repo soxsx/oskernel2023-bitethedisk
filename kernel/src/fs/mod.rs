@@ -14,10 +14,7 @@ mod stdio;
 use alloc::string::ToString;
 pub use path::*;
 
-use crate::{
-    fs::{fat32::list_apps, open_flags::CreateMode},
-    timer::Timespec,
-};
+use crate::fs::{fat32::list_apps, open_flags::CreateMode};
 
 pub use crate::fs::fat32::{chdir, open, Fat32File};
 pub use dirent::Dirent;

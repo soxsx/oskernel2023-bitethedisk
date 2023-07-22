@@ -1,11 +1,9 @@
-use super::address::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
-use super::page_table::PTEFlags;
-use super::{page_table, PageTable};
+use super::address::PhysAddr;
 use crate::fs::open_flags::CreateMode;
 use crate::task::current_task;
 use crate::timer::get_time;
-use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
-use nix::ipc::ShmFlags;
+use alloc::{collections::BTreeMap, vec::Vec};
+
 use spin::Mutex;
 lazy_static! {
     /// 物理页帧管理器实例

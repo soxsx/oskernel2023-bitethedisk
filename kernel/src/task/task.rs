@@ -1,24 +1,25 @@
 use core::fmt::Debug;
 
 use super::kernel_stack::KernelStack;
-use super::{current_task, TaskContext};
+use super::TaskContext;
 use super::{pid_alloc, PidHandle, SignalFlags};
 use crate::consts::*;
 use crate::fs::{file::File, Fat32File, Stdin, Stdout};
 use crate::mm::kernel_vmm::acquire_kvmm;
-use crate::mm::memory_set::{AuxEntry, LoadedELF, AT_NULL, AT_RANDOM, MMAP_BASE};
+use crate::mm::memory_set::{AuxEntry, LoadedELF, MMAP_BASE};
 use crate::mm::{
     translated_mut, MapPermission, MemorySet, MmapFlags, MmapManager, MmapProts, PageTableEntry,
     PhysPageNum, VirtAddr, VirtPageNum,
 };
-use crate::timer::TimeVal;
 use crate::trap::handler::user_trap_handler;
 use crate::trap::TrapContext;
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
-use spin::{MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use nix::TimeVal;
+use riscv::register::scause::Scause;
+use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::fs::AbsolutePath;
 
@@ -85,6 +86,8 @@ pub struct TaskControlBlockInner {
     pub last_enter_umode_time: TimeVal,
 
     pub last_enter_smode_time: TimeVal,
+
+    pub trap_cause: Option<Scause>,
 }
 
 impl TaskControlBlockInner {
@@ -215,6 +218,7 @@ impl TaskControlBlock {
                 stime: TimeVal { sec: 0, usec: 0 },
                 last_enter_umode_time: TimeVal { sec: 0, usec: 0 },
                 last_enter_smode_time: TimeVal { sec: 0, usec: 0 },
+                trap_cause: None,
             }),
         };
         // 初始化位于该进程应用地址空间中的 Trap 上下文，使得第一次进入用户态的时候时候能正
@@ -425,6 +429,7 @@ impl TaskControlBlock {
                 stime: TimeVal { sec: 0, usec: 0 },
                 last_enter_umode_time: TimeVal { sec: 0, usec: 0 },
                 last_enter_smode_time: TimeVal { sec: 0, usec: 0 },
+                trap_cause: None,
             }),
         });
         // 把新生成的进程加入到子进程向量中

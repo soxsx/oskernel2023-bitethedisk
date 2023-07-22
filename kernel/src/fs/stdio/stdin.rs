@@ -51,7 +51,7 @@ impl File for Stdin {
     fn file_size(&self) -> usize {
         usize::MAX
     }
-    fn truncate(&self, new_length: usize) {
+    fn truncate(&self, _new_length: usize) {
         warn!("Fake truncate for Stdin");
     }
 }

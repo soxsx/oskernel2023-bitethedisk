@@ -2,8 +2,9 @@ use core::fmt::Debug;
 use core::fmt::{self, Formatter};
 
 use alloc::vec::Vec;
+use nix::Timespec;
 
-use crate::{mm::UserBuffer, timer::Timespec};
+use crate::mm::UserBuffer;
 
 use super::{AbsolutePath, Dirent, Kstat, OpenFlags};
 
@@ -16,10 +17,10 @@ pub trait File: Send + Sync {
     /// 将缓冲区中的数据写入文件，最多将缓冲区中的数据全部写入，并返回直接写入的字节数
     fn write(&self, buf: UserBuffer) -> usize;
 
-    fn pread(&self, buf: UserBuffer, offset: usize) -> usize {
+    fn pread(&self, _buf: UserBuffer, _offset: usize) -> usize {
         panic!("{} not implement read_to_vec", self.name());
     }
-    fn pwrite(&self, buf: UserBuffer, offset: usize) -> usize {
+    fn pwrite(&self, _buf: UserBuffer, _offset: usize) -> usize {
         panic!("{} not implement read_to_vec", self.name());
     }
 
@@ -87,7 +88,7 @@ pub trait File: Send + Sync {
     fn path(&self) -> AbsolutePath {
         unimplemented!("not implemente yet");
     }
-    fn truncate(&self, new_length: usize) {
+    fn truncate(&self, _new_length: usize) {
         unimplemented!("not implemente yet");
     }
 }

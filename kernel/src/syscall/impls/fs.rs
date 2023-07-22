@@ -10,13 +10,14 @@ use crate::mm::{
 use crate::return_errno;
 use crate::task::suspend_current_and_run_next;
 use crate::task::{current_task, current_user_token, FD_LIMIT};
-use crate::timer::{get_timeval, TimeVal, Timespec};
+use crate::timer::get_timeval;
 
 use alloc::borrow::ToOwned;
 use alloc::string::ToString;
 use alloc::{sync::Arc, vec::Vec};
 use core::mem::size_of;
 use fat32::sync_all;
+use nix::{TimeVal, Timespec};
 use spin::RwLock;
 
 use super::*;
@@ -879,7 +880,7 @@ pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize> 
         let file_size = file.file_size();
         // println!("[DEBUG] sys_readv file_size:{:?}",file_size);
         if file_size == 0 {
-            warn!("[WARNING] sys_readv: file_size is zero!");
+            warn!("sys_readv: file_size is zero!");
         }
         let mut addr = iovp_buf_p as *const _ as usize;
         let mut total_read_len = 0;
@@ -1096,12 +1097,9 @@ pub fn sys_newfstatat(
         if let Some(inode) = open(open_path.clone(), OpenFlags::O_RDONLY, CreateMode::empty()) {
             inode.fstat(&mut kstat);
             userbuf.write(kstat.as_bytes());
-            // panic!();
             Ok(0)
         } else {
-            // TAG return right errno
-            return_errno!(Errno::UNCLEAR);
-            // -ENOENT
+            return_errno!(Errno::ENOENT);
         }
     } else {
         let dirfd = dirfd as usize;

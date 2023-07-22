@@ -1,5 +1,4 @@
 pub mod context; // 任务上下文模块
-mod info; // 系统信息模块
 mod initproc;
 mod kernel_stack;
 mod manager; // 进程管理器
@@ -15,8 +14,7 @@ use manager::remove_from_pid2task;
 pub use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
-pub use info::{CloneFlags, RUsage, Utsname, UTSNAME};
-pub use manager::{add_task, pid2task};
+pub use manager::{add_task, check_hanging, pid2task};
 pub use pid::{pid_alloc, PidHandle};
 pub use processor::{
     current_task, current_trap_cx, current_user_token, schedule::*, take_current_task,

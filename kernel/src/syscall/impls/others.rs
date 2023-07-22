@@ -1,9 +1,11 @@
+use nix::info::Utsname;
+use nix::{tms, TimeVal};
+
 use crate::task::processor::hanging_current_task;
-use crate::timer::TimeVal;
 use crate::{
     mm::{translated_bytes_buffer, translated_ref, UserBuffer},
     task::{current_user_token, suspend_current_and_run_next},
-    timer::{get_time_ms, get_timeval, tms},
+    timer::{get_time_ms, get_timeval},
 };
 
 use super::*;
@@ -61,18 +63,17 @@ pub fn sys_times(buf: *const u8) -> Result<isize> {
 /// ```
 pub fn sys_uname(buf: *const u8) -> Result<isize> {
     let token = current_user_token();
-    let uname = UTSNAME.lock();
     let mut userbuf = UserBuffer::wrap(translated_bytes_buffer(
         token,
         buf,
         core::mem::size_of::<Utsname>(),
     ));
-    userbuf.write(uname.as_bytes());
+    userbuf.write(Utsname::get().as_bytes());
     Ok(0)
 }
 
 /// 应用主动交出 CPU 所有权进入 Ready 状态并切换到其他应用
-/// 
+///
 /// - 返回值：总是返回 0。
 /// - syscall ID：124
 pub fn sys_sched_yield() -> Result<isize> {

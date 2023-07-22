@@ -2,34 +2,55 @@ use crate::timer::get_time_ms;
 use sync_cell::SyncRefCell;
 
 use super::TaskControlBlock;
-use alloc::collections::{BTreeMap, VecDeque};
+use alloc::collections::{BTreeMap, BinaryHeap, VecDeque};
 use alloc::sync::Arc;
 use spin::Mutex;
 
 /// FIFO 任务管理器
 pub struct TaskManager {
     ready_queue: VecDeque<Arc<TaskControlBlock>>,
-    hq: VecDeque<HangingTask>,
+    hq: BinaryHeap<HangingTask>,
 }
 
 pub struct HangingTask {
     /// ms
-    sleep_time: usize,
-    duration: usize,
+    wake_up_time: usize,
     inner: Arc<TaskControlBlock>,
+}
+impl PartialEq for HangingTask {
+    fn eq(&self, other: &Self) -> bool {
+        self.wake_up_time == other.wake_up_time
+    }
+}
+impl Eq for HangingTask {}
+
+impl PartialOrd for HangingTask {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        if self.wake_up_time > other.wake_up_time {
+            Some(core::cmp::Ordering::Less)
+        } else if self.wake_up_time < other.wake_up_time {
+            Some(core::cmp::Ordering::Greater)
+        } else {
+            Some(core::cmp::Ordering::Equal)
+        }
+    }
+}
+impl Ord for HangingTask {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
+    }
 }
 
 impl HangingTask {
-    pub fn new(sleep_time: usize, duration: usize, task: Arc<TaskControlBlock>) -> Self {
+    pub const fn new(sleep_time: usize, duration: usize, task: Arc<TaskControlBlock>) -> Self {
         Self {
-            sleep_time,
-            duration,
+            wake_up_time: sleep_time + duration,
             inner: task,
         }
     }
 
-    pub const fn limit_time(&self) -> usize {
-        self.sleep_time + self.duration
+    pub const fn wake_up_time(&self) -> usize {
+        self.wake_up_time
     }
 }
 
@@ -37,38 +58,35 @@ impl TaskManager {
     pub fn new() -> Self {
         Self {
             ready_queue: VecDeque::new(),
-            hq: VecDeque::new(),
+            hq: BinaryHeap::new(),
         }
     }
 
     /// 将一个任务加入队尾
     pub fn add(&mut self, task: Arc<TaskControlBlock>) {
-        // println!("[DEBUG] add task {:?}",task.pid.0);
         self.ready_queue.push_back(task);
     }
 
     /// 从队头中取出一个任务
     pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
-        // println!("[DEBUG] fetch task {:?}",self.ready_queue.front().unwrap().pid.0);
         self.ready_queue.pop_front()
     }
 
     pub fn hang(&mut self, sleep_time: usize, duration: usize, task: Arc<TaskControlBlock>) {
-        self.hq
-            .push_back(HangingTask::new(sleep_time, duration, task));
+        self.hq.push(HangingTask::new(sleep_time, duration, task));
     }
 
     fn check_sleep(&self, hanging_task: &HangingTask) -> bool {
-        let limit = hanging_task.limit_time();
+        let limit = hanging_task.wake_up_time();
         let current_time = get_time_ms();
         current_time >= limit
     }
 
     pub fn check_hanging(&mut self) -> Option<Arc<TaskControlBlock>> {
-        if self.hq.is_empty() || !self.check_sleep(self.hq.front().unwrap()) {
+        if self.hq.is_empty() || !self.check_sleep(self.hq.peek().unwrap()) {
             None
         } else {
-            Some(self.hq.pop_front().unwrap().inner)
+            Some(self.hq.pop().unwrap().inner)
         }
     }
 }

@@ -7,12 +7,12 @@ use crate::mm::{
 };
 use crate::task::{
     add_task, current_task, current_user_token, exit_current_and_run_next, pid2task,
-    suspend_current_and_run_next, RUsage, SignalFlags,
+    suspend_current_and_run_next, SignalFlags,
 };
-pub use crate::task::{CloneFlags, Utsname, UTSNAME};
 use crate::timer::{get_time, get_timeval};
 
 use alloc::{string::String, string::ToString, sync::Arc, vec::Vec};
+use nix::info::RUsage;
 
 use super::*;
 
@@ -46,7 +46,7 @@ pub fn sys_do_fork(
     // let tid = new_task.getpid();
     // println!("[DEBUG] clone flags:{:?}", flags);
     let flags = 17;
-    let _flags = CloneFlags::from_bits(flags).unwrap();
+    // let _flags = CloneFlags::from_bits(flags).unwrap();
 
     if stack_ptr != 0 {
         let trap_cx = new_task.write().trap_context();

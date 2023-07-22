@@ -4,13 +4,12 @@
 
 use core::cell::RefMut;
 
-use crate::task::{
-    manager::{check_hanging, fetch_task},
-    switch::__switch,
-    task::TaskStatus,
-    TaskContext, TaskControlBlock,
-};
 use alloc::sync::Arc;
+
+use crate::task::{
+    check_hanging, manager::fetch_task, switch::__switch, task::TaskStatus, TaskContext,
+    TaskControlBlock,
+};
 
 use super::{acquire_processor, Processor};
 
@@ -18,22 +17,25 @@ use super::{acquire_processor, Processor};
 /// 功能是循环调用 fetch_task 直到顺利从任务管理器中取出一个任务，随后便准备通过任务切换的方式来执行
 pub fn run_tasks() {
     loop {
-        let mut processor = acquire_processor();
+        let processor = acquire_processor();
 
-        if let Some(task) = fetch_task() {
-            let idle_task_cx_ptr = processor.idle_task_cx_ptr();
-            // access coming task TCB exclusively
-            let mut task_inner = task.write();
-            let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
-            task_inner.task_status = TaskStatus::Running;
-            drop(task_inner);
-            // release coming task TCB manually
-            *processor.current_mut() = Some(task);
-            // release processor manually
-            drop(processor);
-            unsafe { __switch(idle_task_cx_ptr, next_task_cx_ptr) }
+        if let Some(hanging_task) = check_hanging() {
+            run_task(hanging_task, processor);
+        } else if let Some(task) = fetch_task() {
+            run_task(task, processor);
         }
     }
+}
+
+fn run_task(task: Arc<TaskControlBlock>, mut processor: RefMut<'_, Processor>) {
+    let idle_task_cx_ptr = processor.idle_task_cx_ptr();
+    let mut task_inner = task.write();
+    let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
+    task_inner.task_status = TaskStatus::Running;
+    drop(task_inner);
+    *processor.current_mut() = Some(task);
+    drop(processor);
+    unsafe { __switch(idle_task_cx_ptr, next_task_cx_ptr) }
 }
 
 #[cfg(feature = "multi_harts")]

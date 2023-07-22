@@ -2,7 +2,7 @@ use crate::fs::{
     file::File,
     open_flags::CreateMode,
     stat::{S_IFCHR, S_IFDIR, S_IFREG},
-    AbsolutePath, Dirent, Kstat, OpenFlags, Timespec,
+    AbsolutePath, Dirent, Kstat, OpenFlags,
 };
 use crate::{drivers::BLOCK_DEVICE, mm::UserBuffer};
 use alloc::{
@@ -11,6 +11,7 @@ use alloc::{
     vec::Vec,
 };
 use fat32::{root, Dir as FatDir, FileSystem, VirFile, VirFileType, ATTR_DIRECTORY};
+use nix::Timespec;
 use spin::Mutex;
 
 /// 表示进程中一个被打开的常规文件或目录
@@ -344,7 +345,7 @@ impl File for Fat32File {
         total_read_size
     }
     fn pread(&self, mut buf: UserBuffer, offset: usize) -> usize {
-        let mut inner = self.inner.lock();
+        let inner = self.inner.lock();
         let mut index = inner.offset;
         let file_size = inner.inode.file_size();
 
@@ -417,7 +418,7 @@ impl File for Fat32File {
         total_write_size
     }
     fn pwrite(&self, buf: UserBuffer, offset: usize) -> usize {
-        let mut inner = self.inner.lock();
+        let inner = self.inner.lock();
         let mut index = offset;
         let file_size = inner.inode.file_size();
 
