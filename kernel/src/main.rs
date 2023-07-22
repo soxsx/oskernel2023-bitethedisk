@@ -52,6 +52,7 @@ pub fn meow() -> ! {
         mm::init();
         trap::init();
         trap::enable_stimer_interrupt();
+        timer::set_next_trigger();
         fs::init();
         task::add_initproc();
         task::run_tasks();
@@ -112,6 +113,7 @@ pub mod lang_items {
 
     use buddy_system_allocator::LockedHeap;
 
+    use crate::consts::KERNEL_HEAP_SIZE;
     use crate::sbi::shutdown;
     use core::panic::PanicInfo;
 
@@ -145,8 +147,6 @@ pub mod lang_items {
         panic!("Heap allocation error, layout = {:#x?}", layout);
     }
 
-    const KERNEL_HEAP_SIZE: usize = 4096 * 256; // 1M
-
     // 给全局分配器用于分配的一块内存，位于内核的 .bss 段中
     static mut KERNEL_HEAP: [u8; KERNEL_HEAP_SIZE] = [0; KERNEL_HEAP_SIZE];
 
@@ -156,5 +156,10 @@ pub mod lang_items {
                 .lock()
                 .init(KERNEL_HEAP.as_ptr() as usize, KERNEL_HEAP_SIZE);
         }
+    }
+    pub fn heap_usage() {
+        let usage_actual = HEAP_ALLOCATOR.lock().stats_alloc_actual();
+        let usage_all = HEAP_ALLOCATOR.lock().stats_total_bytes();
+        println!("[kernel] HEAP USAGE:{:?} {:?}", usage_actual, usage_all);
     }
 }

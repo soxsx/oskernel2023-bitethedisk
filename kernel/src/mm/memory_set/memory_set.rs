@@ -12,10 +12,15 @@ use crate::mm::{
     alloc_frame, FrameTracker, PageTable, PageTableEntry, PhysAddr, PhysPageNum, VirtAddr,
     VirtPageNum,
 };
+use alloc::collections::BTreeMap;
 use alloc::{sync::Arc, vec::Vec};
 
+use crate::mm::shared_memory::{
+    shm_get_address_and_size, shm_get_nattch, SharedMemoryArea, SharedMemoryTracker,
+};
 pub const MMAP_BASE: usize = 0x60000000;
 pub const MMAP_END: usize = 0x68000000; // mmap 区大小为 128 MiB
+pub const SHM_BASE: usize = 0x70000000;
 
 #[derive(Clone, Copy, Debug)]
 pub struct AuxEntry(pub usize, pub usize);
@@ -96,6 +101,11 @@ pub struct MemorySet {
 
     heap_areas: VmArea,
 
+    shm_areas: Vec<VmArea>,
+
+    shm_trackers: BTreeMap<VirtAddr, SharedMemoryTracker>,
+    pub shm_top: usize,
+
     pub brk_start: usize,
     pub brk: usize,
 }
@@ -115,6 +125,9 @@ impl MemorySet {
                 0,
             ),
             mmap_areas: Vec::new(),
+            shm_areas: Vec::new(),
+            shm_trackers: BTreeMap::new(),
+            shm_top: SHM_BASE,
             brk_start: 0,
             brk: 0,
         }
@@ -164,6 +177,7 @@ impl MemorySet {
     }
 
     pub fn remove_area(&mut self, start_va: VirtAddr, end_va: VirtAddr) {
+        // println!("[DEBUG] remove area 0x{:x?},0x{:0x?}", start_va, end_va);
         let mut op = |areas: &mut Vec<VmArea>| {
             let mut len = areas.len();
             let mut idx = 0;
@@ -216,7 +230,6 @@ impl MemorySet {
             }
         };
 
-        op(&mut self.vm_areas);
         op(&mut self.mmap_areas);
     }
 
@@ -358,6 +371,9 @@ impl MemorySet {
         // 遍历程序段进行加载
         for i in 0..ph_count as u16 {
             let ph = elf.program_header(i).unwrap();
+            // let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
+            // let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
+            // println!("[DEBUG] start:0x{:x?},end:0x{:x?},type:{:?}",start_va,end_va,ph.get_type().unwrap());
             match ph.get_type().unwrap() {
                 xmas_elf::program::Type::Load => {
                     let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
@@ -376,6 +392,7 @@ impl MemorySet {
                     if ph_flags.is_execute() {
                         map_perm |= MapPermission::X;
                     }
+                    // println!("[DEBUG] rwx:{:?},{:?},{:?}",ph_flags.is_read(),ph_flags.is_write(),ph_flags.is_execute());
                     let map_area = VmArea::new(
                         start_va,
                         end_va,
@@ -407,7 +424,6 @@ impl MemorySet {
         let user_stack_bottom = user_stack_top - USER_STACK_SIZE;
 
         // auxs.push(AuxEntry(AT_BASE, 0));
-        // auxs.push(AuxEntry(AT_BASE, 0));
 
         let ph_head_addr = head_va.unwrap() + elf.header.pt2.ph_offset() as usize;
         // let ph_head_addr = elf.header.pt2.ph_offset() as usize;
@@ -415,7 +431,6 @@ impl MemorySet {
         /* get auxv vector */
         auxs.push(AuxEntry(0x21, 0 as usize)); //no vdso
         auxs.push(AuxEntry(0x28, 0 as usize)); //AT_L1I_CACHESIZE:     0
-        auxs.push(AuxEntry(AT_PHDR, (ph_head_addr as usize)));
         auxs.push(AuxEntry(0x29, 0 as usize)); //AT_L1I_CACHEGEOMETRY: 0x0
         auxs.push(AuxEntry(0x2a, 0 as usize)); //AT_L1D_CACHESIZE:     0
         auxs.push(AuxEntry(0x2b, 0 as usize)); //AT_L1D_CACHEGEOMETRY: 0x0
@@ -423,9 +438,12 @@ impl MemorySet {
         auxs.push(AuxEntry(0x2d, 0 as usize)); //AT_L2_CACHEGEOMETRY:  0x0
         auxs.push(AuxEntry(AT_HWCAP, 0 as usize));
         auxs.push(AuxEntry(AT_PAGESZ, PAGE_SIZE as usize));
-        // auxs.push(AuxEntry( AT_CLKTCK, CLOCK_FREQ as usize));
+        auxs.push(AuxEntry(AT_CLKTCK, CLOCK_FREQ as usize));
+        auxs.push(AuxEntry(AT_PHDR, (ph_head_addr as usize)));
         auxs.push(AuxEntry(AT_PHENT, elf.header.pt2.ph_entry_size() as usize)); // ELF64 header 64bytes
         auxs.push(AuxEntry(AT_PHNUM, ph_count as usize));
+        // Interp
+        // auxs.push(AuxEntry( AT_BASE, 0));
         auxs.push(AuxEntry(AT_FLAGS, 0 as usize));
         auxs.push(AuxEntry(AT_ENTRY, elf.header.pt2.entry_point() as usize));
         auxs.push(AuxEntry(AT_UID, 0 as usize));
@@ -433,6 +451,14 @@ impl MemorySet {
         auxs.push(AuxEntry(AT_GID, 0 as usize));
         auxs.push(AuxEntry(AT_EGID, 0 as usize));
         auxs.push(AuxEntry(AT_SECURE, 0 as usize));
+        // do not add this line, program will run additional check?
+        auxs.push(AuxEntry(
+            AT_RANDOM,
+            user_stack_top - 2 * core::mem::size_of::<usize>(),
+        ));
+        // auxs.push(AuxEntry(AT_EXECFN, 32));
+        // do not add this line, too wide
+        // auxs.push(AuxEntry(AT_NULL, 0));
 
         // 分配用户栈
         memory_set.insert(
@@ -450,6 +476,7 @@ impl MemorySet {
         // 分配用户堆，懒加载
         let user_heap_bottom: usize = usize::from(brk_start_va) + PAGE_SIZE;
         let user_heap_top: usize = user_heap_bottom + USER_HEAP_SIZE;
+        // println!("[DEBUG] user heap:0x{:x?},0x{:x?}",user_heap_bottom,user_heap_top);
         memory_set.heap_areas = VmArea::new(
             user_heap_bottom.into(),
             user_heap_top.into(),
@@ -492,8 +519,8 @@ impl MemorySet {
                         .as_bytes_array()
                         .copy_from_slice(src_ppn.as_bytes_array());
                 }
+		break;
             }
-            break;
         }
         // This part is for copy on write
         let parent_areas = &user_space.vm_areas;
@@ -576,6 +603,31 @@ impl MemorySet {
         }
         new_memory_set.brk_start = user_space.brk_start;
         new_memory_set.brk = user_space.brk;
+
+        for shm_area in user_space.shm_areas.iter() {
+            let mut new_shm_area = VmArea::from_another(shm_area);
+
+            for vpn in shm_area.vpn_range.into_iter() {
+                // change the map permission of both pagetable
+                // get the former flags and ppn
+
+                // 只对已经map过的进行cow
+                if let Some(pte) = parent_page_table.translate(vpn) {
+                    let pte_flags = pte.flags();
+                    let src_ppn = pte.ppn();
+                    new_memory_set.page_table.map(vpn, src_ppn, pte_flags);
+                }
+            }
+            new_memory_set.shm_areas.push(new_shm_area);
+        }
+        new_memory_set.shm_top = user_space.shm_top;
+        for (va, shm_tracker) in user_space.shm_trackers.iter() {
+            let new_shm_tracker = SharedMemoryTracker::new(shm_tracker.key);
+            new_memory_set
+                .shm_trackers
+                .insert(va.clone(), new_shm_tracker);
+        }
+
         new_memory_set
     }
 
@@ -709,6 +761,50 @@ impl MemorySet {
 
     pub fn is_lazy_mapped(&self, addr_vpn: VirtPageNum) -> bool {
         self.page_table.find_pte(addr_vpn).is_some()
+    }
+    pub fn attach_shm(&mut self, key: usize, start_va: VirtAddr) {
+        let (start_pa, size) = shm_get_address_and_size(key);
+        let mut flags = PTEFlags::V | PTEFlags::U | PTEFlags::W | PTEFlags::R;
+        let mut offset = 0;
+
+        while offset < size {
+            let va: VirtAddr = (start_va.0 + offset).into();
+            let pa: PhysAddr = (start_pa.0 + offset).into();
+            // println!("attach map va:{:x?} to pa{:x?}",va,pa);
+            self.page_table.map(va.into(), pa.into(), flags);
+            offset += PAGE_SIZE;
+        }
+        self.shm_top = self.shm_top.max(start_va.0 + size);
+        let page_table = &self.page_table;
+        let shm_tracker = SharedMemoryTracker::new(key);
+
+        self.shm_trackers.insert(start_va, shm_tracker);
+        let vma = VmArea::new(
+            start_va,
+            (start_va.0 + size).into(),
+            MapType::Framed,
+            MapPermission::R | MapPermission::W,
+            None,
+            0,
+        );
+        self.shm_areas.push(vma);
+    }
+    pub fn detach_shm(&mut self, start_va: VirtAddr) -> usize {
+        // println!("detach start_va:{:?}",start_va);
+        let key = self.shm_trackers.get(&start_va).unwrap().key;
+        let (_, size) = shm_get_address_and_size(key);
+        // println!("detach size:{:?}",size);
+        let mut offset = 0;
+        while offset < size {
+            let va: VirtAddr = (start_va.0 + offset).into();
+            // println!("detach va:{:?}",va);
+            self.page_table.unmap(va.into());
+            offset += PAGE_SIZE
+        }
+        self.shm_trackers.remove(&start_va);
+        let vpn: VirtPageNum = start_va.into();
+        self.shm_areas.retain(|x| x.start_vpn() != vpn);
+        shm_get_nattch(key)
     }
 }
 

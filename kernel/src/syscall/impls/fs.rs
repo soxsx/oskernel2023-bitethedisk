@@ -1,15 +1,22 @@
 //! 文件相关的系统调用
 
+use super::super::errno::*;
+use crate::fs::fdset::FdSet;
 use crate::fs::open_flags::CreateMode;
 use crate::fs::{chdir, file::File, make_pipe, open, Dirent, Kstat, OpenFlags, Stdin, MNT_TABLE};
-use crate::mm::{translated_bytes_buffer, translated_mut, translated_str, UserBuffer, VirtAddr};
-use crate::syscall::errno::Errno;
+use crate::mm::{
+    translated_bytes_buffer, translated_mut, translated_ref, translated_str, UserBuffer, VirtAddr,
+};
+use crate::return_errno;
+use crate::task::suspend_current_and_run_next;
 use crate::task::{current_task, current_user_token, FD_LIMIT};
-use crate::timer::Timespec;
+use crate::timer::{get_timeval, TimeVal, Timespec};
 
 use alloc::borrow::ToOwned;
+use alloc::string::ToString;
 use alloc::{sync::Arc, vec::Vec};
 use core::mem::size_of;
+use fat32::sync_all;
 use spin::RwLock;
 
 use super::*;
@@ -18,6 +25,7 @@ const AT_FDCWD: isize = -100;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Iovec {
+    // TODO type wrong, not usize
     iov_base: usize,
     iov_len: usize,
 }
@@ -47,7 +55,7 @@ pub fn sys_getcwd(buf: *mut u8, size: usize) -> Result<isize> {
 
     // buf 指向的地址无效
     if buf as usize == 0 {
-        Err(Errno::EFAULT)
+        return_errno!(Errno::EFAULT, "required address: {}", buf as usize);
     } else {
         let buf_vec = translated_bytes_buffer(token, buf, size);
         let mut userbuf = UserBuffer::wrap(buf_vec);
@@ -90,18 +98,17 @@ pub fn sys_pipe2(pipe: *mut i32, _flag: usize) -> Result<isize> {
 
     let read_fd = inner.alloc_fd();
     if read_fd == FD_LIMIT {
-        return Err(Errno::EMFILE);
+        return_errno!(Errno::EMFILE);
     }
     inner.fd_table[read_fd] = Some(pipe_read);
 
     let write_fd = inner.alloc_fd();
     inner.fd_table[write_fd] = Some(pipe_write);
 
-    let fd0_phys_addr = translated_mut(token, fd0 as *mut _);
-    let fd1_phys_addr = translated_mut(token, fd1 as *mut _);
-
-    *fd0_phys_addr = read_fd as isize;
-    *fd1_phys_addr = write_fd as isize;
+    let fd0_phys_addr = translated_mut(token, fd0);
+    let fd1_phys_addr = translated_mut(token, fd1);
+    *fd0_phys_addr = read_fd as i32;
+    *fd1_phys_addr = write_fd as i32;
 
     Ok(0)
 }
@@ -210,11 +217,11 @@ pub fn sys_chdir(path: *const u8) -> Result<isize> {
             inner.current_path = new_path.clone();
             Ok(0)
         } else {
-            Err(Errno::ENOENT)
+            return_errno!(Errno::ENOENT);
         }
     } else {
         // TODO: 这里只能判断是否到达，但是不知道不能到达的原因
-        Err(Errno::ENOTDIR)
+        return_errno!(Errno::ENOTDIR);
     }
 }
 
@@ -243,21 +250,21 @@ pub fn sys_openat(fd: isize, filename: *const u8, flags: u32, mode: u32) -> Resu
     let mut inner = task.write();
 
     let path = translated_str(token, filename);
-    let mode = CreateMode::from_bits(mode).unwrap_or(CreateMode::empty());
-    let flags = OpenFlags::from_bits(flags).unwrap_or(OpenFlags::empty());
-
-    // 基于进程当前所在路径
+    // println!("[DEBUG] sys_openat path:{:?}, flags:{:?}", path, flags);
+    let mode = CreateMode::from_bits(mode).map_or(CreateMode::empty(), |m| m);
+    let flags = OpenFlags::from_bits(flags).map_or(OpenFlags::empty(), |f| f);
     if fd == AT_FDCWD {
         let open_path = inner.get_work_path().join_string(path);
         if let Some(inode) = open(open_path.clone(), flags, mode) {
             let fd = inner.alloc_fd();
             if fd == FD_LIMIT {
-                return Err(Errno::EMFILE);
+                return_errno!(Errno::EMFILE);
             }
             inner.fd_table[fd] = Some(inode);
+            // println!("[DEBUG] sys_openat return new fd:{}", fd);
             Ok(fd as isize)
         } else {
-            Err(Errno::UNCLEAR)
+            return_errno!(Errno::ENOENT, "try open path {:?}", open_path);
         }
     } else {
         let dirfd = fd as usize;
@@ -273,10 +280,11 @@ pub fn sys_openat(fd: isize, filename: *const u8, flags: u32, mode: u32) -> Resu
             if let Some(tar_f) = open(open_path.clone(), flags, mode) {
                 let fd = inner.alloc_fd();
                 if fd == FD_LIMIT {
-                    return Err(Errno::UNCLEAR);
+                    return_errno!(Errno::EMFILE);
                 }
                 inner.fd_table[fd] = Some(tar_f);
-                debug!("sys_openat return new fd:{}", fd);
+                // println!("[DEBUG] sys_openat return new fd:{}", fd);
+                debug!("[DEBUG] sys_openat return new fd:{}", fd);
                 Ok(fd as isize)
             } else {
                 warn!("sys_openat: can't open file:{}, return -1", path);
@@ -311,7 +319,7 @@ pub fn sys_close(fd: usize) -> Result<isize> {
     let task = current_task().unwrap();
     let mut inner = task.write();
     if fd >= inner.fd_table.len() || inner.fd_table[fd].is_none() {
-        return Err(Errno::UNCLEAR);
+        return_errno!(Errno::EBADF, "try to close {}", fd);
     }
     // 把 fd 对应的值取走，变为 None
     inner.fd_table[fd].take();
@@ -453,11 +461,57 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> Result<isize> {
         let len = file_size.min(len);
         let readsize =
             file.read(UserBuffer::wrap(translated_bytes_buffer(token, buf, len))) as isize;
-        // println!("[DEBUG] sys_read: return readsize: {}",readsize);
         Ok(readsize)
     } else {
         warn!("sys_read: fd {} is none, return -1", fd);
         return Err(Errno::UNCLEAR);
+    }
+}
+pub fn sys_pread64(fd: usize, buf: *const u8, len: usize, offset: usize) -> Result<isize> {
+    let token = current_user_token();
+    let task = current_task().unwrap();
+    let inner = task.write();
+
+    // 文件描述符不合法
+    if fd >= inner.fd_table.len() {
+        return_errno!(
+            Errno::EBADF,
+            "fd {} is out of length of fd_table: {}",
+            fd,
+            inner.fd_table.len()
+        );
+    }
+    if let Some(file) = &inner.fd_table[fd] {
+        // 文件不可读
+        if !file.readable() {
+            return_errno!(Errno::EBADF, "file can't be read, fd: {}", fd);
+        }
+        let file = file.clone();
+
+        drop(inner); // 释放以避免死锁
+        drop(task); // 需要及时释放减少引用数
+
+        // 对 /dev/zero 的处理，暂时先加在这里
+        if file.name() == "zero" {
+            let mut userbuffer = UserBuffer::wrap(translated_bytes_buffer(token, buf, len));
+            let zero: Vec<u8> = (0..userbuffer.buffers.len()).map(|_| 0).collect();
+            userbuffer.write(zero.as_slice());
+            return Ok(userbuffer.buffers.len() as isize);
+        }
+
+        let file_size = file.file_size();
+        if file_size == 0 {
+            warn!("sys_read: file_size is zero!");
+        }
+        let len = file_size.min(len);
+        let readsize = file.pread(
+            UserBuffer::wrap(translated_bytes_buffer(token, buf, len)),
+            offset,
+        ) as isize;
+        // println!("[DEBUG] sys_read: return readsize: {}",readsize);
+        Ok(readsize)
+    } else {
+        return_errno!(Errno::EBADF, "couldn't find fd: {}", fd);
     }
 }
 
@@ -480,12 +534,17 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> Result<isize> {
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> Result<isize> {
     let token = current_user_token();
     let task = current_task().unwrap();
+    // println!("sys_write: fd{:?}, buf{:?}, len:{:?}", fd, buf, len);
     let inner = task.write();
 
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
-        warn!("sys_write: fd >= inner.fd_table.len");
-        return Err(Errno::EBADF);
+        return_errno!(
+            Errno::EBADF,
+            "fd {} is out of length of fd_table: {}",
+            fd,
+            inner.fd_table.len()
+        );
     }
 
     let is_va_range_valid = inner
@@ -504,12 +563,50 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> Result<isize> {
             );
             return Err(Errno::UNCLEAR);
         }
+        let file = file.clone();
+        drop(inner);
 
         let write_size =
             file.write(UserBuffer::wrap(translated_bytes_buffer(token, buf, len))) as isize;
         Ok(write_size)
     } else {
         Err(Errno::UNCLEAR)
+    }
+}
+
+pub fn sys_pwrite64(fd: usize, buf: *const u8, len: usize, offset: usize) -> Result<isize> {
+    let token = current_user_token();
+    let task = current_task().unwrap();
+    // println!("[DEBUG] sys_write: fd{:?}, buf{:?}, len:{:?}", fd, buf, len);
+    let inner = task.write();
+
+    // 文件描述符不合法
+    if fd >= inner.fd_table.len() {
+        return_errno!(Errno::UNCLEAR);
+    }
+
+    let is_va_range_valid = inner
+        .memory_set
+        .check_va_range(VirtAddr::from(buf as usize), len);
+    if !is_va_range_valid {
+        return_errno!(Errno::UNCLEAR);
+    }
+
+    if let Some(file) = &inner.fd_table[fd] {
+        // 文件不可写
+        if !file.writable() {
+            return_errno!(Errno::UNCLEAR);
+        }
+        let file = file.clone();
+        drop(inner);
+
+        let write_size = file.pwrite(
+            UserBuffer::wrap(translated_bytes_buffer(token, buf, len)),
+            offset,
+        ) as isize;
+        Ok(write_size)
+    } else {
+        return_errno!(Errno::UNCLEAR);
     }
 }
 
@@ -813,13 +910,14 @@ pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize>
     let mut write_data: Vec<&'static mut [u8]> = Vec::new();
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
-        return Err(Errno::UNCLEAR);
+        return_errno!(Errno::UNCLEAR);
     }
     if let Some(file) = &inner.fd_table[fd] {
         // 文件不可写
         if !file.writable() {
             return Err(Errno::UNCLEAR);
         }
+        // TODO do not use raw ptr in translated_bytes_buffer, u8 buffer not continuous
         let iovp_buf_p =
             translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>())[0]
                 .as_ptr();
@@ -972,9 +1070,6 @@ pub fn sys_fcntl(fd: isize, cmd: usize, arg: Option<usize>) -> Result<isize> {
     Ok(0)
 }
 
-pub const ENOENT: isize = 2;
-pub const EFAULT: isize = 14;
-pub const EMFILE: isize = 24;
 pub fn sys_newfstatat(
     dirfd: isize,
     pathname: *const u8,
@@ -1004,13 +1099,14 @@ pub fn sys_newfstatat(
             // panic!();
             Ok(0)
         } else {
-            Err(Errno::UNCLEAR)
+            // TAG return right errno
+            return_errno!(Errno::UNCLEAR);
             // -ENOENT
         }
     } else {
         let dirfd = dirfd as usize;
         if dirfd >= inner.fd_table.len() && dirfd > FD_LIMIT {
-            return Err(Errno::UNCLEAR);
+            return_errno!(Errno::UNCLEAR);
         }
 
         if let Some(file) = &inner.fd_table[dirfd] {
@@ -1020,10 +1116,10 @@ pub fn sys_newfstatat(
                 userbuf.write(kstat.as_bytes());
                 Ok(0)
             } else {
-                Err(Errno::UNCLEAR)
+                return_errno!(Errno::UNCLEAR);
             }
         } else {
-            Err(Errno::UNCLEAR)
+            return_errno!(Errno::UNCLEAR);
         }
     }
 }
@@ -1081,10 +1177,15 @@ pub fn sys_utimensat(
         } else {
             let pathname = translated_str(token, pathname);
             let path = inner.get_work_path().join_string(pathname);
-            if let Some(_file) = open(path, OpenFlags::O_RDWR, CreateMode::empty()) {
-                unimplemented!(); // 记得重新制作文件镜像
+            if let Some(_file) = open(
+                path,
+                OpenFlags::O_RDWR | OpenFlags::O_CREATE,
+                CreateMode::empty(),
+            ) {
+                Ok(0)
             } else {
-                Err(Errno::UNCLEAR)
+                return_errno!(Errno::UNCLEAR);
+                // Ok(-ENOENT)
             }
         }
     } else {
@@ -1102,7 +1203,7 @@ pub fn sys_utimensat(
                 file.set_time(timespec);
                 Ok(0)
             } else {
-                Err(Errno::UNCLEAR)
+                return_errno!(Errno::UNCLEAR);
             }
         } else {
             unimplemented!();
@@ -1163,7 +1264,7 @@ bitflags! {
     }
 }
 
-pub fn sys_lseek(fd: usize, off_t: usize, whence: usize) -> Result<isize> {
+pub fn sys_lseek(fd: usize, off_t: isize, whence: usize) -> Result<isize> {
     // println!("[DEBUG] enter sys_lseek: fd:{},off_t:{},whence:{}",fd,off_t,whence);
 
     let task = current_task().unwrap();
@@ -1177,17 +1278,28 @@ pub fn sys_lseek(fd: usize, off_t: usize, whence: usize) -> Result<isize> {
         let flag = SeekFlags::from_bits(whence).unwrap();
         match flag {
             SeekFlags::SEEK_SET => {
-                file.set_offset(off_t);
+                if off_t < 0 {
+                    return_errno!(Errno::EINVAL, "offset is negtive");
+                }
+                file.set_offset(off_t as usize);
                 Ok(off_t as isize)
             }
             SeekFlags::SEEK_CUR => {
-                let current_offset = file.offset();
-                file.set_offset(off_t + current_offset);
+                let current_offset = file.offset() as isize;
+                if current_offset + off_t < 0 {
+                    return_errno!(Errno::EINVAL, "new offset is negtive");
+                }
+
+                file.set_offset((off_t + current_offset) as usize);
                 Ok((off_t + current_offset) as isize)
             }
             SeekFlags::SEEK_END => {
-                let end = file.file_size();
-                file.set_offset(end + off_t);
+                let end = file.file_size() as isize;
+                if end + off_t < 0 {
+                    return_errno!(Errno::EINVAL, "new offset is negtive");
+                }
+
+                file.set_offset((end + off_t) as usize);
                 Ok((end + off_t) as isize)
             }
             // flag wrong
@@ -1195,7 +1307,7 @@ pub fn sys_lseek(fd: usize, off_t: usize, whence: usize) -> Result<isize> {
         }
     } else {
         // file not exists
-        Err(Errno::UNCLEAR)
+        return_errno!(Errno::UNCLEAR);
         // -3
     }
 }
@@ -1221,4 +1333,232 @@ pub fn sys_readlinkat(
     } else {
         panic!("sys_readlinkat: fd not support");
     }
+}
+
+pub fn sys_sync() -> Result<isize> {
+    sync_all();
+    Ok(0)
+}
+
+pub fn sys_ftruncate64(fd: usize, length: usize) -> Result<isize> {
+    let task = current_task().unwrap();
+    let inner = task.write();
+    if let Some(file) = &inner.fd_table[fd] {
+        file.truncate(length);
+        Ok(0)
+    } else {
+        return_errno!(Errno::UNCLEAR);
+    }
+}
+
+pub fn sys_pselect6(
+    nfds: usize,
+    readfds: *mut u8,
+    writefds: *mut u8,
+    exceptfds: *mut u8,
+    timeout: *mut usize,
+) -> Result<isize> {
+    let token = current_user_token();
+    let mut r_ready_count = 0;
+    let mut w_ready_count = 0;
+    let mut e_ready_count = 0;
+
+    let mut timer_interval = TimeVal::new();
+    unsafe {
+        let sec = translated_ref(token, timeout);
+        let usec = translated_ref(token, timeout.add(1));
+        timer_interval.sec = *sec;
+        timer_interval.usec = *usec;
+    }
+    let timer = timer_interval + get_timeval();
+
+    let mut rfd_set = FdSet::new();
+    let mut wfd_set = FdSet::new();
+
+    let mut ubuf_rfds = {
+        if readfds as usize != 0 {
+            UserBuffer::wrap(translated_bytes_buffer(token, readfds, size_of::<FdSet>()))
+        } else {
+            UserBuffer::empty()
+        }
+    };
+    ubuf_rfds.read(rfd_set.as_bytes_mut());
+
+    let mut ubuf_wfds = {
+        if writefds as usize != 0 {
+            UserBuffer::wrap(translated_bytes_buffer(token, writefds, size_of::<FdSet>()))
+        } else {
+            UserBuffer::empty()
+        }
+    };
+    ubuf_wfds.read(wfd_set.as_bytes_mut());
+
+    let mut ubuf_efds = {
+        if exceptfds as usize != 0 {
+            UserBuffer::wrap(translated_bytes_buffer(
+                token,
+                exceptfds,
+                size_of::<FdSet>(),
+            ))
+        } else {
+            UserBuffer::empty()
+        }
+    };
+
+    // println!("[DEBUG] enter sys_pselect: nfds:{}, readfds:{:?} ,writefds:{:?}, exceptfds:{:?}, timeout:{:?}",nfds,ubuf_rfds,ubuf_wfds,ubuf_efds,timer_interval);
+
+    let mut r_has_nready = false;
+    let mut w_has_nready = false;
+    let mut r_all_ready = false;
+    let mut w_all_ready = false;
+
+    let mut rfd_vec: Vec<usize> = rfd_set.get_fd_vec();
+    let mut wfd_vec: Vec<usize> = wfd_set.get_fd_vec();
+    // println!("[DEBUG] sys_pselect: nfds:{:?},readfds:{:?} ,writefds:{:?}",nfds,rfd_vec,wfd_vec);
+    // let mut rfd_vec:Vec<usize> = Vec::new();
+    // let mut wfd_vec:Vec<usize> = Vec::new();
+
+    loop {
+        /* handle read fd set */
+        let task = current_task().unwrap();
+        let inner = task.write();
+        let fd_table = &inner.fd_table;
+        if readfds as usize != 0 && !r_all_ready {
+            for i in 0..rfd_vec.len() {
+                let fd = rfd_vec[i];
+                if fd >= nfds || fd == 1024 {
+                    continue;
+                }
+
+                if fd > fd_table.len() || fd_table[fd].is_none() {
+                    return_errno!(Errno::UNCLEAR);
+                }
+                let fdescript = fd_table[fd].as_ref().unwrap();
+                if fdescript.r_ready() {
+                    r_ready_count += 1;
+                    rfd_set.set_fd(fd);
+                    // marked for being ready
+                    rfd_vec[i] = 1024;
+                } else {
+                    rfd_set.clear_fd(fd);
+                    r_has_nready = true;
+                }
+            }
+            if !r_has_nready {
+                r_all_ready = true;
+                ubuf_rfds.write(rfd_set.as_bytes());
+            }
+        }
+
+        /* handle write fd set */
+        if writefds as usize != 0 && !w_all_ready {
+            if wfd_vec.len() == 0 {
+                wfd_vec = wfd_set.get_fd_vec();
+            }
+
+            for i in 0..wfd_vec.len() {
+                let fd = wfd_vec[i];
+                if fd >= nfds || fd == 1024 {
+                    continue;
+                }
+                if fd > fd_table.len() || fd_table[fd].is_none() {
+                    return_errno!(Errno::UNCLEAR);
+                }
+                let fdescript = fd_table[fd].as_ref().unwrap();
+                if fdescript.w_ready() {
+                    w_ready_count += 1;
+                    wfd_set.set_fd(fd);
+                    wfd_vec[i] = 1024;
+                } else {
+                    wfd_set.clear_fd(fd);
+                    w_has_nready = true;
+                }
+            }
+            if !w_has_nready {
+                w_all_ready = true;
+                ubuf_wfds.write(wfd_set.as_bytes());
+            }
+        }
+
+        /* Cannot handle exceptfds for now */
+        if exceptfds as usize != 0 {
+            let mut efd_set = FdSet::new();
+            ubuf_efds.read(efd_set.as_bytes_mut());
+            e_ready_count = efd_set.count() as isize;
+            efd_set.clear_all();
+            ubuf_efds.write(efd_set.as_bytes());
+        }
+
+        // return anyway
+        // return r_ready_count + w_ready_count + e_ready_count;
+        // if there are some fds not ready, just wait until time up
+        if r_has_nready || w_has_nready {
+            r_has_nready = false;
+            w_has_nready = false;
+            let mut time_remain = get_timeval() - timer;
+            if time_remain.is_zero() {
+                // not reach timer (now <= timer)
+                // println!("now:{:?},timer:{:?}",get_timeval(),timer);
+                drop(fd_table);
+                drop(inner);
+                drop(task);
+                // suspend may nerver end, pipe read, timer
+                suspend_current_and_run_next();
+            } else {
+                ubuf_rfds.write(rfd_set.as_bytes());
+                ubuf_wfds.write(wfd_set.as_bytes());
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    // println!("pselect return: r_ready_count:{}, w_ready_count:{}, e_ready_count:{}",r_ready_count,w_ready_count,e_ready_count);
+    Ok(r_ready_count + w_ready_count + e_ready_count)
+}
+#[repr(C)]
+pub struct Statfs {
+    f_type: u64,
+    f_bsize: u64,
+    f_blocks: u64,
+    f_bfree: u64,
+    f_bavail: u64,
+    f_files: u64,
+    f_ffree: u64,
+    f_fsid: u64,
+    f_namelen: u64,
+    f_frsize: u64,
+    f_flag: u64,
+    f_spare: [u64; 4],
+}
+
+impl Statfs {
+    pub fn new() -> Self {
+        Self {
+            f_type: 1,
+            f_bsize: 512,
+            f_blocks: 12345,
+            f_bfree: 1234,
+            f_bavail: 123,
+            f_files: 1000,
+            f_ffree: 100,
+            f_fsid: 1,
+            f_namelen: 123,
+            f_frsize: 4096,
+            f_flag: 123,
+            f_spare: [0; 4],
+        }
+    }
+    pub fn as_bytes(&self) -> &[u8] {
+        let size = core::mem::size_of::<Self>();
+        unsafe { core::slice::from_raw_parts(self as *const _ as usize as *const u8, size) }
+    }
+}
+
+pub fn sys_statfs(path: *const u8, buf: *const u8) -> Result<isize> {
+    let token = current_user_token();
+
+    let mut userbuf = UserBuffer::wrap(translated_bytes_buffer(token, buf, size_of::<Statfs>()));
+    userbuf.write(Statfs::new().as_bytes());
+    Ok(0)
 }

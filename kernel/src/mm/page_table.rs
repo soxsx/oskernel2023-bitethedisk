@@ -128,10 +128,11 @@ impl PageTable {
     /// 删除一个虚拟页号到物理页号的映射
     ///
     /// 只需根据虚拟页号找到页表项，然后修改或者直接清空其内容即可
-    pub fn unmap(&mut self, vpn: VirtPageNum) {
-        let pte = self.find_pte(vpn).unwrap();
-        assert!(pte.is_valid(), "{:?} is invalid before unmapping", vpn);
-        pte.clear();
+    pub fn unmap(&self, vpn: VirtPageNum) {
+        if let Some(pte) = self.find_pte(vpn) {
+            assert!(pte.is_valid(), "{:?} is invalid before unmapping", vpn);
+            pte.clear();
+        }
     }
 
     /// 根据 vpn 查找页表项

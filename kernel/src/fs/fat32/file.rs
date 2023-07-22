@@ -185,13 +185,11 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Option<A
         let res = ROOT_INODE.find(pathv.clone());
         match res {
             Ok(inode) => {
-                // 如果文件已存在则清空
-                let name = pathv.pop().unwrap();
-                // TAG for lzm
-                // 不能清空 direntry
-                inode.clear_content();
-                // TAG for lzm
-                // 丢失 OpenFlag
+                let name = if let Some(name_) = pathv.pop() {
+                    name_
+                } else {
+                    "/"
+                };
                 Some(Arc::new(Fat32File::new(
                     readable,
                     writable,
@@ -317,19 +315,22 @@ impl File for Fat32File {
     fn read(&self, mut buf: UserBuffer) -> usize {
         let offset = self.inner.lock().offset;
         let file_size = self.file_size();
+        let mut inner = self.inner.lock();
+        let mut total_read_size = 0usize;
 
         // TODO 如果是目录文件
         // TAG for lzm
         // empty file
         if file_size == 0 {
+            if self.name == "zero" {
+                buf.write_zeros();
+            }
             return 0;
         }
 
-        if offset > file_size {
+        if offset >= file_size {
             return 0;
         }
-        let mut inner = self.inner.lock();
-        let mut total_read_size = 0usize;
 
         // 这边要使用 iter_mut(), 因为要将数据写入
         for slice in buf.buffers.iter_mut() {
@@ -338,6 +339,38 @@ impl File for Fat32File {
                 break;
             }
             inner.offset += read_size;
+            total_read_size += read_size;
+        }
+        total_read_size
+    }
+    fn pread(&self, mut buf: UserBuffer, offset: usize) -> usize {
+        let mut inner = self.inner.lock();
+        let mut index = inner.offset;
+        let file_size = inner.inode.file_size();
+
+        let mut total_read_size = 0usize;
+
+        // TODO 如果是目录文件
+        // TAG for lzm
+        // empty file
+        if file_size == 0 {
+            if self.name == "zero" {
+                buf.write_zeros();
+            }
+            return 0;
+        }
+
+        if offset >= file_size {
+            return 0;
+        }
+
+        // 这边要使用 iter_mut(), 因为要将数据写入
+        for slice in buf.buffers.iter_mut() {
+            let read_size = inner.inode.read_at(index, *slice);
+            if read_size == 0 {
+                break;
+            }
+            index += read_size;
             total_read_size += read_size;
         }
         total_read_size
@@ -369,7 +402,7 @@ impl File for Fat32File {
         let mut inner = self.inner.lock();
         if inner.flags.contains(OpenFlags::O_APPEND) {
             for slice in buf.buffers.iter() {
-                let write_size = inner.inode.write_at(filesize, *slice);
+                let write_size = inner.inode.write_at(filesize + total_write_size, *slice);
                 inner.offset += write_size;
                 total_write_size += write_size;
             }
@@ -378,6 +411,27 @@ impl File for Fat32File {
                 let write_size = inner.inode.write_at(inner.offset, *slice);
                 assert_eq!(write_size, slice.len());
                 inner.offset += write_size;
+                total_write_size += write_size;
+            }
+        }
+        total_write_size
+    }
+    fn pwrite(&self, buf: UserBuffer, offset: usize) -> usize {
+        let mut inner = self.inner.lock();
+        let mut index = offset;
+        let file_size = inner.inode.file_size();
+
+        let mut total_write_size = 0usize;
+        if inner.flags.contains(OpenFlags::O_APPEND) {
+            for slice in buf.buffers.iter() {
+                let write_size = inner.inode.write_at(file_size + total_write_size, *slice);
+                total_write_size += write_size;
+            }
+        } else {
+            for slice in buf.buffers.iter() {
+                let write_size = inner.inode.write_at(index, *slice);
+                assert_eq!(write_size, slice.len());
+                index += write_size;
                 total_write_size += write_size;
             }
         }
@@ -483,5 +537,10 @@ impl File for Fat32File {
 
     fn file_size(&self) -> usize {
         self.file_size()
+    }
+
+    fn truncate(&self, new_length: usize) {
+        let inner = self.inner.lock();
+        inner.inode.modify_size(new_length);
     }
 }

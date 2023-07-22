@@ -2,43 +2,98 @@
 
 use super::impls::*;
 
-macro_rules! syscall_nums {
-    ($($sysn:ident = $id:expr),+ $(,)?) => {
-        $(
-            const $sysn: usize = $id;
-        )*
-    };
-}
-
 // 系统调用号
-syscall_nums! {
-    SYS_GETCWD = 17, SYS_PIPE2  = 59, SYS_DUP    = 23, SYS_DUP3       = 24,
-    SYS_CHDIR  = 49, SYS_OPENAT = 56, SYS_CLOSE  = 57, SYS_GETDENTS64 = 61,
-    SYS_READ   = 63, SYS_WRITE  = 64, SYS_LINKAT = 37, SYS_UNLINKAT   = 35,
+const SYS_GETCWD: usize = 17;
+const SYS_PIPE2: usize = 59;
+const SYS_DUP: usize = 23;
+const SYS_DUP3: usize = 24;
+const SYS_CHDIR: usize = 49;
+const SYS_OPENAT: usize = 56;
+const SYS_CLOSE: usize = 57;
+const SYS_GETDENTS64: usize = 61;
+const SYS_READ: usize = 63;
+const SYS_WRITE: usize = 64;
+const SYS_LINKAT: usize = 37;
+const SYS_UNLINKAT: usize = 35;
+const SYS_MKDIRAT: usize = 34;
+const SYS_UMOUNT2: usize = 39;
+const SYS_MOUNT: usize = 40;
+const SYS_FSTAT: usize = 80;
+const SYS_CLONE: usize = 220;
+const SYS_EXECVE: usize = 221;
+const SYS_WAIT4: usize = 260;
+const SYS_EXIT: usize = 93;
+const SYS_GETPPID: usize = 173;
+const SYS_GETPID: usize = 172;
+const SYS_BRK: usize = 214;
+const SYS_MUNMAP: usize = 215;
+const SYS_MMAP: usize = 222;
+const SYS_TIMES: usize = 153;
+const SYS_UNAME: usize = 160;
+const SYS_SCHED_YIELD: usize = 124;
+const SYS_GETTIMEOFDAY: usize = 169;
+const SYS_NANOSLEEP: usize = 101;
+const SYS_SET_TID_ADDRESS: usize = 96;
+const SYS_READV: usize = 65;
+const SYS_WRITEV: usize = 66;
+const SYS_EXIT_GROUP: usize = 94;
+const SYS_GETUID: usize = 174;
+const SYS_RT_SIGPROMASK: usize = 135;
+const SYS_RT_SIGACTION: usize = 134;
+const SYS_IOCTL: usize = 29;
+const SYS_FCNTL: usize = 25;
+const SYS_GETEUID: usize = 175;
+const SYS_PPOLL: usize = 73;
+const SYS_NEWFSTATAT: usize = 79;
+const SYS_CLOCK_GETTIME: usize = 113;
+const SYS_GETTID: usize = 178;
+const SYS_SENDFILE: usize = 71;
+const SYS_SYSLOG: usize = 116;
+const SYS_FACCESSAT: usize = 48;
+const SYS_SYSINFO: usize = 179;
+const SYS_KILL: usize = 129;
+const SYS_UTIMENSAT: usize = 88;
+const SYS_RENAMEAT2: usize = 276;
+const SYS_LSEEK: usize = 62;
+const SYS_GETEGID: usize = 177;
+const SYS_GETGID: usize = 176;
+const SYS_SET_ROBUST_LIST: usize = 99;
+const SYS_PRLIMIT64: usize = 261;
+const SYS_READLINKAT: usize = 78;
+const SYS_GETRANDOM: usize = 278;
+const SYS_MPROTECT: usize = 226;
+const SYS_GETPGID: usize = 155;
+const SYS_SETPGID: usize = 154;
+const SYS_SYNC: usize = 81;
+const SYS_FTRUNCATE64: usize = 46;
+const SYS_PSELECT6: usize = 72;
+const SYS_GETRUSAGE: usize = 165;
+const SYS_SETITIMER: usize = 103;
+const SYS_TGKILL: usize = 131;
+const SYS_UMASK: usize = 166;
+const SYS_FSYNC: usize = 82;
+const SYS_MSYNC: usize = 227;
+const SYS_SHMGET: usize = 194;
+const SYS_SHMCTL: usize = 195;
+const SYS_SHMAT: usize = 196;
+const SYS_SHMDT: usize = 197;
+const SYS_PREAD64: usize = 67;
+const SYS_PWRITE64: usize = 68;
+const SYS_STATFS: usize = 43;
+const SYS_FUTEX: usize = 98;
+const SYS_RT_SIGTIMEDWAIT: usize = 137;
+const SYS_RT_SIGRETURN: usize = 139;
 
-    SYS_MKDIRAT = 34,  SYS_UMOUNT2 = 39,  SYS_MOUNT  = 40,  SYS_FSTAT  = 80,
-    SYS_CLONE   = 220, SYS_EXECVE  = 221, SYS_WAIT4  = 260, SYS_EXIT   = 93,
-    SYS_GETPPID = 173, SYS_GETPID  = 172, SYS_BRK    = 214, SYS_MUNMAP = 215,
-
-    SYS_MMAP         = 222, SYS_TIMES      = 153, SYS_UNAME  = 160, SYS_SCHED_YIELD = 124,
-    SYS_WRITEV       = 66,  SYS_EXIT_GROUP = 94,  SYS_GETUID = 174, SYS_RT_SIGPROMASK = 135,
-    SYS_RT_SIGACTION = 134, SYS_IOCTL      = 29,  SYS_FCNTL  = 25, SYS_GETEUID = 175,
-
-    SYS_PPOLL    = 73,  SYS_NEWFSTATAT = 79,  SYS_CLOCK_GETTIME = 113, SYS_GETTID  = 178,
-    SYS_SENDFILE = 71,  SYS_SYSLOG     = 116, SYS_FACCESSAT     = 48,  SYS_SYSINFO = 179,
-    SYS_KILL     = 129, SYS_UTIMENSAT  = 88,  SYS_RENAMEAT2     = 276, SYS_LSEEK   = 62,
-
-    SYS_GETTIMEOFDAY = 169, SYS_NANOSLEEP = 101, SYS_SET_TID_ADDRESS = 96,  SYS_READV     = 65,
-    SYS_GETEGID      = 177, SYS_GETGID    = 176, SYS_SET_ROBUST_LIST = 99,  SYS_PRLIMIT64 = 261,
-    SYS_READLINKAT   = 78,  SYS_GETRANDOM = 278, SYS_MPROTECT        = 226,
-
-    SYS_SETPGID = 154, SYS_GETPGID = 155, SYS_TGKILL = 131,
-}
+const SYS_SOCKET: usize = 198;
+const SYS_BIND: usize = 200;
+const SYS_LISTEN: usize = 201;
+const SYS_ACCEPT: usize = 202;
+const SYS_CONNECT: usize = 203;
+const SYS_GETSOCKNAME: usize = 204;
 
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
-    debug!("syscall: {:?}", syscall_id);
-    let ret: core::result::Result<isize, Errno> = match syscall_id {
+    let ret = match syscall_id {
         SYS_CLONE => sys_do_fork(args[0], args[1], args[2], args[3], args[4]),
 
         SYS_TGKILL => sys_tgkill(args[0] as isize, args[1], args[2] as isize),
@@ -149,15 +204,57 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[3] as *const u8,
             args[4] as u32,
         ),
-        SYS_LSEEK => sys_lseek(args[0], args[1], args[2]),
-
+        SYS_LSEEK => sys_lseek(args[0], args[1] as isize, args[2]),
+        SYS_GETEGID => Ok(0),
+        SYS_GETGID => Ok(0),
+        SYS_SET_ROBUST_LIST => Ok(-1),
+        SYS_PRLIMIT64 => Ok(0),
+        SYS_READLINKAT => sys_readlinkat(
+            args[0] as isize,
+            args[1] as *const u8,
+            args[2] as *const u8,
+            args[3],
+        ),
+        SYS_GETRANDOM => sys_getrandom(args[0] as *const u8, args[1], args[2]),
+        SYS_MPROTECT => Ok(0),
+        SYS_GETPGID => Ok(0),
+        SYS_SETPGID => Ok(0),
+        SYS_SYNC => sys_sync(),
+        SYS_FTRUNCATE64 => sys_ftruncate64(args[0], args[1]),
+        SYS_PSELECT6 => sys_pselect6(
+            args[0] as usize,
+            args[1] as *mut u8,
+            args[2] as *mut u8,
+            args[3] as *mut u8,
+            args[4] as *mut usize,
+        ),
+        SYS_GETRUSAGE => sys_getrusage(args[0] as isize, args[1] as *mut u8),
+        SYS_SETITIMER => Ok(0),
+        SYS_TGKILL => Ok(0),
+        SYS_UMASK => Ok(0),
+        SYS_FSYNC => Ok(0),
+        SYS_MSYNC => Ok(0),
+        SYS_SHMGET => sys_shmget(args[0], args[1], args[2]),
+        SYS_SHMCTL => sys_shmctl(args[0], args[1], args[2] as *const u8),
+        SYS_SHMAT => sys_shmat(args[0], args[1], args[2]),
+        SYS_SHMDT => sys_shmdt(args[0]),
+        SYS_PREAD64 => sys_pread64(args[0], args[1] as *const u8, args[2], args[3]),
+        SYS_PWRITE64 => sys_pwrite64(args[0], args[1] as *const u8, args[2], args[3]),
+        SYS_STATFS => sys_statfs(args[0] as *const u8, args[1] as *const u8),
+        SYS_FUTEX => Ok(0),
+        SYS_RT_SIGTIMEDWAIT => Ok(0),
+        SYS_RT_SIGRETURN => Ok(0),
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
     match ret {
         Ok(data) => data,
         Err(err) => {
-            warn!("{}", err);
-            err as isize
+            let errno = err as isize;
+            if errno > 0 {
+                -errno
+            } else {
+                errno
+            }
         }
     }
 }

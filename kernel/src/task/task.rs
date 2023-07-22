@@ -1,16 +1,17 @@
 use core::fmt::Debug;
 
 use super::kernel_stack::KernelStack;
-use super::TaskContext;
+use super::{current_task, TaskContext};
 use super::{pid_alloc, PidHandle, SignalFlags};
 use crate::consts::*;
 use crate::fs::{file::File, Fat32File, Stdin, Stdout};
 use crate::mm::kernel_vmm::acquire_kvmm;
-use crate::mm::memory_set::{AuxEntry, LoadedELF, MMAP_BASE};
+use crate::mm::memory_set::{AuxEntry, LoadedELF, AT_NULL, AT_RANDOM, MMAP_BASE};
 use crate::mm::{
     translated_mut, MapPermission, MemorySet, MmapFlags, MmapManager, MmapProts, PageTableEntry,
     PhysPageNum, VirtAddr, VirtPageNum,
 };
+use crate::timer::TimeVal;
 use crate::trap::handler::user_trap_handler;
 use crate::trap::TrapContext;
 use alloc::string::String;
@@ -21,7 +22,7 @@ use spin::{MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::fs::AbsolutePath;
 
-pub const FD_LIMIT: usize = 1048576;
+pub const FD_LIMIT: usize = 1024;
 
 pub struct TaskControlBlock {
     /// 进程标识符
@@ -76,6 +77,14 @@ pub struct TaskControlBlockInner {
     pub signals: SignalFlags,
 
     pub current_path: AbsolutePath,
+
+    pub utime: TimeVal,
+
+    pub stime: TimeVal,
+
+    pub last_enter_umode_time: TimeVal,
+
+    pub last_enter_smode_time: TimeVal,
 }
 
 impl TaskControlBlockInner {
@@ -126,6 +135,22 @@ impl TaskControlBlockInner {
     pub fn lazy_alloc_heap(&mut self, vpn: VirtPageNum) -> isize {
         self.memory_set.lazy_alloc_heap(vpn)
     }
+
+    pub fn add_utime(&mut self, new_time: TimeVal) {
+        self.utime = self.utime + new_time;
+    }
+
+    pub fn add_stime(&mut self, new_time: TimeVal) {
+        self.stime = self.stime + new_time;
+    }
+
+    pub fn set_last_enter_umode(&mut self, new_time: TimeVal) {
+        self.last_enter_umode_time = new_time;
+    }
+
+    pub fn set_last_enter_smode(&mut self, new_time: TimeVal) {
+        self.last_enter_smode_time = new_time;
+    }
 }
 
 impl TaskControlBlock {
@@ -144,7 +169,7 @@ impl TaskControlBlock {
             memory_set,
             elf_entry: entry_point,
             user_stack_top: user_sp,
-            auxs: _auxs,
+            auxs,
         } = MemorySet::load_elf(initproc.clone());
         initproc.delete();
         // 从地址空间 memory_set 中查多级页表找到应用地址空间中的 Trap 上下文实际被放在哪个物理页帧
@@ -186,6 +211,10 @@ impl TaskControlBlock {
                     VirtAddr::from(MMAP_BASE),
                     VirtAddr::from(MMAP_BASE),
                 ),
+                utime: TimeVal { sec: 0, usec: 0 },
+                stime: TimeVal { sec: 0, usec: 0 },
+                last_enter_umode_time: TimeVal { sec: 0, usec: 0 },
+                last_enter_smode_time: TimeVal { sec: 0, usec: 0 },
             }),
         };
         // 初始化位于该进程应用地址空间中的 Trap 上下文，使得第一次进入用户态的时候时候能正
@@ -363,7 +392,7 @@ impl TaskControlBlock {
         };
         let pgid = self.pid.0;
         // 根据 PID 创建一个应用内核栈
-        let kernel_stack = KernelStack::new(&pid_handle); // use 2 pages
+        let kernel_stack = KernelStack::new(&pid_handle); // use 8 pages
         let kernel_stack_top = kernel_stack.top();
         // copy fd table
         let mut new_fd_table = Vec::new();
@@ -392,6 +421,10 @@ impl TaskControlBlock {
                 signals: SignalFlags::empty(),
                 current_path: parent_inner.current_path.clone(),
                 mmap_manager: mmap_area,
+                utime: TimeVal { sec: 0, usec: 0 },
+                stime: TimeVal { sec: 0, usec: 0 },
+                last_enter_umode_time: TimeVal { sec: 0, usec: 0 },
+                last_enter_smode_time: TimeVal { sec: 0, usec: 0 },
             }),
         });
         // 把新生成的进程加入到子进程向量中
@@ -488,18 +521,15 @@ impl TaskControlBlock {
         // "prot<<1" 右移一位以符合 MapPermission 的权限定义
         // "1<<4" 增加 MapPermission::U 权限
         let map_flags = (((prot.bits() & 0b111) << 1) + (1 << 4)) as u16;
-
         if addr == 0 {
             start_va = inner.mmap_manager.get_mmap_top();
             end_va = VirtAddr::from(start_va.0 + length);
         }
-
         inner.memory_set.insert_mmap_area(
             start_va,
             end_va,
             MapPermission::from_bits(map_flags).unwrap(),
         );
-
         inner.mmap_manager.push(
             start_va.0,
             length,
@@ -510,7 +540,6 @@ impl TaskControlBlock {
             fd_table,
             token,
         );
-
         start_va.0
     }
 
@@ -524,11 +553,8 @@ impl TaskControlBlock {
 
         // 可能会有 mmap 后没有访问直接 munmap 的情况，需要检查是否访问过 mmap 的区域(即
         // 是否引发了 lazy_mmap)，防止 unmap 页表中不存在的页表项引发 panic
-        if inner.memory_set.is_lazy_mapped(mmap_start_vpn)
-            && inner.memory_set.is_lazy_mapped(mmap_end_vpn)
-        {
-            inner.memory_set.remove_area(mmap_start_va, mmap_end_va);
-        }
+
+        inner.memory_set.remove_area(mmap_start_va, mmap_end_va);
 
         inner.mmap_manager.remove(addr, length)
     }

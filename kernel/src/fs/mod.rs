@@ -2,6 +2,7 @@
 
 mod dirent;
 mod fat32;
+pub mod fdset;
 pub mod file;
 mod mount;
 pub mod open_flags;

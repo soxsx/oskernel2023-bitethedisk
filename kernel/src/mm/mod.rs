@@ -3,6 +3,7 @@ mod frame_allocator; // 物理页帧管理器
 pub mod kernel_vmm;
 pub mod memory_set; // 地址空间模块
 mod page_table; // 页表
+pub mod shared_memory;
 mod user_buffer;
 mod vma; // 虚拟内存地址映射空间
 
@@ -16,6 +17,7 @@ pub use page_table::{PageTable, PageTableEntry};
 use riscv::register::satp;
 pub use user_buffer::{UserBuffer, UserBufferIterator};
 pub use vma::*;
+// pub use shared_memory::*;
 
 use crate::{consts::PAGE_SIZE, task::current_task};
 
@@ -87,9 +89,8 @@ pub fn translated_str(token: usize, ptr: *const u8) -> String {
     loop {
         let ch: u8 = *(page_table
             .translate_va(VirtAddr::from(va))
-            .expect(&format!("virtual address translation failed: 0x{:x?}", va))
-            .as_ref());
-
+            .unwrap()
+            .as_mut());
         if ch == 0 {
             break;
         } else {

@@ -2,15 +2,17 @@
 
 use crate::fs::open_flags::CreateMode;
 use crate::fs::{open, OpenFlags};
-use crate::mm::{translated_mut, translated_ref, translated_str};
+use crate::mm::{
+    translated_bytes_buffer, translated_mut, translated_ref, translated_str, UserBuffer,
+};
 use crate::task::{
     add_task, current_task, current_user_token, exit_current_and_run_next, pid2task,
-    suspend_current_and_run_next, SignalFlags, TaskControlBlock,
+    suspend_current_and_run_next, RUsage, SignalFlags,
 };
 pub use crate::task::{CloneFlags, Utsname, UTSNAME};
+use crate::timer::{get_time, get_timeval};
 
-use alloc::{string::String, sync::Arc, vec::Vec};
-use spin::MutexGuard;
+use alloc::{string::String, string::ToString, sync::Arc, vec::Vec};
 
 use super::*;
 
@@ -42,6 +44,8 @@ pub fn sys_do_fork(
     let new_task = current_task.fork(false);
 
     // let tid = new_task.getpid();
+    // println!("[DEBUG] clone flags:{:?}", flags);
+    let flags = 17;
     let _flags = CloneFlags::from_bits(flags).unwrap();
 
     if stack_ptr != 0 {
@@ -83,8 +87,18 @@ pub fn sys_do_fork(
 pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize) -> Result<isize> {
     let token = current_user_token();
     // 读取到用户空间的应用程序名称（路径）
-    let path = translated_str(token, path);
+    let mut path = translated_str(token, path);
+    // println!("path:{:?},argv:{:?},envp:{:?}",path,argv,envp);
     let mut args_vec: Vec<String> = Vec::new();
+    if path.ends_with(".sh") {
+        path = "/busybox".to_string();
+        args_vec.push("sh".to_string());
+    }
+    // if path == "/bin/sh"{
+    // // for lmbench_all lat_proc -P 1 shell
+    // 	warn!("/bin/sh redirect to /busybox");
+    //     path = "/busybox".to_string();
+    // }
     if argv as usize != 0 {
         loop {
             let arg_str_ptr = *translated_ref(token, argv);
@@ -112,6 +126,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
             }
         }
     }
+    envs_vec.push("PATH=/".to_string());
 
     let task = current_task().unwrap();
 
@@ -148,6 +163,10 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result<isize> {
     let inner = task.write();
 
     // 根据pid参数查找有没有符合要求的进程
+    // println!("[DEBUG] children size:{:?}",inner.children.len());
+    if pid == -1 && inner.children.len() == 0 {
+        return Ok(0);
+    }
     if !inner
         .children
         .iter()
@@ -160,11 +179,11 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result<isize> {
     loop {
         let mut inner = task.write();
         // 查找所有符合PID要求的处于僵尸状态的进程，如果有的话还需要同时找出它在当前进程控制块子进程向量中的下标
-        let pair = inner
-            .children
-            .iter()
-            .enumerate()
-            .find(|(_, p)| p.write().is_zombie() && (pid == -1 || pid as usize == p.pid()));
+        let pair = inner.children.iter().enumerate().find(|(_, p)| {
+            // ++++ temporarily access child PCB lock exclusively
+            p.write().is_zombie() && (pid == -1 || pid as usize == p.pid())
+            // ++++ release child PCB
+        });
         if let Some((idx, _)) = pair {
             // 将子进程从向量中移除并置于当前上下文中
             let child = inner.children.remove(idx);
@@ -176,7 +195,9 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result<isize> {
             assert_eq!(Arc::strong_count(&child), 1);
             // 收集的子进程信息返回
             let found_pid = child.pid();
+            // ++++ temporarily access child TCB exclusively
             let mut exit_code = child.write().exit_code;
+            // ++++ release child PCB
             // 将子进程的退出码写入到当前进程的应用地址空间中
             if exit_code_ptr as usize != 0 {
                 // 进程异常退出，低 16 位中的低 7 位放错误时的返回值，16 位中的高 8 位为 0
@@ -307,7 +328,7 @@ pub fn sys_clock_gettime(_clk_id: usize, ts: *mut u64) -> Result<isize> {
         return Ok(0);
     }
     let token = current_user_token();
-    let ticks = 0;
+    let ticks = get_time();
     let sec = (ticks / CLOCK_FREQ) as u64;
     let nsec = ((ticks % CLOCK_FREQ) * (NSEC_PER_SEC / CLOCK_FREQ)) as u64;
     *translated_mut(token, ts) = sec;
@@ -315,6 +336,8 @@ pub fn sys_clock_gettime(_clk_id: usize, ts: *mut u64) -> Result<isize> {
     Ok(0)
 }
 pub fn sys_kill(pid: usize, signal: u32) -> Result<isize> {
+    // println!("[KERNEL] enter sys_kill: pid:{} send to pid:{}, signal:0x{:x}",current_task().unwrap().pid.0, pid, signal);
+    //TODO pid==-1
     if signal == 0 {
         return Ok(0);
     }
@@ -324,13 +347,32 @@ pub fn sys_kill(pid: usize, signal: u32) -> Result<isize> {
             task.write().signals |= flag;
             Ok(0)
         } else {
-            panic!("sys_kill: unsupported signal");
+            panic!("[DEBUG] sys_kill: unsupported signal:{:?}", signal);
         }
     } else {
-        Err(Errno::EINVAL)
+        Err(Errno::UNCLEAR)
     }
 }
 
+const RUSAGE_SELF: isize = 0;
+pub fn sys_getrusage(who: isize, usage: *mut u8) -> Result<isize> {
+    if who != RUSAGE_SELF {
+        panic!("sys_getrusage: \"who\" not supported!");
+    }
+    let token = current_user_token();
+    let mut userbuf = UserBuffer::wrap(translated_bytes_buffer(
+        token,
+        usage,
+        core::mem::size_of::<RUsage>(),
+    ));
+    let mut rusage = RUsage::new();
+    let task = current_task().unwrap();
+    let mut inner = task.write();
+    rusage.ru_stime = inner.stime;
+    rusage.ru_utime = inner.utime;
+    userbuf.write(rusage.as_bytes());
+    Ok(0)
+}
 ///
 ///
 /// ```c

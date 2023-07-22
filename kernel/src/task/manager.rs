@@ -43,11 +43,13 @@ impl TaskManager {
 
     /// 将一个任务加入队尾
     pub fn add(&mut self, task: Arc<TaskControlBlock>) {
+        // println!("[DEBUG] add task {:?}",task.pid.0);
         self.ready_queue.push_back(task);
     }
 
     /// 从队头中取出一个任务
     pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
+        // println!("[DEBUG] fetch task {:?}",self.ready_queue.front().unwrap().pid.0);
         self.ready_queue.pop_front()
     }
 

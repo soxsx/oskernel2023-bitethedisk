@@ -23,13 +23,12 @@ user_trapvec:
 	# sscratch 中存放着 trap 的虚拟地址 TRAP_CONTEXT
 	csrrw sp, sscratch, sp
 
-	# 保存除了 x0, sp, tp 的其他通用寄存器
+	# 保存除了 x0, sp 的其他通用寄存器
 	sd ra, 1*8(sp)
 	sd gp, 3*8(sp)
 
-	# 跳过 tp(x4)，tp 中保存着当前的 hart id
-	.set n, 5
-	.rept 27
+	.set n, 4
+	.rept 28
 		STORE_X %n
 		.set n, n+1
 	.endr
@@ -89,8 +88,8 @@ user_trapret:
 	# 因为 sp 在宏中是作为偏移的基址使用的，所以现在不能从内存中恢复它的值
 	ld ra, 1*8(sp)
 	ld gp, 3*8(sp)
-	.set n, 5
-	.rept 27
+	.set n, 4
+	.rept 28
 		LOAD_X %n
 		.set n, n+1
 	.endr

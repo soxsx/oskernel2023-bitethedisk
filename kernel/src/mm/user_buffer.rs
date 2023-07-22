@@ -11,6 +11,12 @@ pub struct UserBuffer {
 #[allow(unused)]
 impl UserBuffer {
     /// 使用 `buffer` 创建一个新的缓冲区实例
+    pub fn empty() -> Self {
+        Self {
+            buffers: Vec::new(),
+        }
+    }
+
     pub fn wrap(buffers: Vec<&'static mut [u8]>) -> Self {
         Self { buffers }
     }
@@ -32,6 +38,23 @@ impl UserBuffer {
             let sblen = (*sub_buff).len();
             for j in 0..sblen {
                 (*sub_buff)[j] = buff[current];
+                current += 1;
+                if current == len {
+                    return len;
+                }
+            }
+        }
+
+        len
+    }
+
+    pub fn write_zeros(&mut self) -> usize {
+        let len = self.len();
+        let mut current = 0;
+        for sub_buff in self.buffers.iter_mut() {
+            let sblen = (*sub_buff).len();
+            for j in 0..sblen {
+                (*sub_buff)[j] = 0;
                 current += 1;
                 if current == len {
                     return len;

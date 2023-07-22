@@ -129,15 +129,14 @@ impl Iterator for ClusterChain {
         let offset_left = offset % BLOCK_SIZE;
 
         let block_id = self.fat1_offset / BLOCK_SIZE + block_offset;
-        let mut buffer = [0u8; BLOCK_SIZE];
 
-        get_block_cache(block_id, Arc::clone(&self.device))
+
+        let next_cluster =  get_block_cache(block_id, Arc::clone(&self.device))
             .read()
-            .read(0, |buf: &[u8; BLOCK_SIZE]| {
-                buffer.copy_from_slice(buf);
+            .read(offset_left, |&cluster: &u32| {
+                cluster
             });
 
-        let next_cluster = read_le_u32(&buffer[offset_left..offset_left + 4]);
         let next_cluster = if next_cluster >= END_OF_CLUSTER {
             None
         } else {

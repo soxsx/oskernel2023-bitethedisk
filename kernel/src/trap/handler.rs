@@ -16,6 +16,7 @@ use crate::{
         current_add_signal, current_task, current_trap_cx, suspend_current_and_run_next,
         SignalFlags,
     },
+    timer::{get_timeval, set_next_trigger},
 };
 
 use super::{set_kernel_trap_entry, trap_return};
@@ -23,15 +24,29 @@ use super::{set_kernel_trap_entry, trap_return};
 /// 用户态 trap 发生时的处理函数
 #[no_mangle]
 pub fn user_trap_handler() -> ! {
+    let pid = current_task().unwrap().pid();
     set_kernel_trap_entry();
-
     // 用于描述 Trap 的原因
     let scause = scause::read();
     // 给出 Trap 附加信息
     let stval = stval::read();
 
+    let task = current_task().unwrap();
+    let mut inner = task.write();
+    let diff = get_timeval() - inner.last_enter_umode_time;
+    inner.add_utime(diff);
+    inner.set_last_enter_smode(get_timeval());
+    drop(inner);
+    drop(task);
+
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
+            // println!(
+            // 	"[DEBUG] pid :{:?}, syscall at 0x{:x?}",
+            // 	current_task().unwrap().pid(),
+            // 	current_trap_cx().sepc,
+            // );
+
             let mut cx = current_trap_cx();
 
             cx.sepc += 4;
@@ -51,10 +66,10 @@ pub fn user_trap_handler() -> ! {
         | Trap::Exception(Exception::LoadFault)
         | Trap::Exception(Exception::LoadPageFault) => {
             debug!(
-                "user_trap_handler: memory fault, task: {} at {:?}, {:?}",
+                "user_trap_handler: memory fault, task: {} at {:x?}, {:x?}",
                 current_task().unwrap().pid(),
                 VirtAddr::from(stval as usize),
-                VirtAddr::from(stval as usize).floor(),
+                current_trap_cx().sepc,
             );
 
             let is_load: bool;
@@ -109,6 +124,7 @@ pub fn user_trap_handler() -> ! {
         // 时间片到了
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             suspend_current_and_run_next();
+            set_next_trigger();
         }
 
         _ => panic!(

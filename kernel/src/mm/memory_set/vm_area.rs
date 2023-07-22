@@ -118,7 +118,6 @@ impl VmArea {
     /// 将当前逻辑段到物理内存的映射从传入的该逻辑段所属的地址空间的多级页表中删除
     pub fn erase_pagetable(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
-            self.write_back(page_table).unwrap();
             page_table.unmap(vpn);
         }
     }
@@ -185,8 +184,9 @@ impl VmArea {
         let mut vpn = split_vpn;
         let vpn_end = self.vpn_range.get_end();
         while vpn < vpn_end {
-            let frame = self.frame_map.remove(&vpn).unwrap();
-            new_data_map.insert(vpn, frame);
+            if let Some(frame) = self.frame_map.remove(&vpn) {
+                new_data_map.insert(vpn, frame);
+            }
             vpn.step();
         }
 
@@ -209,8 +209,9 @@ impl VmArea {
         let mut vpn = self.vpn_range.get_start();
         let vpn_end = split_vpn;
         while vpn < vpn_end {
-            let frame = self.frame_map.remove(&vpn).unwrap();
-            new_data_frames.insert(vpn, frame);
+            if let Some(frame) = self.frame_map.remove(&vpn) {
+                new_data_frames.insert(vpn, frame);
+            }
             vpn.step();
         }
 

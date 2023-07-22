@@ -51,11 +51,12 @@ impl Sub for TimeVal {
             }
         } else {
             let mut sec = self.sec - other.sec;
-            let mut usec = self.usec - other.usec;
-            if self.usec < other.usec {
+            let usec = if self.usec < other.usec {
                 sec -= 1;
-                usec = USEC_PER_SEC + self.usec - other.usec;
-            }
+                USEC_PER_SEC + self.usec - other.usec
+            } else {
+                self.usec - other.usec
+            };
             Self { sec, usec }
         }
     }
