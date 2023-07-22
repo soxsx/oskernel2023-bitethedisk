@@ -117,17 +117,6 @@ pub fn exec_signal_handlers() {
         };
         let sigaction = task_inner.sigactions[signum as usize];
 
-        // 阻塞当前信号以及 sigaction.sa_mask 中的信号
-        let mut sigmask = sigaction.sa_mask.clone();
-        if !sigaction.sa_flags.contains(SAFlags::SA_NODEFER) {
-            sigmask.add(signum);
-        }
-
-        // 保存旧的信号掩码
-        let old_sigmask = task_inner.sigmask.clone();
-        // 将信号掩码设置为 sigmask
-        task_inner.sigmask = sigmask;
-
         // 如果信号对应的处理函数存在，则做好跳转到 handler 的准备
         let handler = sigaction.sa_handler;
         match handler {
@@ -148,6 +137,18 @@ pub fn exec_signal_handlers() {
                 return;
             }
             _ => {
+                // 阻塞当前信号以及 sigaction.sa_mask 中的信号
+                let mut sigmask = sigaction.sa_mask.clone();
+                if !sigaction.sa_flags.contains(SAFlags::SA_NODEFER) {
+                    sigmask.add(signum);
+                }
+
+                // 保存旧的信号掩码
+                let old_sigmask = task_inner.sigmask.clone();
+                sigmask.add_other(old_sigmask);
+                // 将信号掩码设置为 sigmask
+                task_inner.sigmask = sigmask;
+
                 // 将 SignalContext 数据放入栈中
                 let trap_cx = task_inner.trap_context();
                 // 保存 Trap 上下文与 old_sigmask 到 sig_context 中
