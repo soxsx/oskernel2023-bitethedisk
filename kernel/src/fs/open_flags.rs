@@ -2,6 +2,7 @@
 bitflags! {
     #[derive(Debug)]
     pub struct OpenFlags: u32 {
+    // TODO do not use 0
         const O_RDONLY    = 0;
         const O_WRONLY    = 1 << 0;
         const O_RDWR      = 1 << 1;

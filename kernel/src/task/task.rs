@@ -6,14 +6,14 @@ use super::{pid_alloc, PidHandle, SignalFlags};
 use crate::consts::*;
 use crate::fs::{file::File, Fat32File, Stdin, Stdout};
 use crate::mm::kernel_vmm::acquire_kvmm;
-use crate::mm::memory_set::{AuxEntry, LoadedELF, MMAP_BASE};
+use crate::mm::memory_set::{self, AuxEntry, LoadedELF, AT_EXECFN, AT_NULL, AT_RANDOM, MMAP_BASE};
 use crate::mm::{
     translated_mut, MapPermission, MemorySet, MmapFlags, MmapManager, MmapProts, PageTableEntry,
     PhysPageNum, VirtAddr, VirtPageNum,
 };
 use crate::trap::handler::user_trap_handler;
 use crate::trap::TrapContext;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -295,6 +295,7 @@ impl TaskControlBlock {
             user_sp -= core::mem::size_of::<AuxEntry>();
             *translated_mut(token, user_sp as *mut AuxEntry) = auxv[i];
         }
+        // auxv.push(AuxEntry(AT_EXECFN,args_ptrv[0] ));
 
         // padding 0 表示结束
         user_sp -= core::mem::size_of::<usize>();
