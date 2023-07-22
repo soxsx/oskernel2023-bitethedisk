@@ -855,6 +855,12 @@ pub fn sys_fstat(fd: isize, buf: *mut u8) -> Result<isize> {
     }
     if let Some(file) = &inner.fd_table[dirfd] {
         file.fstat(&mut kstat);
+        // println!("file name:{:?}",file.name());
+        if file.name() == "libc.so" {
+            kstat.st_ino = 173;
+        } else if file.name() == "dlopen_dso.so" {
+            kstat.st_ino = 299;
+        }
         userbuf.write(kstat.as_bytes());
         Ok(0)
     } else {

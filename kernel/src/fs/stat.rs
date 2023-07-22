@@ -12,13 +12,13 @@ pub const S_IFSOCK: u32 = 0o0140000;
 #[repr(C)]
 #[derive(Debug)]
 pub struct Kstat {
-    st_dev: u64,   // 包含文件的设备 ID
-    st_ino: u64,   // 索引节点号
-    st_mode: u32,  // 文件类型和模式
-    st_nlink: u32, // 硬链接数
-    st_uid: u32,   // 所有者的用户 ID
-    st_gid: u32,   // 所有者的组 ID
-    st_rdev: u64,  // 设备 ID（如果是特殊文件）
+    st_dev: u64,     // 包含文件的设备 ID
+    pub st_ino: u64, // 索引节点号
+    st_mode: u32,    // 文件类型和模式
+    st_nlink: u32,   // 硬链接数
+    st_uid: u32,     // 所有者的用户 ID
+    st_gid: u32,     // 所有者的组 ID
+    st_rdev: u64,    // 设备 ID（如果是特殊文件）
     __pad: u64,
     st_size: i64,    // 总大小，以字节为单位
     st_blksize: i32, // 文件系统 I/O 的块大小
@@ -37,7 +37,7 @@ impl Kstat {
     pub fn new() -> Self {
         Self {
             st_dev: 0,
-            st_ino: 0,
+            st_ino: 0 as u64,
             st_mode: 0,
             st_nlink: 0,
             st_uid: 0,
