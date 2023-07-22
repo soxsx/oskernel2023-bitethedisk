@@ -159,6 +159,7 @@ pub fn sys_mprotect(addr: usize, length: usize, prot: usize) -> Result<isize> {
         if let Some(pte) = page_table.find_pte(vpn) {
             pte.set_flags(pte_flags);
         } else {
+            // TODO if vpn in lazy map
             let va: VirtAddr = vpn.into();
             return Err(SyscallError::InvalidVirtAddress(-1, va));
         }
