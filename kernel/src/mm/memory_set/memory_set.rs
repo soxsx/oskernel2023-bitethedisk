@@ -21,6 +21,7 @@ use crate::mm::shared_memory::{
 pub const MMAP_BASE: usize = 0x60000000;
 pub const MMAP_END: usize = 0x68000000; // mmap 区大小为 128 MiB
 pub const SHM_BASE: usize = 0x70000000;
+pub const LINK_BASE: usize = 0x20000000;
 
 #[derive(Clone, Copy, Debug)]
 pub struct AuxEntry(pub usize, pub usize);
@@ -367,13 +368,19 @@ impl MemorySet {
 
         // 记录目前涉及到的最大的虚拟地址
         let mut brk_start_va = VirtAddr(0);
-
+        let mut dynamic_link = false;
+        let mut entry_point = elf.header.pt2.entry_point() as usize;
         // 遍历程序段进行加载
         for i in 0..ph_count as u16 {
             let ph = elf.program_header(i).unwrap();
-            // let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
-            // let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
-            // println!("[DEBUG] start:0x{:x?},end:0x{:x?},type:{:?}",start_va,end_va,ph.get_type().unwrap());
+            let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
+            let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
+            // println!(
+            //     "[DEBUG] start:0x{:x?},end:0x{:x?},type:{:?}",
+            //     start_va,
+            //     end_va,
+            //     ph.get_type().unwrap()
+            // );
             match ph.get_type().unwrap() {
                 xmas_elf::program::Type::Load => {
                     let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
@@ -415,10 +422,70 @@ impl MemorySet {
                     // auxs.push(AuxEntry(AT_PHDR, ph.virtual_addr() as usize));
                 }
                 xmas_elf::program::Type::Interp => {
-                    println!("elf Interp");
+                    // println!("elf Interp");
+                    dynamic_link = true;
                 }
-                _ => continue,
+                _ => {
+                    let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
+                    let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
+                    // println!(
+                    //     "TYPE:{:?} start_va:{:?} end_va{:?}",
+                    //     ph.get_type().unwrap(),
+                    //     start_va,
+                    //     end_va
+                    // );
+                }
             }
+        }
+        if dynamic_link {
+            let path = AbsolutePath::from_str("/libc.so");
+            let interpreter_file = open(path, OpenFlags::O_RDONLY, CreateMode::empty())
+                .expect("can't find interpreter file");
+            // 第一次读取前64字节确定程序表的位置与大小
+            let interpreter_head_data = interpreter_file.read_to_vec(0, 64);
+            let interp_elf = xmas_elf::ElfFile::new(interpreter_head_data.as_slice()).unwrap();
+
+            let ph_entry_size = interp_elf.header.pt2.ph_entry_size() as usize;
+            let ph_offset = interp_elf.header.pt2.ph_offset() as usize;
+            let ph_count = interp_elf.header.pt2.ph_count() as usize;
+
+            // 进行第二次读取，这样的elf对象才能正确解析程序段头的信息
+            let interpreter_head_data =
+                interpreter_file.read_to_vec(0, ph_offset + ph_count * ph_entry_size);
+            let interp_elf = xmas_elf::ElfFile::new(interpreter_head_data.as_slice()).unwrap();
+            auxs.push(AuxEntry(AT_BASE, LINK_BASE));
+            entry_point = LINK_BASE + interp_elf.header.pt2.entry_point() as usize;
+            // 获取 program header 的数目
+            let ph_count = interp_elf.header.pt2.ph_count();
+            for i in 0..ph_count {
+                let ph = interp_elf.program_header(i).unwrap();
+                if ph.get_type().unwrap() == xmas_elf::program::Type::Load {
+                    let start_va: VirtAddr = (ph.virtual_addr() as usize + LINK_BASE).into();
+                    let end_va: VirtAddr =
+                        (ph.virtual_addr() as usize + ph.mem_size() as usize + LINK_BASE).into();
+                    // println!("DYNAMIC LOAD start_va:{:x?},end_va:{:x?}", start_va, end_va);
+                    let map_perm =
+                        MapPermission::U | MapPermission::R | MapPermission::W | MapPermission::X;
+                    let map_area = VmArea::new(
+                        start_va,
+                        end_va,
+                        MapType::Framed,
+                        map_perm,
+                        Some(interpreter_file.clone()),
+                        0,
+                    );
+                    memory_set.insert(
+                        map_area,
+                        Some((
+                            ph.offset() as usize,
+                            ph.file_size() as usize,
+                            start_va.page_offset(),
+                        )),
+                    );
+                }
+            }
+        } else {
+            auxs.push(AuxEntry(AT_BASE, 0));
         }
         let user_stack_top = TRAP_CONTEXT - PAGE_SIZE;
         let user_stack_bottom = user_stack_top - USER_STACK_SIZE;
@@ -492,7 +559,7 @@ impl MemorySet {
         LoadedELF {
             memory_set,
             user_stack_top,
-            elf_entry: elf.header.pt2.entry_point() as usize,
+            elf_entry: entry_point,
             auxs,
         }
     }
@@ -519,7 +586,7 @@ impl MemorySet {
                         .as_bytes_array()
                         .copy_from_slice(src_ppn.as_bytes_array());
                 }
-		break;
+                break;
             }
         }
         // This part is for copy on write
