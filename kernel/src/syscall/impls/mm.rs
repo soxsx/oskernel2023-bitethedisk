@@ -136,3 +136,46 @@ pub fn sys_shmdt(address: usize) -> Result<isize> {
 
     Ok(nattch as isize)
 }
+pub fn sys_mprotect(addr: usize, length: usize, prot: usize) -> Result<isize> {
+    // println!(
+    //     "[DEBUG] mprotect addr:{:x?} ,len:{:?}, prot:{:x?}",
+    //     addr, length, prot
+    // );
+    let token = current_user_token();
+    let page_table = PageTable::from_token(token);
+
+    let map_flags = (((prot & 0b111) << 1) + (1 << 4)) as u16;
+    let map_perm = MapPermission::from_bits(map_flags).unwrap();
+    let pte_flags = PTEFlags::from_bits(map_perm.bits()).unwrap() | PTEFlags::V;
+
+    let start_va = VirtAddr::from(addr);
+    let end_va = VirtAddr::from(addr + length);
+    let vpn_range = VPNRange::from_va(start_va, end_va);
+
+    for vpn in vpn_range {
+        if let Some(pte) = page_table.find_pte(vpn) {
+            pte.set_flags(pte_flags);
+        } else {
+            let task = current_task().unwrap();
+            let mut inner = task.write();
+            let mmap_start = inner.memory_set.mmap_manager.mmap_start;
+            let mmap_top = inner.memory_set.mmap_manager.mmap_top;
+            let mmap_perm = MmapProts::from_bits(prot).unwrap();
+            let va: VirtAddr = vpn.into();
+            if va >= mmap_start && va < mmap_top {
+                inner
+                    .memory_set
+                    .mmap_manager
+                    .mmap_map
+                    .get_mut(&vpn)
+                    .unwrap()
+                    .set_prot(mmap_perm);
+                continue;
+            }
+            let va: VirtAddr = vpn.into();
+            return Err(SyscallError::InvalidVirtAddress(-1, va));
+        }
+    }
+
+    Ok(0)
+}
