@@ -45,5 +45,5 @@ pub fn get_timeval() -> TimeVal {
 
 /// 设置下次触发时钟中断的时间
 pub fn set_next_trigger() {
-    set_timer((get_time() + CLOCK_FREQ / TICKS_PER_SEC) as i32);
+    set_timer((get_time() + CLOCK_FREQ / TICKS_PER_SEC) as u64);
 }
