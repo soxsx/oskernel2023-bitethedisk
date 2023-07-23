@@ -93,6 +93,12 @@ const SYS_GETSOCKNAME: usize = 204;
 
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
+    // println!(
+    //     "[DEBUG] {}. pid:{:?}",
+    //     syscall_name(syscall_id),
+    //     current_task().unwrap().pid.0
+    // );
+
     let ret = match syscall_id {
         SYS_CLONE => sys_do_fork(args[0], args[1], args[2], args[3], args[4]),
 
@@ -216,7 +222,6 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[3],
         ),
         SYS_GETRANDOM => sys_getrandom(args[0] as *const u8, args[1], args[2]),
-        SYS_MPROTECT => Ok(0),
         SYS_GETPGID => Ok(0),
         SYS_SETPGID => Ok(0),
         SYS_SYNC => sys_sync(),
@@ -244,6 +249,8 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_FUTEX => Ok(0),
         SYS_RT_SIGTIMEDWAIT => Ok(0),
         SYS_RT_SIGRETURN => Ok(0),
+        SYS_MPROTECT => sys_mprotect(args[0], args[1], args[2]),
+        SYS_MEMBARRIER => Ok(0),
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
     match ret {
