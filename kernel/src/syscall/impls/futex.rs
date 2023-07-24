@@ -45,7 +45,7 @@ pub fn sys_futex(
     val2: *const u32,
     uaddr2: *const u32,
     val3: u32,
-) -> Result<i32> {
+) -> Result<isize> {
     let option = futex_op & FUTEX_CMD_MASK;
     let token = current_user_token();
     println!(
@@ -95,7 +95,7 @@ pub fn sys_futex(
 }
 
 /// 测试地址uaddr指向的futex字中的值是否仍然包含期望的值val，如果是，则等待futex词上的FUTEX_WAKE操作
-pub fn futex_wait(uaddr: usize, val: u32, timeout: usize) -> Result<i32> {
+pub fn futex_wait(uaddr: usize, val: u32, timeout: usize) -> Result<isize> {
     // futex_wait_setup
     let mut fq_writer = FUTEX_QUEUE.write();
     let flag = fq_writer.contains_key(&uaddr);
@@ -136,7 +136,7 @@ pub fn futex_wait(uaddr: usize, val: u32, timeout: usize) -> Result<i32> {
 }
 
 /// 唤醒等待在地址uaddr指向的futex字上的nr_wake个任务
-pub fn futex_wake(uaddr: usize, nr_wake: u32) -> Result<i32> {
+pub fn futex_wake(uaddr: usize, nr_wake: u32) -> Result<isize> {
     let mut fq_writer = FUTEX_QUEUE.write();
     if !fq_writer.contains_key(&uaddr) {
         return Ok(0);
@@ -166,13 +166,13 @@ pub fn futex_wake(uaddr: usize, nr_wake: u32) -> Result<i32> {
     for task in wakeup_queue.into_iter() {
         unblock_task(task);
     }
-    Ok(nr_wake as i32)
+    Ok(nr_wake as isize)
 }
 
 /// 最多唤醒等待在 uaddr 上的 futex 的 val 个等待者。
 /// 如果等待者数量超过了 val，则剩余的等待者将从源 futex 的等待队列中删除，并添加到目标 futex 在 uaddr2 上的等待队列中。
 /// val2 参数指定了重新加入到 uaddr2 上的 futex 的等待者的上限数量。
-pub fn futex_requeue(uaddr: usize, nr_wake: u32, uaddr2: usize, nr_limit: u32) -> Result<i32> {
+pub fn futex_requeue(uaddr: usize, nr_wake: u32, uaddr2: usize, nr_limit: u32) -> Result<isize> {
     let mut fq_writer = FUTEX_QUEUE.write();
     if !fq_writer.contains_key(&uaddr) {
         return Ok(0);
@@ -214,7 +214,7 @@ pub fn futex_requeue(uaddr: usize, nr_wake: u32, uaddr2: usize, nr_limit: u32) -
 
     // requeue...
     if nr_limit == 0 {
-        return Ok(nr_wake as i32);
+        return Ok(nr_wake as isize);
     }
 
     let flag2 = fq_writer.contains_key(&uaddr2);
@@ -232,5 +232,5 @@ pub fn futex_requeue(uaddr: usize, nr_wake: u32, uaddr2: usize, nr_limit: u32) -
         fq2.waiters_increase();
     }
 
-    Ok(nr_wake as i32)
+    Ok(nr_wake as isize)
 }

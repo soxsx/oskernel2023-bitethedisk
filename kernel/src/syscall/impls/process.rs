@@ -321,10 +321,6 @@ pub fn sys_rt_sigtimedwait() -> Result<isize> {
     Ok(0)
 }
 
-pub fn sys_futex() -> Result<isize> {
-    Ok(0)
-}
-
 pub fn sys_geteuid() -> Result<isize> {
     Ok(0)
 }

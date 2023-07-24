@@ -189,6 +189,7 @@ pub fn syscall_name(id: usize) -> &'static str {
         SYS_PRLIMIT64 => "SYS_PRLIMIT64",
         SYS_RENAMEAT2 => "SYS_RENAMEAT2",
         SYS_GETRANDOM => "SYS_GETRANDOM",
+        SYS_FUTEX => "SYS_FUTEX",
 
         _ => "unknown",
     }
@@ -348,7 +349,6 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_PREAD64 => sys_pread64(args[0], args[1] as *const u8, args[2], args[3]),
         SYS_PWRITE64 => sys_pwrite64(args[0], args[1] as *const u8, args[2], args[3]),
         SYS_STATFS => sys_statfs(args[0] as *const u8, args[1] as *const u8),
-        SYS_FUTEX => Ok(0),
         SYS_RT_SIGTIMEDWAIT => Ok(0),
         SYS_RT_SIGRETURN => Ok(0),
         SYS_MPROTECT => sys_mprotect(args[0], args[1], args[2]),
@@ -384,6 +384,14 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[2] as *mut usize,
         ),
         SYS_SIGRETURN => sys_sigreturn(),
+        SYS_FUTEX => sys_futex(
+            args[0] as *const u32,
+            args[1] as usize,
+            args[2] as u32,
+            args[3] as *const u32,
+            args[4] as *const u32,
+            args[5] as u32,
+        ),
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
     // println!(

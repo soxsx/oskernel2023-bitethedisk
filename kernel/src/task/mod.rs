@@ -24,6 +24,8 @@ pub use processor::{
 pub use signals::*;
 pub use task::FD_LIMIT;
 
+use crate::mm::translated_mut;
+
 use self::{
     initproc::INITPROC,
     manager::block_task,
