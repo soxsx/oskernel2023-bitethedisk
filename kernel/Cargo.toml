@@ -16,6 +16,8 @@ log = "0.4"
 paste = "1"
 thiserror = { version = "1.0", package = "thiserror-core", default-features = false }
 
+hashbrown = "0.14.0"
+
 # ----- 本地依赖 ----- #
 fat32 = { path = "../crates/fat32" }
 sync_cell = { path = "../crates/sync_cell" }

@@ -1,7 +1,7 @@
 use nix::info::Utsname;
 use nix::{tms, TimeVal};
 
-use crate::task::processor::hanging_current_task;
+use crate::task::hanging_current_and_run_next;
 use crate::{
     mm::{translated_bytes_buffer, translated_ref, UserBuffer},
     task::{current_user_token, suspend_current_and_run_next},
@@ -130,7 +130,7 @@ pub fn sys_nanosleep(buf: *const u8) -> Result {
     let token = current_user_token();
     let len_timeval = translated_ref(token, buf as *const TimeVal);
     let len = len_timeval.sec * 1000 + len_timeval.usec / 1000;
-    hanging_current_task(tic, len);
+    hanging_current_and_run_next(tic, len);
     Ok(0)
 }
 

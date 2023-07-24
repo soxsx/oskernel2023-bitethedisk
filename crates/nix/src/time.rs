@@ -68,6 +68,16 @@ impl TimeVal {
         let size = core::mem::size_of::<Self>();
         unsafe { core::slice::from_raw_parts(self as *const _ as usize as *const u8, size) }
     }
+
+    pub fn from_ticks(tiks: usize) -> Self {
+        let sec = tiks / TICKS_PER_SEC;
+        let usec = (tiks % TICKS_PER_SEC) * USEC_PER_SEC / TICKS_PER_SEC;
+        Self { sec, usec }
+    }
+
+    pub fn into_ticks(&self) -> usize {
+        self.sec * TICKS_PER_SEC + self.usec / USEC_PER_SEC * TICKS_PER_SEC
+    }
 }
 
 /// Linux 间隔计数
@@ -105,6 +115,10 @@ impl TimeSpec {
             tv_sec: 0,
             tv_nsec: 0,
         }
+    }
+
+    pub fn into_ticks(&self) -> usize {
+        self.tv_sec as usize * TICKS_PER_SEC + self.tv_nsec as usize / NSEC_PER_SEC * TICKS_PER_SEC
     }
 
     pub fn as_bytes(&self) -> &[u8] {

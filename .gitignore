@@ -7,3 +7,4 @@ temp
 *.log
 *.nim
 rustsbi-qemu.bin
+.vscode/

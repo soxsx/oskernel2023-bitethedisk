@@ -601,7 +601,9 @@ impl TaskControlBlock {
 /// |`Zombie`|僵尸态|
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum TaskStatus {
-    Ready,   // 准备运行
-    Running, // 正在运行
-    Zombie,  // 僵尸态
+    Ready,    // 准备运行
+    Running,  // 正在运行
+    Blocking, // 阻塞态
+    Hanging,  // 挂起态
+    Zombie,   // 僵尸态
 }

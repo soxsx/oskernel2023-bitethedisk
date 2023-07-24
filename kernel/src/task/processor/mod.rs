@@ -38,16 +38,6 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
     current_task().unwrap().write().trap_context()
 }
 
-pub fn hanging_current_task(sleep_time: usize, duration: usize) {
-    let task = current_task().unwrap();
-    let mut inner = task.write();
-    let current_cx_ptr = &mut inner.task_cx as *mut TaskContext;
-    drop(inner);
-    drop(task);
-    acquire_processor().hang_current(sleep_time, duration);
-    schedule(current_cx_ptr);
-}
-
 /// 换到 idle 控制流并开启新一轮的任务调度
 pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     let mut processor = acquire_processor();

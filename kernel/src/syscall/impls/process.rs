@@ -280,10 +280,6 @@ pub fn sys_gettid() -> Result {
     Ok(0)
 }
 
-pub fn sys_futex() -> Result {
-    Ok(0)
-}
-
 pub fn sys_geteuid() -> Result {
     Ok(0)
 }
