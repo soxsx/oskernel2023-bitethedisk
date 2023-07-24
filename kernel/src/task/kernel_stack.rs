@@ -1,7 +1,7 @@
 //! 进程内核栈
 
 use crate::{
-    consts::{KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE},
+    consts::{KERNEL_STACK_SIZE, PAGE_SIZE, SIGNAL_TRAMPOLINE},
     mm::{kernel_vmm::acquire_kvmm, MapPermission, VirtAddr},
 };
 
@@ -9,7 +9,7 @@ use super::PidHandle;
 
 /// Return (bottom, top) of a kernel stack in kernel space.
 pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
-    let top = TRAMPOLINE - app_id * (KERNEL_STACK_SIZE + PAGE_SIZE);
+    let top = SIGNAL_TRAMPOLINE - app_id * (KERNEL_STACK_SIZE + PAGE_SIZE);
     let bottom = top - KERNEL_STACK_SIZE;
 
     (bottom, top)

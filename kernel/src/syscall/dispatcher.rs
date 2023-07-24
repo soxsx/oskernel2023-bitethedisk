@@ -1,8 +1,13 @@
 //! 根据 SYS_id 分发具体系统调用
 
 use super::impls::*;
-
+use crate::task::current_task;
+use crate::task::SigAction;
+use nix::time::TimeSpec;
 // 系统调用号
+// const SYS_RT_SIGPROMASK: usize = 135;
+// const SYS_RT_SIGACTION: usize = 134;
+// const SYS_KILL: usize = 129;
 const SYS_GETCWD: usize = 17;
 const SYS_DUP: usize = 23;
 const SYS_DUP3: usize = 24;
@@ -84,6 +89,17 @@ const SYS_PRLIMIT64: usize = 261;
 const SYS_RENAMEAT2: usize = 276;
 const SYS_GETRANDOM: usize = 278;
 const SYS_MEMBARRIER: usize = 283;
+const SYS_SCHED_GETAFFINITY: usize = 123;
+const SYS_SCHEED_GETSCHEDULER: usize = 120;
+const SYS_SCHED_GETPARAM: usize = 121;
+const SYS_SCHED_SETSCHEDULER: usize = 119;
+const SYS_CLOCK_GETRES: usize = 114;
+const SYS_SOCKETPAIR: usize = 199;
+
+// const SYS_TKILL: usize = 130;
+const SYS_SIGACTION: usize = 134;
+const SYS_SIGPROCMASK: usize = 135;
+pub const SYS_SIGRETURN: usize = 139;
 
 // const SYS_SOCKET: usize = 198;
 // const SYS_BIND: usize = 200;
@@ -181,12 +197,11 @@ pub fn syscall_name(id: usize) -> &'static str {
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
     // println!(
-    //     "[DEBUG] {}. pid:{:?}",
+    //     "[DEBUG] {}, pid:{:?}",
     //     syscall_name(syscall_id),
     //     current_task().unwrap().pid.0
     // );
     let ret = match syscall_id {
-
         SYS_CLONE => sys_do_fork(args[0], args[1], args[2], args[3], args[4]),
 
         SYS_TGKILL => sys_tgkill(args[0] as isize, args[1], args[2] as isize),
@@ -256,13 +271,13 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_WRITEV => sys_writev(args[0], args[1] as *const usize, args[2]),
         SYS_EXIT_GROUP => sys_exit_group(args[0] as i32),
         SYS_GETUID => sys_getuid(),
-        SYS_RT_SIGPROMASK => sys_rt_sigprocmask(
-            args[0] as i32,
-            args[1] as *const usize,
-            args[2] as *const usize,
-            args[3],
-        ),
-        SYS_RT_SIGACTION => sys_rt_sigaction(),
+        // SYS_RT_SIGPROMASK => sys_rt_sigprocmask(
+        //     args[0] as i32,
+        //     args[1] as *const usize,
+        //     args[2] as *const usize,
+        //     args[3],
+        // ),
+        // SYS_RT_SIGACTION => sys_rt_sigaction(),
         SYS_IOCTL => sys_ioctl(args[0], args[1], args[2] as *mut u8),
         SYS_FCNTL => sys_fcntl(
             args[0] as isize,
@@ -338,8 +353,43 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_RT_SIGRETURN => Ok(0),
         SYS_MPROTECT => sys_mprotect(args[0], args[1], args[2]),
         SYS_MEMBARRIER => Ok(0),
+        SYS_SCHED_GETAFFINITY => {
+            sys_sched_getaffinity(args[0] as usize, args[1] as usize, args[2] as *mut u8)
+        }
+        SYS_SCHEED_GETSCHEDULER => sys_getscheduler(args[0] as usize),
+        SYS_SCHED_GETPARAM => sys_sched_getparam(args[0] as usize, args[1] as *mut SchedParam),
+        SYS_SCHED_SETSCHEDULER => sys_sched_setscheduler(
+            args[0] as usize,
+            args[1] as isize,
+            args[2] as *const SchedParam,
+        ),
+        SYS_CLOCK_GETRES => sys_clock_getres(args[0] as usize, args[1] as *mut TimeSpec),
+        SYS_SOCKETPAIR => sys_socketpair(
+            args[0] as isize,
+            args[1] as isize,
+            args[2] as isize,
+            args[3] as *mut [isize; 2],
+        ),
+
+        // SYS_SIGACTION => sys_sigaction(
+        //     args[0] as isize,
+        //     args[1] as *const SigAction,
+        //     args[2] as *mut SigAction,
+        // ),
+        SYS_SIGACTION => Ok(0),
+
+        SYS_SIGPROCMASK => sys_sigprocmask(
+            args[0] as usize,
+            args[1] as *const usize,
+            args[2] as *mut usize,
+        ),
+        SYS_SIGRETURN => sys_sigreturn(),
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
+    // println!(
+    //     "[DEBUG] syscall end pid:{:?}",
+    //     current_task().unwrap().pid.0,
+    // );
     match ret {
         Ok(data) => data,
         Err(err) => {

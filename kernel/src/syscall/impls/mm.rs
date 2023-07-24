@@ -111,7 +111,6 @@ pub fn sys_mmap(
 
     Ok(result_addr as isize)
 }
-
 pub fn sys_shmget(key: usize, size: usize, shmflg: usize) -> Result<isize> {
     let size = (size + PAGE_SIZE - 1) / PAGE_SIZE * PAGE_SIZE;
     assert!(size % PAGE_SIZE == 0);
@@ -187,7 +186,7 @@ pub fn sys_mprotect(addr: usize, length: usize, prot: usize) -> Result<isize> {
                 continue;
             }
             let va: VirtAddr = vpn.into();
-            return Err(SyscallError::InvalidVirtAddress(-1, va));
+            return Err(Errno::UNCLEAR);
         }
     }
 

@@ -20,6 +20,7 @@
 
 use riscv::register::sstatus::{self, Sstatus, SPP};
 
+#[derive(Clone, Debug)]
 #[repr(C)]
 pub struct TrapContext {
     /// 通用寄存器

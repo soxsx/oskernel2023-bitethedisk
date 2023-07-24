@@ -6,12 +6,15 @@ use crate::mm::PageTable;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+
+// see [man mmap](https://man7.org/linux/man-pages/man2/mmap.2.html)
 bitflags! {
 #[derive(Clone, Copy, Debug)]
     pub struct MmapProts: usize {
+
     // TODO do not use 0
-        const PROT_NONE = 0;  // 不可读不可写不可执行，用于实现防范攻击的guard page等
-        const PROT_READ = 1 <<0;
+        const PROT_NONE = 0;  // 不可读不可写不可执行，用于实现防范攻击的guard page等 -> sys_
+        const PROT_READ = 1 << 0;
         const PROT_WRITE = 1 << 1;
         const PROT_EXEC  = 1 << 2;
         const PROT_GROWSDOWN = 0x01000000;
@@ -30,7 +33,9 @@ bitflags! {
         const MAP_SHARED= 0x01;
         const MAP_PRIVATE = 0x02;
         const MAP_FIXED = 0x10;
-        const MAP_ANONYMOUS = 0x20;
+        const MAP_ANONYMOUS = 0x20; // The mapping is not backed by any file; its contents are initialized to zero.  The fd  argument  is  ig-
+                                    // nored;  however,  some implementations require fd to be -1 if MAP_ANONYMOUS (or MAP_ANON) is specified,
+                                    //      and portable applications should ensure this.
     }
 }
 
@@ -168,10 +173,12 @@ impl MmapPage {
         if !f.readable() {
             return;
         }
+        let file_size = f.file_size();
+        let len = PAGE_SIZE.min(file_size - self.offset);
         let _read_len = f.read(UserBuffer::wrap(translated_bytes_buffer(
             token,
             VirtAddr::from(self.vpn).0 as *const u8,
-            PAGE_SIZE,
+            len,
         )));
         f.seek(old_offset);
         return;

@@ -95,7 +95,20 @@ impl tms {
     }
 }
 
-pub struct Timespec {
+pub struct TimeSpec {
     pub tv_sec: u64,  // 秒
     pub tv_nsec: u64, // 纳秒
+}
+impl TimeSpec {
+    pub fn new() -> Self {
+        Self {
+            tv_sec: 0,
+            tv_nsec: 0,
+        }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        let size = core::mem::size_of::<Self>();
+        unsafe { core::slice::from_raw_parts(self as *const _ as usize as *const u8, size) }
+    }
 }
