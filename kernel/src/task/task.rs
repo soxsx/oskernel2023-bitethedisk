@@ -1,8 +1,8 @@
 use core::fmt::Debug;
 
 use super::kernel_stack::KernelStack;
-use super::TaskContext;
-use super::{pid_alloc, PidHandle, SignalFlags};
+use super::{pid_alloc, PidHandle, SigMask, SigSet, Signal};
+use super::{SigAction, TaskContext, MAX_SIGNUM};
 use crate::consts::*;
 use crate::fs::{file::File, Fat32File, Stdin, Stdout};
 use crate::mm::kernel_vmm::acquire_kvmm;
@@ -11,13 +11,14 @@ use crate::mm::{
     translated_mut, MapPermission, MemorySet, MmapFlags, MmapManager, MmapProts, PageTableEntry,
     PhysPageNum, VirtAddr, VirtPageNum,
 };
+use crate::timer::get_time;
 use crate::trap::handler::user_trap_handler;
 use crate::trap::TrapContext;
 use alloc::string::{String, ToString};
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
-use nix::TimeVal;
+use nix::time::TimeVal;
 use riscv::register::scause::Scause;
 use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -25,6 +26,7 @@ use crate::fs::AbsolutePath;
 
 pub const FD_LIMIT: usize = 1024;
 
+// TODO futex, chan, sigmask, sigpending, rubustlist, rlimt,
 pub struct TaskControlBlock {
     /// 进程标识符
     pub pid: PidHandle,
@@ -32,8 +34,8 @@ pub struct TaskControlBlock {
     /// thread group id
     pub tgid: usize,
 
-    /// 进程组 Id
-    pub pgid: usize,
+    pub set_child_tid: usize,   /* CLONE_CHILD_SETTID */
+    pub clear_child_tid: usize, /* CLONE_CHILD_CLEARTID */
 
     /// 应用内核栈
     pub kernel_stack: KernelStack,
@@ -73,7 +75,11 @@ pub struct TaskControlBlockInner {
     /// 文件描述符表
     pub fd_table: Vec<Option<Arc<dyn File>>>,
 
-    pub signals: SignalFlags,
+    pub sigactions: [SigAction; MAX_SIGNUM as usize],
+
+    pub pending_signals: SigSet,
+
+    pub sigmask: SigMask,
 
     pub current_path: AbsolutePath,
 
@@ -188,8 +194,11 @@ impl TaskControlBlock {
         let task_control_block = Self {
             pid: pid_handle,
             tgid,
-            pgid,
             kernel_stack,
+
+            set_child_tid: 0,
+            clear_child_tid: 0,
+
             inner: RwLock::new(TaskControlBlockInner {
                 trap_cx_ppn,
                 task_cx: TaskContext::readied_for_switching(kernel_stack_top),
@@ -206,7 +215,11 @@ impl TaskControlBlock {
                     // 2 -> stderr
                     Some(Arc::new(Stdout)),
                 ],
-                signals: SignalFlags::empty(),
+
+                sigactions: [SigAction::new(); MAX_SIGNUM as usize],
+                sigmask: SigMask::empty(),
+                pending_signals: SigSet::empty(),
+
                 current_path: AbsolutePath::from_str("/"),
                 utime: TimeVal { sec: 0, usec: 0 },
                 stime: TimeVal { sec: 0, usec: 0 },
@@ -391,7 +404,7 @@ impl TaskControlBlock {
         };
         let pgid = self.pid.0;
         // 根据 PID 创建一个应用内核栈
-        let kernel_stack = KernelStack::new(&pid_handle); // use 8 pages
+        let kernel_stack = KernelStack::new(&pid_handle);
         let kernel_stack_top = kernel_stack.top();
         // copy fd table
         let mut new_fd_table = Vec::new();
@@ -406,7 +419,10 @@ impl TaskControlBlock {
         let task_control_block = Arc::new(TaskControlBlock {
             pid: pid_handle,
             tgid,
-            pgid,
+
+            set_child_tid: 0,
+            clear_child_tid: 0,
+
             kernel_stack,
             inner: RwLock::new(TaskControlBlockInner {
                 trap_cx_ppn,
@@ -417,7 +433,12 @@ impl TaskControlBlock {
                 children: Vec::new(),
                 exit_code: 0,
                 fd_table: new_fd_table,
-                signals: SignalFlags::empty(),
+
+                // [signal: msg about fork](https://man7.org/linux/man-pages/man7/signal.7.html)
+                sigactions: parent_inner.sigactions.clone(),
+                sigmask: parent_inner.sigmask.clone(),
+                pending_signals: SigSet::empty(),
+
                 current_path: parent_inner.current_path.clone(),
                 utime: TimeVal { sec: 0, usec: 0 },
                 stime: TimeVal { sec: 0, usec: 0 },
@@ -443,6 +464,10 @@ impl TaskControlBlock {
     /// - 返回值：
     ///     - `0`：成功加载缺页
     ///     - `-1`：加载缺页失败
+    ///
+    /// 分别用于：
+    ///     - 用户态：handler page fault
+    ///     - 内核态： translate_bytes_buffer
     pub fn check_lazy(&self, va: VirtAddr, is_load: bool) -> isize {
         let inner = self.write();
         let mmap_start = inner.memory_set.mmap_manager.mmap_start;
@@ -450,18 +475,29 @@ impl TaskControlBlock {
         let heap_start = VirtAddr::from(inner.memory_set.brk_start);
         let heap_end = VirtAddr::from(inner.memory_set.brk_start + USER_HEAP_SIZE);
         drop(inner);
+        // fork
         let vpn: VirtPageNum = va.floor();
         let pte = self.write().enquire_pte_via_vpn(vpn);
         if pte.is_some() && pte.unwrap().is_cow() {
             let former_ppn = pte.unwrap().ppn();
+            // info!("pte1 is readabled: {:?}", pte.unwrap().readable());
+            // info!("pte1 is writable: {:?}", pte.unwrap().writable());
+            // info!("pte1 is executable: {:?}", pte.unwrap().executable());
             return self.write().cow_alloc(vpn, former_ppn);
         } else {
             if let Some(pte1) = pte {
                 if pte1.is_valid() {
+                    // info!("pte1 is readabled: {:?}", pte1.readable());
+                    // info!("pte1 is writable: {:?}", pte1.writable());
+                    // info!("pte1 is executable: {:?}", pte1.executable());
                     return -4;
                 }
             }
         }
+
+        // println!("check_lazy: va: {:#x}", va.0);
+
+        // lazy map / lazy alloc heap
         if va >= heap_start && va <= heap_end {
             self.write().lazy_alloc_heap(va.floor())
         } else if va >= mmap_start && va < mmap_end {
@@ -521,7 +557,6 @@ impl TaskControlBlock {
         let mut inner = self.write();
 
         let start_va = VirtAddr(addr);
-
         // 可能会有 mmap 后没有访问直接 munmap 的情况，需要检查是否访问过 mmap 的区域(即
         // 是否引发了 lazy_mmap)，防止 unmap 页表中不存在的页表项引发 panic
         inner.memory_set.mmap_manager.remove(start_va, length);

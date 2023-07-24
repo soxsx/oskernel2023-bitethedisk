@@ -121,7 +121,7 @@ impl PageTable {
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
         let pte = self.find_pte_create(vpn).unwrap();
         // 断言，保证新获取到的PTE是无效的（不是已分配的）
-        assert!(!pte.is_valid(), "{:?} is mapped before mapping", vpn);
+        assert!(!pte.is_valid(), "{:#x?} is mapped before mapping", vpn);
         *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
     }
 

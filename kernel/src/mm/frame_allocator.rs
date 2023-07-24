@@ -2,6 +2,7 @@ use super::address::{PhysAddr, PhysPageNum};
 use crate::consts::PHYS_END;
 use alloc::{collections::BTreeMap, vec::Vec};
 use core::fmt::{self, Debug, Formatter};
+use riscv::register::mstatus::set_fs;
 use spin::Mutex;
 
 /// 物理页帧，代表 RAM 上一段实际的物理页，通过物理页号标识
@@ -112,6 +113,14 @@ impl FrameAllocator for StackFrameAllocator {
     }
     fn dealloc(&mut self, ppn: PhysPageNum) {
         let ppn = ppn.0;
+        let op = self.refcounter.get_mut(&ppn);
+        if op.is_none() {
+            panic!(
+                "[StackFrameAllocator::dealloc] Frame ppn={:#x} has no reference!",
+                ppn
+            );
+        }
+
         let ref_times = self.refcounter.get_mut(&ppn).unwrap();
         assert!(
             *ref_times > 0,

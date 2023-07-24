@@ -61,6 +61,7 @@ user_trapvec:
 	jr t1
 
 .globl user_trapret
+.align 2
 user_trapret:
 	# 进到当前代码前由 Rust 代码设置:
 	# a0 = TRAP_CONTEXT;         // TrapContext 在用户地址空间中的虚拟地址
@@ -98,3 +99,10 @@ user_trapret:
 	ld sp, 2*8(sp)
 
 	sret
+
+.section .text.signal
+.globl user_sigreturn
+.align 2
+user_sigreturn:
+    li	a7, 139 # syscall SIGRETURN
+    ecall

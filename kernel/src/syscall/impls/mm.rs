@@ -187,6 +187,5 @@ pub fn sys_mprotect(addr: usize, length: usize, prot: usize) -> Result {
             return_errno!(Errno::EINVAL, "invalid address: {:?}", va);
         }
     }
-
     Ok(0)
 }

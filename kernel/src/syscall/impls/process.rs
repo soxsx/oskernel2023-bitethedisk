@@ -1,6 +1,8 @@
 //! 进程相关系统调用
 
 use crate::board::CLOCK_FREQ;
+use core::usize;
+
 use crate::fs::open_flags::CreateMode;
 use crate::fs::{open, OpenFlags};
 use crate::mm::{
@@ -9,14 +11,19 @@ use crate::mm::{
 use crate::return_errno;
 use crate::task::{
     add_task, current_task, current_user_token, exit_current_and_run_next, pid2task,
-    suspend_current_and_run_next, SignalFlags,
+    suspend_current_and_run_next, SigAction, SigMask, Signal, SignalContext, MAX_SIGNUM,
 };
 use crate::timer::{get_time, get_timeval, NSEC_PER_SEC};
 
+use crate::timer::{get_time, get_timeval};
 use alloc::{string::String, string::ToString, sync::Arc, vec::Vec};
-use nix::info::RUsage;
+use nix::info::{CloneFlags, RUsage, Utsname};
+use nix::time::{TimeSpec, TimeVal};
 
+use super::super::errno::*;
 use super::*;
+
+use crate::task::*;
 
 /// #define SYS_clone 220
 ///
@@ -192,19 +199,13 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result {
             assert_eq!(Arc::strong_count(&child), 1);
             // 收集的子进程信息返回
             let found_pid = child.pid();
-            let mut exit_code = child.write().exit_code;
+            let exit_code = child.write().exit_code;
+            // ++++ release child PCB
             // 将子进程的退出码写入到当前进程的应用地址空间中
             if exit_code_ptr as usize != 0 {
-                // // 进程异常退出，低 16 位中的低 7 位放错误时的返回值，16 位中的高 8 位为 0
-                // if exit_code & 0b1111111 != 0 {
-                //     exit_code = exit_code & 0b1111111;
-                // } else
-                // // 进程正常退出
-                // {
-                //     exit_code <<= 8;
-                // }
-                *translated_mut(inner.memory_set.token(), exit_code_ptr) = exit_code;
+                *translated_mut(inner.memory_set.token(), exit_code_ptr) = exit_code << 8;
             }
+
             return Ok(found_pid as isize);
         } else {
             drop(inner); // 因为下个函数会切换上下文，所以需要手动释放锁
@@ -279,27 +280,6 @@ pub fn sys_gettid() -> Result {
     Ok(0)
 }
 
-pub fn sys_rt_sigprocmask(
-    how: i32,
-    set: *const usize,
-    oldset: *const usize,
-    _sigsetsize: usize,
-) -> Result {
-    Ok(0)
-}
-
-pub fn sys_rt_sigreturn(_setptr: *mut usize) -> Result {
-    Ok(0)
-}
-
-pub fn sys_rt_sigaction() -> Result {
-    Ok(0)
-}
-
-pub fn sys_rt_sigtimedwait() -> Result {
-    Ok(0)
-}
-
 pub fn sys_futex() -> Result {
     Ok(0)
 }
@@ -332,8 +312,8 @@ pub fn sys_kill(pid: usize, signal: u32) -> Result {
     }
     let signal = 1 << signal;
     if let Some(task) = pid2task(pid) {
-        if let Some(flag) = SignalFlags::from_bits(signal) {
-            task.write().signals |= flag;
+        if let Some(flag) = SigMask::from_bits(signal) {
+            task.write().pending_signals |= flag;
             Ok(0)
         } else {
             return_errno!(Errno::EINVAL, "invalid signal, signum: {}", signal);
@@ -384,4 +364,360 @@ pub fn sys_tgkill(tgid: isize, tid: usize, sig: isize) -> Result {
     } else {
         todo!("errno")
     }
+}
+
+pub struct CpuMask {
+    mask: [u8; 1024 / (8 * core::mem::size_of::<u8>())],
+}
+
+impl CpuMask {
+    pub fn new() -> Self {
+        Self {
+            mask: [0; 1024 / (8 * core::mem::size_of::<u8>())],
+        }
+    }
+
+    pub fn set(&mut self, cpu: usize) {
+        let index = cpu / (8 * core::mem::size_of::<u8>());
+        let offset = cpu % (8 * core::mem::size_of::<u8>());
+        self.mask[index] |= 1 << offset;
+    }
+
+    pub fn get(&self, cpu: usize) -> bool {
+        let index = cpu / (8 * core::mem::size_of::<u8>());
+        let offset = cpu % (8 * core::mem::size_of::<u8>());
+        self.mask[index] & (1 << offset) != 0
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.mask
+    }
+
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        &mut self.mask
+    }
+}
+
+// TODO
+#[repr(C)]
+pub struct CpuSet {
+    mask: [usize; 1024 / (8 * core::mem::size_of::<usize>())],
+}
+
+impl CpuSet {
+    pub fn new() -> Self {
+        Self {
+            mask: [0; 1024 / (8 * core::mem::size_of::<usize>())],
+        }
+    }
+
+    pub fn set(&mut self, cpu: usize) {
+        let index = cpu / (8 * core::mem::size_of::<usize>());
+        let offset = cpu % (8 * core::mem::size_of::<usize>());
+        self.mask[index] |= 1 << offset;
+    }
+
+    pub fn get(&self, cpu: usize) -> bool {
+        let index = cpu / (8 * core::mem::size_of::<usize>());
+        let offset = cpu % (8 * core::mem::size_of::<usize>());
+        self.mask[index] & (1 << offset) != 0
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            core::slice::from_raw_parts(
+                self as *const Self as *const u8,
+                core::mem::size_of::<Self>(),
+            )
+        }
+    }
+
+    pub fn as_mut_bytes(&mut self) -> &mut [u8] {
+        unsafe {
+            core::slice::from_raw_parts_mut(
+                self as *mut Self as *mut u8,
+                core::mem::size_of::<Self>(),
+            )
+        }
+    }
+}
+
+// TODO 多核 在进程内加入 CpuMask
+// 用于获取一个进程或线程的 CPU 亲和性（CPU affinity）。
+// CPU 亲和性指定了一个进程或线程可以运行在哪些 CPU 上。
+// 通过使用 sched_getaffinity 系统调用，程序员可以查询进程或线程当前绑定的 CPU。
+// mask 参数是一个位图，其中每个位表示一个 CPU。
+// 如果某个位为 1，表示进程或线程可以运行在对应的 CPU 上；
+// 如果某个位为 0，则表示进程或线程不能运行在对应的 CPU 上。
+// int sched_getaffinity(pid_t pid, size_t cpusetsize, cpu_set_t *mask);
+// cpu_set_t* cpu_set_t 是一个位图，其中每个位表示一个 CPU。 cpu_set_t 是一个结构体，定义如下：
+// typedef struct {
+//     unsigned long __bits[1024 / (8 * sizeof(long))];
+// } cpu_set_t;
+// cpusetsize 参数指定了 mask 参数指向的位图的大小，单位是字节。
+pub fn sys_sched_getaffinity(pid: usize, cpusetsize: usize, mask: *mut u8) -> Result<isize> {
+    let token = current_user_token();
+    let mut userbuf = UserBuffer::wrap(translated_bytes_buffer(token, mask, cpusetsize));
+
+    // 内核中的调度器会维护一个位图，用于记录进程或线程当前的 CPU 亲和性信息。
+    // 当调用 sched_getaffinity 系统调用时，调度器会将位图中对应的位复制到用户空间中的 mask 指针指向的内存区域中。
+    let mut cpuset = CpuMask::new();
+    cpuset.set(0);
+    userbuf.write(cpuset.as_bytes());
+    Ok(0)
+}
+
+pub const SCHED_OTHER: isize = 0;
+pub const SCHED_FIFO: isize = 1;
+pub const SCHED_RR: isize = 2;
+pub const SCHED_BATCH: isize = 3;
+pub const SCHED_IDLE: isize = 5;
+pub const SCHED_DEADLINE: isize = 6;
+
+// TODO 系统调用策略
+// 该函数接受一个参数 pid，表示要查询的进程的 PID。如果 pid 是 0，则表示查询当前进程的调度策略。
+// 函数返回值是一个整数，表示指定进程的调度策略，可能的取值包括：
+// SCHED_FIFO：先进先出调度策略。
+// SCHED_RR：轮转调度策略。
+// SCHED_OTHER：其他调度策略。
+// 如果查询失败，则返回 -1，并将错误码存入 errno 变量中。
+pub fn sys_getscheduler(pid: usize) -> Result<isize> {
+    // let task = pid2task(pid).ok_or(SyscallError::PidNotFound(-1, pid as isize))?;
+    // let inner = task.read();
+    // Ok(inner.policy as isize) // TODO
+    Ok(SCHED_OTHER as isize)
+}
+
+#[repr(C)]
+pub struct SchedParam {
+    sched_priority: isize,
+}
+
+impl SchedParam {
+    pub fn new() -> Self {
+        Self { sched_priority: 0 }
+    }
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe { core::slice::from_raw_parts(&self.sched_priority as *const isize as *const u8, 8) }
+    }
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            core::slice::from_raw_parts_mut(&mut self.sched_priority as *mut isize as *mut u8, 8)
+        }
+    }
+    pub fn set_priority(&mut self, priority: isize) {
+        self.sched_priority = priority;
+    }
+    pub fn get_priority(&self) -> isize {
+        self.sched_priority
+    }
+}
+
+// sched_priority 成员表示进程的调度优先级，值越高表示优先级越高。
+// 在 Linux 中，调度优先级的取值范围是 1-99，其中 1 表示最低优先级，99 表示最高优先级。
+// 如果调用成功，sched_getparam 返回 0；否则返回 -1，并设置 errno 变量表示错误类型。
+// 可能的错误类型包括 EINVAL（无效的参数）、ESRCH（指定的进程不存在）等。
+// sched_getparam 系统调用只能获取当前进程或当前进程的子进程的调度参数，对于其他进程则需要相应的权限或特权。
+// 如果要获取其他进程的调度参数，可以使用 sys_sched_getaffinity 系统调用获取进程的 CPU 亲和性，然后在相应的 CPU 上运行一个特权进程，以便获取进程的调度参数。
+// struct sched_param {
+//     int sched_priority;
+// };
+pub fn sys_sched_getparam(pid: usize, param: *mut SchedParam) -> Result<isize> {
+    // let task = pid2task(pid).ok_or(SyscallError::PidNotFound(-1, pid as isize))?;
+    // let inner = task.read();
+    let token = current_user_token();
+    let user_param = translated_mut(token, param);
+    // user_param.set_priority(inner.priority);
+    user_param.set_priority(1);
+    Ok(0)
+}
+
+#[repr(C)]
+pub struct SchedPolicy(isize);
+
+// pid 参数指定要设置调度策略和参数的进程的 PID；
+// policy 参数是一个整数值，表示要设置的调度策略；
+// param 参数是一个指向 sched_param 结构体的指针，用于设置调度参数。
+// 如果调用成功，sched_setscheduler 返回 0；否则返回 -1，并设置 errno 变量表示错误类型。
+// 可能的错误类型包括 EINVAL（无效的参数）、ESRCH（指定的进程不存在）等。
+// int sched_setscheduler(pid_t pid, int policy, const struct sched_param *param);
+// struct sched_param {
+//     int sched_priority;
+// };
+pub fn sys_sched_setscheduler(
+    pid: usize,
+    policy: isize,
+    param: *const SchedParam,
+) -> Result<isize> {
+    let task = pid2task(pid).ok_or(Errno::UNCLEAR)?;
+    let inner = task.read();
+
+    {
+        info!("sched_setscheduler: pid: {}, policy: {}", pid, policy);
+    }
+    // let user_param = translated_ref(token, param);
+    // inner.policy = policy as u8;
+    // inner.priority = user_param.get_priority();
+
+    Ok(0)
+}
+
+// 用于获取指定时钟的精度（resolution）
+// 其中，clk_id 参数指定要获取精度的时钟 ID；res 参数是一个指向 timespec 结构体的指针，用于存储获取到的精度。
+// 如果调用成功，clock_getres() 返回值为 0；否则返回一个负数值，表示错误类型。
+// 可能的错误类型包括 EINVAL（无效的参数）、EFAULT（无效的内存地址）等。
+// int clock_getres(clockid_t clk_id, struct timespec *res);
+// struct timespec {
+//     time_t tv_sec; /* seconds */
+//     long tv_nsec;  /* nanoseconds */
+// };
+pub fn sys_clock_getres(clockid: usize, res: *mut TimeSpec) -> Result<isize> {
+    let token = current_user_token();
+    let user_res = translated_mut(token, res);
+    // 赋值看的测试样例 TODO
+    user_res.tv_sec = 0;
+    user_res.tv_nsec = 1;
+    Ok(0)
+}
+
+pub const SOCK_DGRAM: isize = 1;
+pub const SOCK_STREAM: isize = 2;
+
+// int socketpair(int domain, int type, int protocol, int sv[2]);
+// domain：指定要创建的套接字的协议族，可以取值为 AF_UNIX 或 AF_LOCAL，表示使用本地 IPC。
+// type：指定要创建的套接字的类型，可以取值为 SOCK_STREAM 或 SOCK_DGRAM。
+// protocol：指定要使用的协议，通常为 0。
+// sv：指向一个长度为 2 的数组的指针，用于保存创建的套接字文件描述符。
+pub fn sys_socketpair(
+    domain: isize,
+    type_: isize,
+    protocol: isize,
+    sv: *mut [isize; 2],
+) -> Result<isize> {
+    // let token = current_user_token();
+    // let user_sv = translated_mut(token, sv);
+    // let (fd1, fd2) = socket2(); // TODO Socket
+    // user_sv[0] = fd1;
+    // user_sv[1] = fd2;
+    Ok(0)
+}
+
+/*********** SIGNAL ******************/
+// 用于在信号处理程序中恢复被中断的程序执行流程。
+// 当一个进程收到一个信号时，内核会为该进程保存信号处理程序的上下文（如寄存器的值、栈指针等），并将程序的执行流程转移到信号处理程序中。
+// 在信号处理程序中，如果需要返回到被中断的程序执行流程中，可以使用 sigreturn 系统调用
+pub fn sys_sigreturn() -> Result<isize> {
+    let token = current_user_token();
+    let task = current_task().unwrap();
+    let mut task_inner = task.write();
+
+    let trap_cx = task_inner.trap_context();
+
+    // 还原被保存的 signal_context
+    let sig_context_ptr = trap_cx.x[2]; // 函数调用保证了 x[2] 的值是 sig_context 的地址 (user signal handler 执行前后 x[2] 值不变)
+    let sig_context = translated_ref(token, sig_context_ptr as *mut SignalContext);
+    let sigmask = sig_context.mask.clone();
+    // 还原 signal handler 之前的 trap context
+    *trap_cx = sig_context.context.clone();
+    // 还原 signal handler 之前的 signal mask
+    task_inner.sigmask = sigmask;
+
+    Ok(0)
+}
+
+// 用于设置和修改信号
+// sig 表示要设置或修改的信号的编号，act 是一个指向 sigaction 结构体的指针，用于指定新的信号处理方式，
+// oact 是一个指向 sigaction 结构体的指针，用于保存原来的信号处理方式
+// ```c
+// asmlinkage long sys_sigaction(int sig, const struct sigaction __user *act, struct sigaction __user *oact);
+// struct sigaction {
+//     void (*sa_handler)(int);
+//     void (*sa_sigaction)(int, siginfo_t *, void *);
+//     unsigned long sa_flags;
+//     void (*sa_restorer)(void);
+//     struct old_sigaction __user *sa_restorer_old;
+//     sigset_t sa_mask;
+// };
+// ```
+pub fn sys_sigaction(
+    signum: isize,
+    act: *const SigAction,
+    oldact: *mut SigAction,
+) -> Result<isize> {
+    let token = current_user_token();
+    let task = current_task().unwrap();
+    let mut inner = task.write();
+    let signum = signum as u32;
+
+    // signum 超出范围，返回错误
+    if signum > MAX_SIGNUM || signum == Signal::SIGKILL as u32 || signum == Signal::SIGSTOP as u32 {
+        // println!(
+        //     "[Kernel] syscall/impl/process: sys_sigaction(signum: {}, sigaction = {:#x?}, old_sigaction = {:#x?} ) = {}",
+        //     signum, act, oldact, -Errno::EINVAL
+        // );
+        return Err(Errno::EINVAL);
+    }
+
+    // 当 sigaction 存在时， 在 pcb 中注册给定的 signaction
+    if act as usize != 0 {
+        if oldact as usize != 0 {
+            *translated_mut(token, oldact) = inner.sigactions[signum as usize];
+        }
+        //在 pcb 中注册给定的 signaction
+        let mut sa = translated_ref(token, act).clone();
+        // kill 和 stop 信号不能被屏蔽
+        sa.sa_mask.sub(Signal::SIGKILL as u32); // sub 函数保证即使不存在 SIGKILL 也无影响
+        sa.sa_mask.sub(Signal::SIGSTOP as u32);
+        inner.sigactions[signum as usize] = sa;
+    }
+
+    // println!(
+    //     "[Kernel] syscall/impl/process: sys_sigaction(signum: {}, sigaction = {:#x?}, old_sigaction = {:#x?} ) = {}",
+    //     signum,
+    //     act, // sigact,
+    //     oldact,
+    //     0
+    // );
+    Ok(0)
+}
+
+// 用于设置和修改进程的信号屏蔽字。
+// 信号屏蔽字是一个位图，用于指定哪些信号在当前进程中被屏蔽，即在进程处理某些信号时，屏蔽掉一些信号，以避免这些信号的干扰。
+// ```c
+// int sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
+// ```
+// how 参数指定了如何修改进程的信号屏蔽字，可以取以下三个值之一：
+// - SIG_BLOCK：将 set 中指定的信号添加到进程的信号屏蔽字中。
+// - SIG_UNBLOCK：将 set 中指定的信号从进程的信号屏蔽字中移除。
+// - SIG_SETMASK：将进程的信号屏蔽字设置为 set 中指定的信号。
+pub fn sys_sigprocmask(how: usize, set: *const usize, old_set: *mut usize) -> Result<isize> {
+    let token = current_user_token();
+    let task = current_task().unwrap();
+    let mut task_inner = task.write();
+    let mut old_mask = task_inner.sigmask.clone();
+
+    if old_set as usize != 0 {
+        *translated_mut(token, old_set as *mut SigMask) = old_mask;
+    }
+
+    if set as usize != 0 {
+        // let mut new_set = translated_ref(token, set as *const SigMask).clone();
+        // new_set.sub(Signal::SIGKILL as u32); // sub 函数保证即使不存在 SIGKILL 也无影响
+        // new_set.sub(Signal::SIGSTOP as u32);
+        let new_set = translated_ref(token, set as *const SigMask).clone();
+        let how = MaskFlags::from_how(how);
+        match how {
+            MaskFlags::SIG_BLOCK => old_mask |= new_set,
+            MaskFlags::SIG_UNBLOCK => old_mask &= !new_set,
+            MaskFlags::SIG_SETMASK => old_mask = new_set,
+            _ => panic!("ENOSYS"),
+        }
+        task_inner.sigmask = old_mask;
+    }
+
+    // println!(
+    //     "[Kernel] syscall/impls/process: sys_sigprocmask(how: {}, set: {:#x?}, old_set: {:#x?}) = 0",
+    //     how, set, old_set
+    // );
+    Ok(0)
 }

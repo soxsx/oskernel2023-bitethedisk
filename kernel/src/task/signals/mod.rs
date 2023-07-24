@@ -1,8 +1,8 @@
 use super::current_task;
 
-pub mod signal_flags;
+pub mod siginfo;
 
-pub use signal_flags::SignalFlags;
+pub use siginfo::*;
 
 pub fn check_current_signals() -> Option<(i32, &'static str)> {
     let task = current_task().unwrap();
@@ -18,8 +18,8 @@ pub fn check_current_signals() -> Option<(i32, &'static str)> {
     }
 }
 
-pub fn current_add_signal(signal: SignalFlags) {
+pub fn current_add_signal(signal: SigMask) {
     let task = current_task().unwrap();
     let mut task_inner = task.write();
-    task_inner.signals.set(signal, true);
+    task_inner.pending_signals.set(signal, true);
 }

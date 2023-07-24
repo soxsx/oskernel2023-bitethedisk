@@ -3,7 +3,8 @@
 use super::vm_area::VmArea;
 use super::{MapPermission, MapType};
 use crate::consts::{
-    CLOCK_FREQ, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE, USER_STACK_SIZE,
+    CLOCK_FREQ, PAGE_SIZE, SIGNAL_TRAMPOLINE, TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE,
+    USER_STACK_SIZE,
 };
 use crate::fs::file::File;
 use crate::mm::frame_allocator::enquire_refcount;
@@ -101,7 +102,6 @@ pub struct MemorySet {
     vm_areas: Vec<VmArea>,
 
     pub mmap_manager: MmapManager,
-
     heap_areas: VmArea,
 
     shm_areas: Vec<VmArea>,
@@ -201,11 +201,22 @@ impl MemorySet {
         );
     }
 
+    pub fn map_signal_trampoline(&mut self) {
+        extern "C" {
+            fn signal_trampoline();
+        }
+        self.page_table.map(
+            VirtAddr::from(SIGNAL_TRAMPOLINE).into(),
+            PhysAddr::from(signal_trampoline as usize).into(),
+            PTEFlags::R | PTEFlags::X,
+        );
+    }
+
     fn map_trap_context(&mut self) {
         self.insert(
             VmArea::new(
                 TRAP_CONTEXT.into(),
-                TRAMPOLINE.into(),
+                SIGNAL_TRAMPOLINE.into(),
                 MapType::Framed,
                 MapPermission::R | MapPermission::W,
                 None,
@@ -282,6 +293,7 @@ impl MemorySet {
         let mut auxs = Vec::new();
 
         memory_set.map_trampoline();
+        memory_set.map_signal_trampoline();
         memory_set.map_trap_context();
 
         // 第一次读取前64字节确定程序表的位置与大小
@@ -504,7 +516,8 @@ impl MemorySet {
         // This part is not for Copy on Write.
         // Including:   Trampoline
         //              Trap_Context
-        new_memory_set.map_trampoline(); // use 2 pages (page_table create ptes)
+        new_memory_set.map_trampoline();
+        new_memory_set.map_signal_trampoline();
         for area in user_space.vm_areas.iter() {
             // use 1 page
             let start_vpn = area.vpn_range.get_start();

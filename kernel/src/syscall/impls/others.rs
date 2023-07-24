@@ -40,6 +40,8 @@ pub fn sys_times(buf: *const u8) -> Result {
     Ok(0)
 }
 
+// TODO 2 tms 没有处理
+
 /// struct utsname {
 /// 	char sysname\[65\];
 /// 	char nodename\[65\];
@@ -80,6 +82,8 @@ pub fn sys_sched_yield() -> Result {
     suspend_current_and_run_next();
     Ok(0)
 }
+
+// TODO 1 规范里面写的 timeval
 
 /// ```c
 /// struct timespec {

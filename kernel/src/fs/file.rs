@@ -2,7 +2,7 @@ use core::fmt::Debug;
 use core::fmt::{self, Formatter};
 
 use alloc::vec::Vec;
-use nix::Timespec;
+use nix::time::TimeSpec;
 
 use crate::mm::UserBuffer;
 
@@ -39,7 +39,7 @@ pub trait File: Send + Sync {
         panic!("{} not implement get_fstat", self.name());
     }
 
-    fn set_time(&self, _timespec: &Timespec) {
+    fn set_time(&self, _timespec: &TimeSpec) {
         panic!("{} not implement set_time", self.name());
     }
 

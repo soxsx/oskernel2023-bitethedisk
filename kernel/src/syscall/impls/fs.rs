@@ -18,7 +18,11 @@ use alloc::string::ToString;
 use alloc::{sync::Arc, vec::Vec};
 use core::mem::size_of;
 use fat32::sync_all;
+<<<<<<< HEAD
 use nix::{Iovec, TimeVal, Timespec};
+=======
+use nix::time::{TimeSpec, TimeVal};
+>>>>>>> 78f6dfb9d9f50e8c8de2c16a7bc5f4102e7e15db
 use spin::RwLock;
 
 use super::*;
@@ -279,6 +283,11 @@ pub fn sys_openat(fd: i32, filename: *const u8, flags: u32, mode: u32) -> Result
                     return_errno!(Errno::EMFILE);
                 }
                 inner.fd_table[fd] = Some(tar_f);
+<<<<<<< HEAD
+=======
+                // println!("[DEBUG] sys_openat return new fd:{}", fd);
+                info!("[DEBUG] sys_openat return new fd:{}", fd);
+>>>>>>> 78f6dfb9d9f50e8c8de2c16a7bc5f4102e7e15db
                 Ok(fd as isize)
             } else {
                 return_errno!(Errno::ENOENT, "try to open {:?}", path);
@@ -1227,7 +1236,7 @@ pub fn sys_utimensat(
                         .pop()
                         .unwrap();
                 let addr = timespec_buf.as_ptr() as *const _ as usize;
-                let timespec = unsafe { &*(addr as *const Timespec) };
+                let timespec = unsafe { &*(addr as *const TimeSpec) };
                 file.set_time(timespec);
                 Ok(0)
             } else {
@@ -1338,7 +1347,7 @@ pub fn sys_readlinkat(dirfd: isize, pathname: *const u8, buf: *const u8, bufsiz:
     if dirfd == AT_FDCWD {
         let token = current_user_token();
         let path = translated_str(token, pathname);
-        println!("readlinkat path:{:?}", path);
+        // println!("readlinkat path:{:?}", path);
         if path.as_str() != "/proc/self/exe" {
             panic!("sys_readlinkat: pathname not support");
         }

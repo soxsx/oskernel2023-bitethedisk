@@ -37,6 +37,12 @@ impl Utsname {
     }
 }
 
+bitflags! {
+    pub struct CloneFlags: usize{
+        const SIGCHLD = 17; // 实际没有这个标志位
+    }
+}
+
 #[allow(unused)]
 pub struct RUsage {
     pub ru_utime: TimeVal, /* user CPU time used */
