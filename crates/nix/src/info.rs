@@ -14,8 +14,8 @@ impl Utsname {
         Self {
             sysname: Utsname::str2u8("BTD-OS"),
             nodename: Utsname::str2u8("zako-zako~"),
-            release: Utsname::str2u8("none"),
-            version: Utsname::str2u8("0.1"),
+            release: Utsname::str2u8("5.0"),
+            version: Utsname::str2u8("5.13"),
             machine: Utsname::str2u8("riscv64"),
             domainname: Utsname::str2u8("BiteTheDisk"),
         }
