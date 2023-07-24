@@ -456,10 +456,11 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> Result<isize> {
         }
 
         let file_size = file.file_size();
+        let file_offset = file.offset();
         if file_size == 0 {
             warn!("sys_read: file_size is zero!");
         }
-        let len = file_size.min(len);
+        let len = len.min(file_size - file_offset);
         let readsize =
             file.read(UserBuffer::wrap(translated_bytes_buffer(token, buf, len))) as isize;
         Ok(readsize)
@@ -504,7 +505,7 @@ pub fn sys_pread64(fd: usize, buf: *const u8, len: usize, offset: usize) -> Resu
         if file_size == 0 {
             warn!("sys_read: file_size is zero!");
         }
-        let len = file_size.min(len);
+        let len = len.min(file_size - offset);
         let readsize = file.pread(
             UserBuffer::wrap(translated_bytes_buffer(token, buf, len)),
             offset,
