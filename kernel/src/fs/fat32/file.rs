@@ -524,7 +524,11 @@ impl File for Fat32File {
         } else {
             st_mode = S_IFREG;
         }
-        if vfile.name() == "null" || vfile.name() == "zero" {
+        if vfile.name() == "null"
+            || vfile.name() == "NULL"
+            || vfile.name() == "zero"
+            || vfile.name() == "ZERO"
+        {
             st_mode = S_IFCHR;
         }
         kstat.init(

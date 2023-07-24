@@ -448,7 +448,7 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> Result<isize> {
         drop(task); // 需要及时释放减少引用数
 
         // 对 /dev/zero 的处理，暂时先加在这里
-        if file.name() == "zero" {
+        if file.name() == "zero" || file.name() == "ZERO" {
             let mut userbuffer = UserBuffer::wrap(translated_bytes_buffer(token, buf, len));
             let zero: Vec<u8> = (0..userbuffer.buffers.len()).map(|_| 0).collect();
             userbuffer.write(zero.as_slice());
@@ -493,7 +493,7 @@ pub fn sys_pread64(fd: usize, buf: *const u8, len: usize, offset: usize) -> Resu
         drop(task); // 需要及时释放减少引用数
 
         // 对 /dev/zero 的处理，暂时先加在这里
-        if file.name() == "zero" {
+        if file.name() == "zero" || file.name() == "ZERO" {
             let mut userbuffer = UserBuffer::wrap(translated_bytes_buffer(token, buf, len));
             let zero: Vec<u8> = (0..userbuffer.buffers.len()).map(|_| 0).collect();
             userbuffer.write(zero.as_slice());
@@ -855,10 +855,9 @@ pub fn sys_fstat(fd: isize, buf: *mut u8) -> Result<isize> {
     }
     if let Some(file) = &inner.fd_table[dirfd] {
         file.fstat(&mut kstat);
-        // println!("file name:{:?}",file.name());
-        if file.name() == "libc.so" {
+        if file.name() == "libc.so" || file.name() == "LIBC.SO" {
             kstat.st_ino = 173;
-        } else if file.name() == "dlopen_dso.so" {
+        } else if file.name() == "dlopen_dso.so" || file.name() == "DLOPEN_DSO.SO" {
             kstat.st_ino = 299;
         }
         userbuf.write(kstat.as_bytes());
