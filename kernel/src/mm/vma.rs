@@ -4,13 +4,9 @@ use crate::consts::PAGE_SIZE;
 use crate::fs::file::File;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
-<<<<<<< HEAD
-
-=======
 use alloc::vec::Vec;
 
 // see [man mmap](https://man7.org/linux/man-pages/man2/mmap.2.html)
->>>>>>> 78f6dfb9d9f50e8c8de2c16a7bc5f4102e7e15db
 bitflags! {
 #[derive(Clone, Copy, Debug)]
     pub struct MmapProts: usize {
