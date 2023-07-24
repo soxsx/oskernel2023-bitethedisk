@@ -25,5 +25,5 @@ spin:
         j spin
 
 .section .bss.stack
-stack0:                 
+stack0:
         .space KSTACK_SIZ * NCPU  # -smp 2
