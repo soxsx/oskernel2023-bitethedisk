@@ -113,12 +113,15 @@ pub fn sys_mmap(
 }
 
 pub fn sys_shmget(key: usize, size: usize, shmflg: usize) -> Result<isize> {
+    let size = (size + PAGE_SIZE - 1) / PAGE_SIZE * PAGE_SIZE;
+    assert!(size % PAGE_SIZE == 0);
+    let mut new_key = key;
     if (key == IPC_PRIVATE) {
-        create_shm(key, size, shmflg);
+        new_key = create_shm(key, size, shmflg);
     } else {
         unimplemented!();
     }
-    return Ok(key as isize);
+    return Ok(new_key as isize);
 }
 pub fn sys_shmctl(key: usize, cmd: usize, buf: *const u8) -> Result<isize> {
     if cmd == IPC_RMID {

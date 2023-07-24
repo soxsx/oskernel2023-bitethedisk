@@ -1,7 +1,7 @@
 use super::address::PhysAddr;
-use crate::fs::open_flags::CreateMode;
 use crate::task::current_task;
 use crate::timer::get_time;
+use crate::{consts::PAGE_SIZE, fs::open_flags::CreateMode};
 use alloc::{collections::BTreeMap, vec::Vec};
 
 use spin::Mutex;
@@ -48,7 +48,16 @@ impl SharedMemoryManager {
             shm_areas: BTreeMap::new(),
         }
     }
-    pub fn create(&mut self, key: usize, size: usize, shmflags: usize) {
+    pub fn create(&mut self, key: usize, size: usize, shmflags: usize) -> usize {
+        let key = if key == 0 {
+            if self.shm_areas.is_empty() {
+                1
+            } else {
+                self.shm_areas.last_key_value().unwrap().0 + 1
+            }
+        } else {
+            key
+        };
         let pid = current_task().unwrap().pid.0;
         let perm = CreateMode::from_bits((shmflags & 0o777) as u32).unwrap();
         let shmid_ds = SharedMemoryIdentifierDs {
@@ -63,7 +72,9 @@ impl SharedMemoryManager {
         };
         let buffer: Vec<u8> = vec![0 as u8; size];
         let shm_area = SharedMemoryArea { shmid_ds, buffer };
+        assert!(self.shm_areas.get(&key).is_none());
         self.shm_areas.insert(key, shm_area);
+        key
     }
     pub fn attach(&mut self, key: usize) {
         let pid = current_task().unwrap().pid.0;
@@ -97,8 +108,8 @@ impl SharedMemoryManager {
     }
 }
 
-pub fn create_shm(key: usize, size: usize, perm: usize) {
-    SHM_MANAGER.lock().create(key, size, perm);
+pub fn create_shm(key: usize, size: usize, perm: usize) -> usize {
+    SHM_MANAGER.lock().create(key, size, perm)
 }
 pub fn attach_shm(key: usize) {
     SHM_MANAGER.lock().attach(key);
