@@ -13,9 +13,9 @@ use crate::task::{
     add_task, current_task, current_user_token, exit_current_and_run_next, pid2task,
     suspend_current_and_run_next, SigAction, SigMask, Signal, SignalContext, MAX_SIGNUM,
 };
-use crate::timer::{get_time, get_timeval, NSEC_PER_SEC};
+use crate::timer::get_timeval;
+use crate::timer::{get_time, NSEC_PER_SEC};
 
-use crate::timer::{get_time, get_timeval};
 use alloc::{string::String, string::ToString, sync::Arc, vec::Vec};
 use nix::info::{CloneFlags, RUsage, Utsname};
 use nix::time::{TimeSpec, TimeVal};
@@ -455,7 +455,7 @@ impl CpuSet {
 //     unsigned long __bits[1024 / (8 * sizeof(long))];
 // } cpu_set_t;
 // cpusetsize 参数指定了 mask 参数指向的位图的大小，单位是字节。
-pub fn sys_sched_getaffinity(pid: usize, cpusetsize: usize, mask: *mut u8) -> Result<isize> {
+pub fn sys_sched_getaffinity(pid: usize, cpusetsize: usize, mask: *mut u8) -> Result {
     let token = current_user_token();
     let mut userbuf = UserBuffer::wrap(translated_bytes_buffer(token, mask, cpusetsize));
 
@@ -481,7 +481,7 @@ pub const SCHED_DEADLINE: isize = 6;
 // SCHED_RR：轮转调度策略。
 // SCHED_OTHER：其他调度策略。
 // 如果查询失败，则返回 -1，并将错误码存入 errno 变量中。
-pub fn sys_getscheduler(pid: usize) -> Result<isize> {
+pub fn sys_getscheduler(pid: usize) -> Result {
     // let task = pid2task(pid).ok_or(SyscallError::PidNotFound(-1, pid as isize))?;
     // let inner = task.read();
     // Ok(inner.policy as isize) // TODO
@@ -522,7 +522,7 @@ impl SchedParam {
 // struct sched_param {
 //     int sched_priority;
 // };
-pub fn sys_sched_getparam(pid: usize, param: *mut SchedParam) -> Result<isize> {
+pub fn sys_sched_getparam(pid: usize, param: *mut SchedParam) -> Result {
     // let task = pid2task(pid).ok_or(SyscallError::PidNotFound(-1, pid as isize))?;
     // let inner = task.read();
     let token = current_user_token();
@@ -544,11 +544,7 @@ pub struct SchedPolicy(isize);
 // struct sched_param {
 //     int sched_priority;
 // };
-pub fn sys_sched_setscheduler(
-    pid: usize,
-    policy: isize,
-    param: *const SchedParam,
-) -> Result<isize> {
+pub fn sys_sched_setscheduler(pid: usize, policy: isize, param: *const SchedParam) -> Result {
     let task = pid2task(pid).ok_or(Errno::UNCLEAR)?;
     let inner = task.read();
 
@@ -571,7 +567,7 @@ pub fn sys_sched_setscheduler(
 //     time_t tv_sec; /* seconds */
 //     long tv_nsec;  /* nanoseconds */
 // };
-pub fn sys_clock_getres(clockid: usize, res: *mut TimeSpec) -> Result<isize> {
+pub fn sys_clock_getres(clockid: usize, res: *mut TimeSpec) -> Result {
     let token = current_user_token();
     let user_res = translated_mut(token, res);
     // 赋值看的测试样例 TODO
@@ -588,12 +584,7 @@ pub const SOCK_STREAM: isize = 2;
 // type：指定要创建的套接字的类型，可以取值为 SOCK_STREAM 或 SOCK_DGRAM。
 // protocol：指定要使用的协议，通常为 0。
 // sv：指向一个长度为 2 的数组的指针，用于保存创建的套接字文件描述符。
-pub fn sys_socketpair(
-    domain: isize,
-    type_: isize,
-    protocol: isize,
-    sv: *mut [isize; 2],
-) -> Result<isize> {
+pub fn sys_socketpair(domain: isize, type_: isize, protocol: isize, sv: *mut [isize; 2]) -> Result {
     // let token = current_user_token();
     // let user_sv = translated_mut(token, sv);
     // let (fd1, fd2) = socket2(); // TODO Socket
@@ -606,7 +597,7 @@ pub fn sys_socketpair(
 // 用于在信号处理程序中恢复被中断的程序执行流程。
 // 当一个进程收到一个信号时，内核会为该进程保存信号处理程序的上下文（如寄存器的值、栈指针等），并将程序的执行流程转移到信号处理程序中。
 // 在信号处理程序中，如果需要返回到被中断的程序执行流程中，可以使用 sigreturn 系统调用
-pub fn sys_sigreturn() -> Result<isize> {
+pub fn sys_sigreturn() -> Result {
     let token = current_user_token();
     let task = current_task().unwrap();
     let mut task_inner = task.write();
@@ -639,11 +630,7 @@ pub fn sys_sigreturn() -> Result<isize> {
 //     sigset_t sa_mask;
 // };
 // ```
-pub fn sys_sigaction(
-    signum: isize,
-    act: *const SigAction,
-    oldact: *mut SigAction,
-) -> Result<isize> {
+pub fn sys_sigaction(signum: isize, act: *const SigAction, oldact: *mut SigAction) -> Result {
     let token = current_user_token();
     let task = current_task().unwrap();
     let mut inner = task.write();
@@ -690,7 +677,7 @@ pub fn sys_sigaction(
 // - SIG_BLOCK：将 set 中指定的信号添加到进程的信号屏蔽字中。
 // - SIG_UNBLOCK：将 set 中指定的信号从进程的信号屏蔽字中移除。
 // - SIG_SETMASK：将进程的信号屏蔽字设置为 set 中指定的信号。
-pub fn sys_sigprocmask(how: usize, set: *const usize, old_set: *mut usize) -> Result<isize> {
+pub fn sys_sigprocmask(how: usize, set: *const usize, old_set: *mut usize) -> Result {
     let token = current_user_token();
     let task = current_task().unwrap();
     let mut task_inner = task.write();

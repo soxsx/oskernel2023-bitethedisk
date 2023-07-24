@@ -16,13 +16,10 @@ use crate::timer::get_timeval;
 use alloc::borrow::ToOwned;
 use alloc::string::ToString;
 use alloc::{sync::Arc, vec::Vec};
+use nix::Iovec;
 use core::mem::size_of;
 use fat32::sync_all;
-<<<<<<< HEAD
-use nix::{Iovec, TimeVal, Timespec};
-=======
 use nix::time::{TimeSpec, TimeVal};
->>>>>>> 78f6dfb9d9f50e8c8de2c16a7bc5f4102e7e15db
 use spin::RwLock;
 
 use super::*;
@@ -283,11 +280,6 @@ pub fn sys_openat(fd: i32, filename: *const u8, flags: u32, mode: u32) -> Result
                     return_errno!(Errno::EMFILE);
                 }
                 inner.fd_table[fd] = Some(tar_f);
-<<<<<<< HEAD
-=======
-                // println!("[DEBUG] sys_openat return new fd:{}", fd);
-                info!("[DEBUG] sys_openat return new fd:{}", fd);
->>>>>>> 78f6dfb9d9f50e8c8de2c16a7bc5f4102e7e15db
                 Ok(fd as isize)
             } else {
                 return_errno!(Errno::ENOENT, "try to open {:?}", path);

@@ -4,7 +4,6 @@ use crate::consts::PAGE_SIZE;
 use crate::fs::file::File;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
-use alloc::vec::Vec;
 
 // see [man mmap](https://man7.org/linux/man-pages/man2/mmap.2.html)
 bitflags! {

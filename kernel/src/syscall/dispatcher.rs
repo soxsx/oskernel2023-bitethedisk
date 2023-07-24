@@ -1,9 +1,8 @@
 //! 根据 SYS_id 分发具体系统调用
 
 use super::impls::*;
-use crate::task::current_task;
-use crate::task::SigAction;
 use nix::time::TimeSpec;
+
 // 系统调用号
 // const SYS_RT_SIGPROMASK: usize = 135;
 // const SYS_RT_SIGACTION: usize = 134;
@@ -266,7 +265,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_WRITEV => sys_writev(args[0], args[1] as *const usize, args[2]),
         SYS_EXIT_GROUP => sys_exit_group(args[0] as i32),
         SYS_GETUID => sys_getuid(),
-        SYS_IOCTL => sys_ioctl(args[0], args[1], args[2] as *mut u8),
+        SYS_IOCTL => sys_ioctl(args[0] as i32, args[1], args[2] as *mut u8),
         SYS_FCNTL => sys_fcntl(
             args[0] as i32,
             args[1] as usize,
