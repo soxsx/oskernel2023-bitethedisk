@@ -22,7 +22,7 @@ use super::*;
 /// struct tms *tms;
 /// clock_t ret = syscall(SYS_times, tms);
 /// ```
-pub fn sys_times(buf: *const u8) -> Result<isize> {
+pub fn sys_times(buf: *const u8) -> Result {
     let sec = get_time_ms() as isize * 1000;
     let token = current_user_token();
     let buffers = translated_bytes_buffer(token, buf, core::mem::size_of::<tms>());
@@ -61,7 +61,7 @@ pub fn sys_times(buf: *const u8) -> Result<isize> {
 /// struct utsname *uts;
 /// int ret = syscall(SYS_uname, uts);
 /// ```
-pub fn sys_uname(buf: *const u8) -> Result<isize> {
+pub fn sys_uname(buf: *const u8) -> Result {
     let token = current_user_token();
     let mut userbuf = UserBuffer::wrap(translated_bytes_buffer(
         token,
@@ -76,7 +76,7 @@ pub fn sys_uname(buf: *const u8) -> Result<isize> {
 ///
 /// - 返回值：总是返回 0。
 /// - syscall ID：124
-pub fn sys_sched_yield() -> Result<isize> {
+pub fn sys_sched_yield() -> Result {
     suspend_current_and_run_next();
     Ok(0)
 }
@@ -101,7 +101,7 @@ pub fn sys_sched_yield() -> Result<isize> {
 /// struct timespec *ts;
 /// int ret = syscall(SYS_gettimeofday, ts, 0);
 /// ```
-pub fn sys_gettimeofday(buf: *const u8) -> Result<isize> {
+pub fn sys_gettimeofday(buf: *const u8) -> Result {
     let token = current_user_token();
     let buffers = translated_bytes_buffer(token, buf, core::mem::size_of::<TimeVal>());
     let mut userbuf = UserBuffer::wrap(buffers);
@@ -121,7 +121,7 @@ pub fn sys_gettimeofday(buf: *const u8) -> Result<isize> {
 /// const struct timespec *req, struct timespec *rem;
 /// int ret = syscall(SYS_nanosleep, req, rem);
 /// ```
-pub fn sys_nanosleep(buf: *const u8) -> Result<isize> {
+pub fn sys_nanosleep(buf: *const u8) -> Result {
     let tic = get_time_ms();
     let token = current_user_token();
     let len_timeval = translated_ref(token, buf as *const TimeVal);
@@ -130,6 +130,6 @@ pub fn sys_nanosleep(buf: *const u8) -> Result<isize> {
     Ok(0)
 }
 
-pub fn sys_getrandom(buf: *const u8, buf_size: usize, flags: usize) -> Result<isize> {
+pub fn sys_getrandom(buf: *const u8, buf_size: usize, flags: usize) -> Result {
     Ok(buf_size as isize)
 }

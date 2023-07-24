@@ -180,13 +180,7 @@ pub fn syscall_name(id: usize) -> &'static str {
 
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
-    // println!(
-    //     "[DEBUG] {}. pid:{:?}",
-    //     syscall_name(syscall_id),
-    //     current_task().unwrap().pid.0
-    // );
     let ret = match syscall_id {
-
         SYS_CLONE => sys_do_fork(args[0], args[1], args[2], args[3], args[4]),
 
         SYS_TGKILL => sys_tgkill(args[0] as isize, args[1], args[2] as isize),
@@ -206,7 +200,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         ),
 
         SYS_OPENAT => sys_openat(
-            args[0] as isize,
+            args[0] as i32,
             args[1] as *const u8,
             args[2] as u32,
             args[3] as u32,
@@ -215,7 +209,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_GETCWD => sys_getcwd(args[0] as *mut u8, args[1]),
         SYS_DUP => sys_dup(args[0]),
         SYS_DUP3 => sys_dup3(args[0], args[1]),
-        SYS_MKDIRAT => sys_mkdirat(args[0] as isize, args[1] as *const u8, args[2] as u32),
+        SYS_MKDIRAT => sys_mkdirat(args[0] as i32, args[1] as *const u8, args[2] as u32),
         SYS_UNLINKAT => sys_unlinkat(args[0] as isize, args[1] as *const u8, args[2] as u32),
         SYS_UMOUNT2 => sys_umount2(args[0] as *const u8, args[1]),
         SYS_MOUNT => sys_mount(
@@ -227,11 +221,11 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         ),
         SYS_CHDIR => sys_chdir(args[0] as *const u8),
         SYS_CLOSE => sys_close(args[0]),
-        SYS_PIPE2 => sys_pipe2(args[0] as *mut i32, args[1] as usize),
+        SYS_PIPE2 => sys_pipe2(args[0] as *mut i32, args[1] as i32),
         SYS_GETDENTS64 => sys_getdents64(args[0] as isize, args[1] as *mut u8, args[2]),
         SYS_READ => sys_read(args[0], args[1] as *const u8, args[2]),
-        SYS_WRITE => sys_write(args[0], args[1] as *const u8, args[2]),
-        SYS_FSTAT => sys_fstat(args[0] as isize, args[1] as *mut u8),
+        SYS_WRITE => sys_write(args[0] as i32, args[1] as *const u8, args[2]),
+        SYS_FSTAT => sys_fstat(args[0] as i32, args[1] as *mut u8),
         SYS_EXIT => sys_exit(args[0] as i32),
         SYS_NANOSLEEP => sys_nanosleep(args[0] as *const u8),
         SYS_SCHED_YIELD => sys_sched_yield(),
@@ -263,9 +257,9 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[3],
         ),
         SYS_RT_SIGACTION => sys_rt_sigaction(),
-        SYS_IOCTL => sys_ioctl(args[0], args[1], args[2] as *mut u8),
+        SYS_IOCTL => sys_ioctl(args[0] as i32, args[1], args[2] as *mut u8),
         SYS_FCNTL => sys_fcntl(
-            args[0] as isize,
+            args[0] as i32,
             args[1] as usize,
             Option::<usize>::from(args[2]),
         ),
@@ -279,7 +273,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         ),
         SYS_CLOCK_GETTIME => sys_clock_gettime(args[0], args[1] as *mut u64),
         SYS_GETTID => sys_gettid(),
-        SYS_SENDFILE => sys_sendfile(args[0], args[1], args[2], args[3]),
+        SYS_SENDFILE => sys_sendfile(args[0] as i32, args[1] as i32, args[2], args[3]),
         SYS_SYSLOG => Ok(0),
         SYS_FACCESSAT => Ok(0),
         SYS_SYSINFO => Ok(0),
@@ -322,7 +316,6 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         ),
         SYS_GETRUSAGE => sys_getrusage(args[0] as isize, args[1] as *mut u8),
         SYS_SETITIMER => Ok(0),
-        SYS_TGKILL => Ok(0),
         SYS_UMASK => Ok(0),
         SYS_FSYNC => Ok(0),
         SYS_MSYNC => Ok(0),
@@ -331,7 +324,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_SHMAT => sys_shmat(args[0], args[1], args[2]),
         SYS_SHMDT => sys_shmdt(args[0]),
         SYS_PREAD64 => sys_pread64(args[0], args[1] as *const u8, args[2], args[3]),
-        SYS_PWRITE64 => sys_pwrite64(args[0], args[1] as *const u8, args[2], args[3]),
+        SYS_PWRITE64 => sys_pwrite64(args[0] as i32, args[1] as *const u8, args[2], args[3]),
         SYS_STATFS => sys_statfs(args[0] as *const u8, args[1] as *const u8),
         SYS_FUTEX => Ok(0),
         SYS_RT_SIGTIMEDWAIT => Ok(0),

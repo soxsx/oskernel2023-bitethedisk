@@ -175,12 +175,16 @@ pub fn list_apps(path: AbsolutePath) {
     ls(path, layer);
 }
 
+#[derive(Debug)]
+pub enum OpenError {
+    NoMatchedDir,
+}
+
 // work_path 绝对路径
 pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Option<Arc<Fat32File>> {
+    let mut _result: Result<Arc<Fat32File>, OpenError>;
     let mut pathv = path.as_vec_str();
-
     let (readable, writable) = flags.read_write();
-
     // 创建文件
     if flags.contains(OpenFlags::O_CREATE) {
         let res = ROOT_INODE.find(pathv.clone());
@@ -199,7 +203,7 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Option<A
                     name.to_string(),
                 )))
             }
-            Err(_) => {
+            Err(_err) => {
                 // 设置创建类型
                 let mut create_type = VirFileType::File;
                 if flags.contains(OpenFlags::O_DIRECTROY) {
@@ -217,9 +221,9 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Option<A
                             path.clone(),
                             name.to_string(),
                         ))),
-                        Err(_) => None,
+                        Err(_err) => None,
                     },
-                    Err(_) => None,
+                    Err(_err) => None,
                 }
             }
         }
@@ -241,7 +245,7 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Option<A
                     name,
                 )))
             }
-            Err(_) => None,
+            Err(_err) => None,
         }
     }
 }

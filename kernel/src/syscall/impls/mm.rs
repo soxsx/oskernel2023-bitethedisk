@@ -1,16 +1,18 @@
 //! 内存管理系统调用
 
 use crate::mm::shared_memory::{attach_shm, create_shm, detach_shm};
-use crate::mm::VirtPageNum;
+use crate::mm::MapPermission;
+use crate::mm::PageTable;
+use crate::mm::{page_table::PTEFlags, VirtPageNum};
+use crate::mm::{VPNRange, VirtAddr};
+use crate::return_errno;
 use crate::{
     consts::PAGE_SIZE,
     fs::open_flags::CreateMode,
-    mm::{
-        shared_memory::remove_shm, MapPermission, MmapFlags, MmapProts, PTEFlags, PageTable,
-        VPNRange, VirtAddr,
-    },
+    mm::{shared_memory::remove_shm, MmapFlags, MmapProts},
     task::{current_task, current_user_token},
 };
+
 use nix::ipc::{ShmFlags, IPC_PRIVATE, IPC_RMID};
 
 use super::*;
@@ -27,8 +29,7 @@ use super::*;
 /// uintptr_t brk;
 /// uintptr_t ret = syscall(SYS_brk, brk);
 /// ```
-pub fn sys_brk(brk: usize) -> Result<isize> {
-    // println!("[DEBUG] brk size:0x{:x?}",brk);
+pub fn sys_brk(brk: usize) -> Result {
     let task = current_task().unwrap();
     if brk == 0 {
         Ok(task.grow_proc(0) as isize)
@@ -51,9 +52,9 @@ pub fn sys_brk(brk: usize) -> Result<isize> {
 /// void *start, size_t len
 /// int ret = syscall(SYS_munmap, start, len);
 /// ```
-pub fn sys_munmap(addr: usize, length: usize) -> Result<isize> {
+pub fn sys_munmap(addr: usize, length: usize) -> Result {
     let task = current_task().unwrap();
-    Ok(task.munmap(addr, length))
+    Ok(task.munmap(addr, length) as isize)
 }
 
 /// #define SYS_mmap 222
@@ -82,15 +83,11 @@ pub fn sys_mmap(
     flags: usize,
     fd: isize,
     offset: usize,
-) -> Result<isize> {
-    // println!(
-    //     "[DEBUG] addr:{:x?},length:{:?},prot:{:?},flags:{:?},fd:{:?},offset:{:?}",
-    //     addr, length, prot, flags, fd, offset
-    // );
+) -> Result {
     if length == 0 {
         return Err(Errno::EINVAL);
     }
-    // let padding=PAGE_SIZE-(length-1)%PAGE_SIZE-1;
+
     let mut padding = PAGE_SIZE - length % PAGE_SIZE;
     if padding == PAGE_SIZE {
         padding = 0;
@@ -112,7 +109,7 @@ pub fn sys_mmap(
     Ok(result_addr as isize)
 }
 
-pub fn sys_shmget(key: usize, size: usize, shmflg: usize) -> Result<isize> {
+pub fn sys_shmget(key: usize, size: usize, shmflg: usize) -> Result {
     let size = (size + PAGE_SIZE - 1) / PAGE_SIZE * PAGE_SIZE;
     assert!(size % PAGE_SIZE == 0);
     let mut new_key = key;
@@ -123,7 +120,8 @@ pub fn sys_shmget(key: usize, size: usize, shmflg: usize) -> Result<isize> {
     }
     return Ok(new_key as isize);
 }
-pub fn sys_shmctl(key: usize, cmd: usize, buf: *const u8) -> Result<isize> {
+
+pub fn sys_shmctl(key: usize, cmd: usize, buf: *const u8) -> Result {
     if cmd == IPC_RMID {
         remove_shm(key);
     } else {
@@ -131,7 +129,8 @@ pub fn sys_shmctl(key: usize, cmd: usize, buf: *const u8) -> Result<isize> {
     }
     Ok(0)
 }
-pub fn sys_shmat(key: usize, address: usize, shmflg: usize) -> Result<isize> {
+
+pub fn sys_shmat(key: usize, address: usize, shmflg: usize) -> Result {
     let task = current_task().unwrap();
     let mut inner = task.write();
     let address = if address == 0 {
@@ -142,7 +141,8 @@ pub fn sys_shmat(key: usize, address: usize, shmflg: usize) -> Result<isize> {
     inner.memory_set.attach_shm(key, address.into());
     Ok(address as isize)
 }
-pub fn sys_shmdt(address: usize) -> Result<isize> {
+
+pub fn sys_shmdt(address: usize) -> Result {
     let task = current_task().unwrap();
     let mut inner = task.write();
     let nattch = inner.memory_set.detach_shm(address.into());
@@ -150,11 +150,8 @@ pub fn sys_shmdt(address: usize) -> Result<isize> {
 
     Ok(nattch as isize)
 }
-pub fn sys_mprotect(addr: usize, length: usize, prot: usize) -> Result<isize> {
-    // println!(
-    //     "[DEBUG] mprotect addr:{:x?} ,len:{:?}, prot:{:x?}",
-    //     addr, length, prot
-    // );
+
+pub fn sys_mprotect(addr: usize, length: usize, prot: usize) -> Result {
     let token = current_user_token();
     let page_table = PageTable::from_token(token);
 
@@ -187,7 +184,7 @@ pub fn sys_mprotect(addr: usize, length: usize, prot: usize) -> Result<isize> {
                 continue;
             }
             let va: VirtAddr = vpn.into();
-            return Err(SyscallError::InvalidVirtAddress(-1, va));
+            return_errno!(Errno::EINVAL, "invalid address: {:?}", va);
         }
     }
 

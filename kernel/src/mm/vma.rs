@@ -2,10 +2,9 @@ use super::address::VirtAddr;
 use super::{translated_bytes_buffer, FrameTracker, UserBuffer, VPNRange, VirtPageNum};
 use crate::consts::PAGE_SIZE;
 use crate::fs::file::File;
-use crate::mm::PageTable;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
-use alloc::vec::Vec;
+
 bitflags! {
 #[derive(Clone, Copy, Debug)]
     pub struct MmapProts: usize {

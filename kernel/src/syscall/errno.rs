@@ -6,7 +6,7 @@
 
 use thiserror::Error;
 
-pub type Result<T> = core::result::Result<T, Errno>;
+pub type Result = core::result::Result<isize, Errno>;
 
 /// Error number 错误号，由内核态系统调用直接返回作为调用失败时的结果
 #[derive(Debug, Error)]

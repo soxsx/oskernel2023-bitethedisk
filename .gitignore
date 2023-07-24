@@ -6,3 +6,4 @@ kernel-qemu
 temp
 *.log
 *.nim
+rustsbi-qemu.bin

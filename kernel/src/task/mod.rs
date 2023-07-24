@@ -53,8 +53,6 @@ pub fn suspend_current_and_run_next() -> isize {
 }
 
 pub fn exit_current_and_run_next(exit_code: i32) {
-    // println!("[KERNEL] pid:{} exited", current_task().unwrap().pid.0);
-
     // 获取访问权限，修改进程状态
     let task = take_current_task().unwrap();
     remove_from_pid2task(task.pid());
