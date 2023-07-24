@@ -20,7 +20,7 @@ impl File for Stdin {
         assert_eq!(user_buf.len(), 1);
         let mut c: i32;
         loop {
-            c = console_getchar();
+            c = console_getchar() as i32;
             if c <= 0 {
                 suspend_current_and_run_next();
                 continue;
