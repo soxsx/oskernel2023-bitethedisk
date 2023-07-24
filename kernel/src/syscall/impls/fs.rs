@@ -879,25 +879,25 @@ pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize> 
         if !file.readable() {
             return Err(Errno::EBADF);
         }
-        let iovp_buf_p =
-            translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>())[0]
-                .as_ptr();
+        let mut addr = iovp as *const _ as usize;
         let file = file.clone();
         let file_size = file.file_size();
+        let file_offset = file.offset();
         // println!("[DEBUG] sys_readv file_size:{:?}",file_size);
         if file_size == 0 {
             warn!("sys_readv: file_size is zero!");
         }
-        let mut addr = iovp_buf_p as *const _ as usize;
+
         let mut total_read_len = 0;
         drop(inner);
         for _ in 0..iovcnt {
-            let iovp = unsafe { &*(addr as *const Iovec) };
-            // println!("[DEBUG] sys_readv iov:{:?}",iovp);
-            let len = iovp.iov_len.min(file_size - total_read_len);
+            let iov = translated_ref(token, addr as *const Iovec);
+
+            let len = iov.iov_len.min(file_size - file_offset - total_read_len);
+            // println!("[DEBUG] sys_readv iov_addr:{:x?} len:{:?},buffer_len:{:?}",iov.iov_base,iov.iov_len,len);
             total_read_len += file.read(UserBuffer::wrap(translated_bytes_buffer(
                 token,
-                iovp.iov_base as *const u8,
+                iov.iov_base as *const u8,
                 len,
             )));
             addr += size_of::<Iovec>();
@@ -914,7 +914,6 @@ pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize>
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.write();
-    let mut write_data: Vec<&'static mut [u8]> = Vec::new();
     // 文件描述符不合法
     if fd >= inner.fd_table.len() {
         return_errno!(Errno::UNCLEAR);
@@ -924,27 +923,22 @@ pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> Result<isize>
         if !file.writable() {
             return Err(Errno::UNCLEAR);
         }
-        // TODO do not use raw ptr in translated_bytes_buffer, u8 buffer not continuous
-        let iovp_buf_p =
-            translated_bytes_buffer(token, iovp as *const u8, iovcnt * size_of::<Iovec>())[0]
-                .as_ptr();
-        let mut addr = iovp_buf_p as *const _ as usize;
+        let mut addr = iovp as *const _ as usize;
         let mut total_write_len = 0;
         for _ in 0..iovcnt {
-            let iovp = unsafe { &*(addr as *const Iovec) };
-            if iovp.iov_len <= 0 {
+            let iov = translated_ref(token, addr as *const Iovec);
+            if iov.iov_len <= 0 {
                 addr += size_of::<Iovec>();
                 continue;
             }
-            write_data.extend(translated_bytes_buffer(
+            total_write_len += file.write(UserBuffer::wrap(translated_bytes_buffer(
                 token,
-                iovp.iov_base as *const u8,
-                iovp.iov_len,
-            ));
+                iov.iov_base as *const u8,
+                iov.iov_len,
+            )));
 
             addr += size_of::<Iovec>();
         }
-        total_write_len = file.write(UserBuffer::wrap(write_data));
         drop(inner);
 
         Ok(total_write_len as isize)
