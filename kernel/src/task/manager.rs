@@ -8,8 +8,9 @@ use spin::Mutex;
 
 /// FIFO 任务管理器
 pub struct TaskManager {
-    ready_queue: VecDeque<Arc<TaskControlBlock>>,
-    hq: BinaryHeap<HangingTask>,
+    ready_queue: VecDeque<Arc<TaskControlBlock>>, // status: Ready
+    waiting_queue: VecDeque<Arc<TaskControlBlock>>, // for futex, status: Blocking
+    hq: BinaryHeap<HangingTask>,                  // for sleep, status: Hanging
 }
 
 pub struct HangingTask {
@@ -58,6 +59,7 @@ impl TaskManager {
     pub fn new() -> Self {
         Self {
             ready_queue: VecDeque::new(),
+            waiting_queue: VecDeque::new(),
             hq: BinaryHeap::new(),
         }
     }
@@ -74,6 +76,10 @@ impl TaskManager {
 
     pub fn hang(&mut self, sleep_time: usize, duration: usize, task: Arc<TaskControlBlock>) {
         self.hq.push(HangingTask::new(sleep_time, duration, task));
+    }
+
+    pub fn block(&mut self, task: Arc<TaskControlBlock>) {
+        self.waiting_queue.push_back(task);
     }
 
     fn check_sleep(&self, hanging_task: &HangingTask) -> bool {
@@ -110,6 +116,25 @@ pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
 
 pub fn check_hanging() -> Option<Arc<TaskControlBlock>> {
     TASK_MANAGER.borrow_mut().check_hanging()
+}
+
+pub fn unblock_task(task: Arc<TaskControlBlock>) {
+    let mut manager = TASK_MANAGER.borrow_mut();
+    let p = manager
+        .waiting_queue
+        .iter()
+        .enumerate()
+        .find(|(_, t)| Arc::ptr_eq(t, &task))
+        .map(|(idx, t)| (idx, t.clone()));
+
+    if let Some((idx, task)) = p {
+        manager.waiting_queue.remove(idx);
+        manager.add(task);
+    }
+}
+
+pub fn block_task(task: Arc<TaskControlBlock>) {
+    TASK_MANAGER.borrow_mut().block(task);
 }
 
 /// 通过PID获取对应的进程控制块
