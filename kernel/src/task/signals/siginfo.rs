@@ -52,7 +52,7 @@ impl Signal {
 bitflags! {
     #[derive(PartialEq, Eq, Debug, Copy, Clone)]
     pub struct SigMask: usize {
-        const SVIGHUP   = 1 << 1;
+        const SIGHUP    = 1 << 1;
         const SIGINT    = 1 << 2;
         const SIGQUIT   = 1 << 3;
         const SIGILL    = 1 << 4;

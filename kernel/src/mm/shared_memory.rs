@@ -1,7 +1,7 @@
 use super::address::PhysAddr;
+use crate::fs::open_flags::CreateMode;
 use crate::task::current_task;
 use crate::timer::get_time;
-use crate::{consts::PAGE_SIZE, fs::open_flags::CreateMode};
 use alloc::{collections::BTreeMap, vec::Vec};
 
 use spin::Mutex;

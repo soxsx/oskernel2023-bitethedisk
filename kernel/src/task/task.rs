@@ -1,20 +1,19 @@
 use core::fmt::Debug;
 
 use super::kernel_stack::KernelStack;
-use super::{pid_alloc, PidHandle, SigMask, SigSet, Signal};
+use super::{pid_alloc, PidHandle, SigMask, SigSet};
 use super::{SigAction, TaskContext, MAX_SIGNUM};
 use crate::consts::*;
 use crate::fs::{file::File, Fat32File, Stdin, Stdout};
 use crate::mm::kernel_vmm::acquire_kvmm;
-use crate::mm::memory_set::{self, AuxEntry, LoadedELF, AT_EXECFN, AT_NULL, AT_RANDOM, MMAP_BASE};
+use crate::mm::memory_set::{AuxEntry, LoadedELF};
+use crate::mm::MmapFlags;
 use crate::mm::{
-    translated_mut, MapPermission, MemorySet, MmapFlags, MmapManager, MmapProts, PageTableEntry,
-    PhysPageNum, VirtAddr, VirtPageNum,
+    translated_mut, MemorySet, MmapProts, PageTableEntry, PhysPageNum, VirtAddr, VirtPageNum,
 };
-use crate::timer::get_time;
 use crate::trap::handler::user_trap_handler;
 use crate::trap::TrapContext;
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;

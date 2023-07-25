@@ -3,12 +3,9 @@ pub mod handler;
 
 use self::handler::kernel_trap_handler;
 use crate::consts::{TRAMPOLINE, TRAP_CONTEXT};
-use crate::task::{
-    check_current_signals, current_task, current_user_token, exit_current_and_run_next,
-};
+use crate::task::{current_task, current_user_token};
 use crate::timer::get_timeval;
 use core::arch::{asm, global_asm};
-use log::debug;
 use riscv::register::{mtvec::TrapMode, sie, stvec};
 
 pub use context::TrapContext;
@@ -43,11 +40,6 @@ pub fn enable_stimer_interrupt() {
 
 #[no_mangle]
 pub fn trap_return() -> ! {
-    if let Some((errno, msg)) = check_current_signals() {
-        debug!("trap_return: {}", msg);
-        exit_current_and_run_next(errno);
-    }
-
     set_user_trap_entry();
 
     let user_satp = current_user_token();

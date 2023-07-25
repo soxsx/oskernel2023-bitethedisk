@@ -36,15 +36,25 @@ mod task;
 mod timer;
 mod trap;
 
-use core::{arch::global_asm, slice};
+use core::{
+    arch::global_asm,
+    slice,
+    sync::atomic::{AtomicBool, Ordering},
+};
 use riscv::register::sstatus::{set_fs, FS};
 
 global_asm!(include_str!("entry.S"));
 
-#[cfg(not(feature = "multi-harts"))]
+static MEOWED: AtomicBool = AtomicBool::new(false);
+static _BOOTED: i32 = 0;
+
 #[no_mangle]
 pub fn meow() -> ! {
-    if hartid!() == 0 {
+    if MEOWED
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+    {
+        println!("boot hart id: {}", hartid!());
         init_bss();
         unsafe { set_fs(FS::Dirty) }
         lang_items::setup();
@@ -61,36 +71,6 @@ pub fn meow() -> ! {
     }
 
     unreachable!("main.rs/meow: you should not be here!");
-}
-
-#[cfg(feature = "multi-harts")]
-#[no_mangle]
-pub fn meow() -> ! {
-    if hartid!() == 0 {
-        init_bss();
-        unsafe { set_fs(FS::Dirty) }
-        lang_items::setup();
-        mm::init_frame_allocator();
-        mm::enable_mmu();
-        trap::init();
-        trap::enable_stimer_interrupt();
-        timer::set_next_trigger();
-        fs::init();
-        task::add_initproc();
-
-        synchronize_hart!()
-    } else {
-        wait_for_booting!();
-
-        unsafe { set_fs(FS::Dirty) }
-
-        mm::enable_mmu();
-        trap::init();
-        trap::enable_stimer_interrupt();
-        timer::set_next_trigger();
-    }
-
-    task::run_tasks();
 }
 
 fn init_bss() {

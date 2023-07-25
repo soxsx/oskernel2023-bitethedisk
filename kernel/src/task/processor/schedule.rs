@@ -37,32 +37,3 @@ fn run_task(task: Arc<TaskControlBlock>, mut processor: RefMut<'_, Processor>) {
     drop(processor);
     unsafe { __switch(idle_task_cx_ptr, next_task_cx_ptr) }
 }
-
-#[cfg(feature = "multi_harts")]
-pub fn run_tasks() -> ! {
-    use super::acquire_processor;
-    use crate::task::{manager::fetch_task, task::TaskStatus};
-
-    loop {
-        if let Some(task) = fetch_task() {
-            info!("task {} fetched by hart {}", task.pid(), hartid!());
-            let mut processor = acquire_processor();
-            let idle_task_cx_ptr = processor.idle_task_cx_ptr();
-
-            let mut task_inner = task.write();
-            let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
-            task_inner.task_status = TaskStatus::Running;
-            drop(task_inner);
-
-            let mut task_inner = task.write();
-            let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
-            task_inner.task_status = TaskStatus::Running;
-            drop(task_inner);
-
-            *processor.current_mut() = Some(task);
-            drop(processor);
-
-            unsafe { __switch(idle_task_cx_ptr, next_task_cx_ptr) }
-        }
-    }
-}
