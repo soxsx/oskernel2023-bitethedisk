@@ -2,7 +2,6 @@ use super::address::{PhysAddr, PhysPageNum};
 use crate::consts::PHYS_END;
 use alloc::{collections::BTreeMap, vec::Vec};
 use core::fmt::{self, Debug, Formatter};
-use riscv::register::mstatus::set_fs;
 use spin::Mutex;
 
 /// 物理页帧，代表 RAM 上一段实际的物理页，通过物理页号标识

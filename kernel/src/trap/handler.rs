@@ -4,17 +4,20 @@
 
 use log::{debug, error};
 use riscv::register::{
+    mcause,
+    mstatus::{self},
+    mtval,
     scause::{self, Exception, Interrupt, Trap},
     stval,
 };
 
+use crate::mm::VirtAddr;
 use crate::{
     consts::TRAMPOLINE,
-    mm::VirtAddr,
     syscall::dispatcher::{syscall, SYS_SIGRETURN},
     task::{
-        current_add_signal, current_task, current_trap_cx, current_user_token,
-        exec_signal_handlers, suspend_current_and_run_next, SigMask, Signal,
+        current_add_signal, current_task, current_trap_cx, exec_signal_handlers,
+        suspend_current_and_run_next, SigMask,
     },
     timer::{get_timeval, set_next_trigger},
 };
@@ -171,12 +174,13 @@ pub fn user_trap_handler() -> ! {
 /// 内核态 trap 发生时的处理函数
 #[no_mangle]
 pub fn kernel_trap_handler() -> ! {
-    use riscv::register::sepc;
-
+    let mstatus = mstatus::read();
+    let mcause = mcause::read();
     error!(
-        "kernel_trap_handler: stval = {:#x}, sepc = {:#x}",
-        stval::read(),
-        sepc::read()
+        "mstatus: {:?}, mtval: {}, mcause: {:?}",
+        mstatus,
+        mtval::read(),
+        mcause
     );
 
     panic!("a trap {:?} from kernel!", scause::read().cause());
