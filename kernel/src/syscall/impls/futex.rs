@@ -129,9 +129,18 @@ pub fn futex_wait(uaddr: usize, val: u32, timeout: usize) -> Result {
     fq_lock.push_back(FutexWaiter::new(task.clone(), get_time_us(), timeout));
     drop(fq_lock);
     drop(fq_writer);
-
+    drop(task);
     // warning: Auto waking-up has not been implemented yet
+
     block_current_and_run_next();
+
+    let task = current_task().unwrap();
+    let inner = task.read();
+    // woke by signal
+    if !inner.pending_signals.difference(inner.sigmask).is_empty() {
+        return Err(Errno::EINTR);
+    }
+
     Ok(0)
 }
 
