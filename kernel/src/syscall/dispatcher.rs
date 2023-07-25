@@ -1,5 +1,7 @@
 //! 根据 SYS_id 分发具体系统调用
 
+use crate::task::{current_task, SigAction};
+
 use super::impls::*;
 use nix::time::TimeSpec;
 
@@ -52,11 +54,9 @@ const SYS_CLOCK_GETTIME: usize = 113;
 const SYS_SYSLOG: usize = 116;
 const SYS_SCHED_YIELD: usize = 124;
 const SYS_KILL: usize = 129;
+const SYS_TILL: usize = 130;
 const SYS_TGKILL: usize = 131;
-const SYS_RT_SIGACTION: usize = 134;
-const SYS_RT_SIGPROMASK: usize = 135;
-const SYS_RT_SIGTIMEDWAIT: usize = 137;
-const SYS_RT_SIGRETURN: usize = 139;
+const SYS_SIGTIMEDWAIT: usize = 137;
 const SYS_TIMES: usize = 153;
 const SYS_SETPGID: usize = 154;
 const SYS_GETPGID: usize = 155;
@@ -154,10 +154,10 @@ pub fn syscall_name(id: usize) -> &'static str {
         SYS_SCHED_YIELD => "SYS_SCHED_YIELD",
         SYS_KILL => "SYS_KILL",
         SYS_TGKILL => "SYS_TGKILL",
-        SYS_RT_SIGACTION => "SYS_RT_SIGACTION",
-        SYS_RT_SIGPROMASK => "SYS_RT_SIGPROMASK",
-        SYS_RT_SIGTIMEDWAIT => "SYS_RT_SIGTIMEDWAIT",
-        SYS_RT_SIGRETURN => "SYS_RT_SIGRETURN",
+        SYS_SIGACTION => "SYS_SIGACTION",
+        SYS_SIGPROCMASK => "SYS_SIGPROCMASK",
+        SYS_SIGTIMEDWAIT => "SYS_SIGTIMEDWAIT",
+        SYS_SIGRETURN => "SYS_SIGRETURN",
         SYS_TIMES => "SYS_TIMES",
         SYS_SETPGID => "SYS_SETPGID",
         SYS_GETPGID => "SYS_GETPGID",
@@ -189,6 +189,7 @@ pub fn syscall_name(id: usize) -> &'static str {
         SYS_RENAMEAT2 => "SYS_RENAMEAT2",
         SYS_GETRANDOM => "SYS_GETRANDOM",
         SYS_FUTEX => "SYS_FUTEX",
+        SYS_TKILL => "SYS_TKILL",
 
         _ => "unknown",
     }
@@ -335,8 +336,8 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_PREAD64 => sys_pread64(args[0], args[1] as *const u8, args[2], args[3]),
         SYS_PWRITE64 => sys_pwrite64(args[0] as i32, args[1] as *const u8, args[2], args[3]),
         SYS_STATFS => sys_statfs(args[0] as *const u8, args[1] as *const u8),
-        SYS_RT_SIGTIMEDWAIT => Ok(0),
-        SYS_RT_SIGRETURN => Ok(0),
+        SYS_SIGTIMEDWAIT => Ok(0),
+        SYS_SIGRETURN => Ok(0),
         SYS_MPROTECT => sys_mprotect(args[0], args[1], args[2]),
         SYS_MEMBARRIER => Ok(0),
         SYS_SCHED_GETAFFINITY => {
@@ -356,13 +357,11 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[2] as isize,
             args[3] as *mut [isize; 2],
         ),
-
-        // SYS_SIGACTION => sys_sigaction(
-        //     args[0] as isize,
-        //     args[1] as *const SigAction,
-        //     args[2] as *mut SigAction,
-        // ),
-        SYS_SIGACTION => Ok(0),
+        SYS_SIGACTION => sys_sigaction(
+            args[0] as isize,
+            args[1] as *const SigAction,
+            args[2] as *mut SigAction,
+        ),
 
         SYS_SIGPROCMASK => sys_sigprocmask(
             args[0] as usize,
@@ -378,6 +377,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[4] as *const u32,
             args[5] as u32,
         ),
+        SYS_TILL => sys_tkill(args[0], args[1]),
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
     // println!(

@@ -16,10 +16,10 @@ use crate::timer::get_timeval;
 use alloc::borrow::ToOwned;
 use alloc::string::ToString;
 use alloc::{sync::Arc, vec::Vec};
-use nix::Iovec;
 use core::mem::size_of;
 use fat32::sync_all;
 use nix::time::{TimeSpec, TimeVal};
+use nix::Iovec;
 use spin::RwLock;
 
 use super::*;

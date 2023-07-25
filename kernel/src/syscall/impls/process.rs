@@ -330,6 +330,30 @@ pub fn sys_kill(pid: usize, signal: u32) -> Result {
         return_errno!(Errno::ESRCH, "could not find task with pid: {}", pid);
     }
 }
+pub fn sys_tkill(tid: usize, signal: usize) -> Result {
+    //TODO pid==-1
+    println!("[DEBUG] tkill tid:{:?} signal:0x{:x?}", tid, signal);
+    if signal == 0 {
+        return Ok(0);
+    }
+    let pid = if tid == 0 {
+        current_task().unwrap().pid.0
+    } else {
+        tid
+    };
+
+    let signal = 1 << signal;
+    if let Some(task) = pid2task(pid) {
+        if let Some(flag) = SigMask::from_bits(signal) {
+            task.write().pending_signals |= flag;
+            Ok(0)
+        } else {
+            return_errno!(Errno::EINVAL, "invalid signal, signum: {}", signal);
+        }
+    } else {
+        return_errno!(Errno::ESRCH, "could not find task with pid: {}", pid);
+    }
+}
 
 const RUSAGE_SELF: isize = 0;
 pub fn sys_getrusage(who: isize, usage: *mut u8) -> Result {
