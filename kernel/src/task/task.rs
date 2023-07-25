@@ -19,6 +19,7 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
 use nix::time::TimeVal;
+use nix::CloneFlags;
 use riscv::register::scause::Scause;
 use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -34,13 +35,13 @@ pub struct TaskControlBlock {
     /// thread group id
     pub tgid: usize,
 
-    pub set_child_tid: usize,   /* CLONE_CHILD_SETTID */
-    pub clear_child_tid: usize, /* CLONE_CHILD_CLEARTID */
-
+    // pub set_child_tid: usize,   /* CLONE_CHILD_SETTID */
+    // pub clear_child_tid: usize, /* CLONE_CHILD_CLEARTID */
     /// 应用内核栈
     pub kernel_stack: KernelStack,
 
     inner: RwLock<TaskControlBlockInner>,
+    pub sigactions: Arc<RwLock<[SigAction; MAX_SIGNUM as usize]>>,
 }
 
 impl Debug for TaskControlBlock {
@@ -75,8 +76,6 @@ pub struct TaskControlBlockInner {
     /// 文件描述符表
     pub fd_table: Vec<Option<Arc<dyn File>>>,
 
-    pub sigactions: [SigAction; MAX_SIGNUM as usize],
-
     pub pending_signals: SigSet,
 
     pub sigmask: SigMask,
@@ -90,6 +89,7 @@ pub struct TaskControlBlockInner {
     pub last_enter_umode_time: TimeVal,
 
     pub last_enter_smode_time: TimeVal,
+    pub clear_child_tid: usize, /* CLONE_CHILD_CLEARTID */
 
     pub trap_cause: Option<Scause>,
 }
@@ -196,9 +196,8 @@ impl TaskControlBlock {
             tgid,
             kernel_stack,
 
-            set_child_tid: 0,
-            clear_child_tid: 0,
-
+            // set_child_tid: 0,
+            // clear_child_tid: 0,
             inner: RwLock::new(TaskControlBlockInner {
                 trap_cx_ppn,
                 task_cx: TaskContext::readied_for_switching(kernel_stack_top),
@@ -215,18 +214,17 @@ impl TaskControlBlock {
                     // 2 -> stderr
                     Some(Arc::new(Stdout)),
                 ],
-
-                sigactions: [SigAction::new(); MAX_SIGNUM as usize],
                 sigmask: SigMask::empty(),
                 pending_signals: SigSet::empty(),
-
                 current_path: AbsolutePath::from_str("/"),
                 utime: TimeVal { sec: 0, usec: 0 },
                 stime: TimeVal { sec: 0, usec: 0 },
                 last_enter_umode_time: TimeVal { sec: 0, usec: 0 },
                 last_enter_smode_time: TimeVal { sec: 0, usec: 0 },
+                clear_child_tid: 0,
                 trap_cause: None,
             }),
+            sigactions: Arc::new(RwLock::new([SigAction::new(); MAX_SIGNUM as usize])),
         };
         // 初始化位于该进程应用地址空间中的 Trap 上下文，使得第一次进入用户态的时候时候能正
         // 确跳转到应用入口点并设置好用户栈，同时也保证在 Trap 的时候用户态能正确进入内核态
@@ -385,7 +383,7 @@ impl TaskControlBlock {
     }
 
     /// 用来实现 fork 系统调用，即当前进程 fork 出来一个与之几乎相同的子进程
-    pub fn fork(self: &Arc<TaskControlBlock>, is_create_thread: bool) -> Arc<TaskControlBlock> {
+    pub fn fork(self: &Arc<TaskControlBlock>, flags: CloneFlags) -> Arc<TaskControlBlock> {
         let mut parent_inner = self.write();
         // copy mmap_area
         // mmap_area.debug_show();
@@ -397,7 +395,7 @@ impl TaskControlBlock {
             .ppn();
         // 分配一个 PID
         let pid_handle = pid_alloc();
-        let tgid = if is_create_thread {
+        let tgid = if flags.contains(CloneFlags::THREAD) {
             self.pid.0
         } else {
             pid_handle.0
@@ -415,14 +413,25 @@ impl TaskControlBlock {
                 new_fd_table.push(None);
             }
         }
+        let new_sigactions = if flags.contains(CloneFlags::SIGHAND) {
+            self.sigactions.clone()
+        } else {
+            let lock = self.sigactions.read();
+            let mut sigactions = Arc::new(RwLock::new([SigAction::new(); MAX_SIGNUM as usize]));
+            let mut new_lock = sigactions.write();
+            for i in 1..MAX_SIGNUM as usize {
+                new_lock[i] = lock[i].clone();
+            }
+            drop(new_lock);
+            sigactions
+        };
 
         let task_control_block = Arc::new(TaskControlBlock {
             pid: pid_handle,
             tgid,
 
-            set_child_tid: 0,
-            clear_child_tid: 0,
-
+            // set_child_tid: 0,
+            // clear_child_tid: 0,
             kernel_stack,
             inner: RwLock::new(TaskControlBlockInner {
                 trap_cx_ppn,
@@ -435,7 +444,6 @@ impl TaskControlBlock {
                 fd_table: new_fd_table,
 
                 // [signal: msg about fork](https://man7.org/linux/man-pages/man7/signal.7.html)
-                sigactions: parent_inner.sigactions.clone(),
                 sigmask: parent_inner.sigmask.clone(),
                 pending_signals: SigSet::empty(),
 
@@ -444,8 +452,10 @@ impl TaskControlBlock {
                 stime: TimeVal { sec: 0, usec: 0 },
                 last_enter_umode_time: TimeVal { sec: 0, usec: 0 },
                 last_enter_smode_time: TimeVal { sec: 0, usec: 0 },
+                clear_child_tid: 0,
                 trap_cause: None,
             }),
+            sigactions: new_sigactions,
         });
         // 把新生成的进程加入到子进程向量中
         parent_inner.children.push(task_control_block.clone());

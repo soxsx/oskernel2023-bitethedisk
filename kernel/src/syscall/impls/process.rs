@@ -45,20 +45,32 @@ use crate::task::*;
 pub fn sys_do_fork(
     flags: usize,
     stack_ptr: usize,
-    _ptid: usize,
+    ptid: usize,
     _tls: usize,
-    _ctid: usize,
+    ctid: usize,
 ) -> Result {
     let current_task = current_task().unwrap();
-    let new_task = current_task.fork(false);
+    let signal = flags & 0xff;
+    let flags = CloneFlags::from_bits(flags & !0xff).unwrap();
 
-    let flags = 17;
+    let new_task = current_task.fork(flags);
 
     if stack_ptr != 0 {
         let trap_cx = new_task.write().trap_context();
         trap_cx.set_sp(stack_ptr);
     }
     let new_pid = new_task.pid.0;
+    let child_token = new_task.read().get_user_token();
+    if flags.contains(CloneFlags::PARENT_SETTID) {
+        *translated_mut(current_user_token(), ptid as *mut u32) = new_pid as u32;
+    }
+    if flags.contains(CloneFlags::CHILD_SETTID) {
+        *translated_mut(child_token, ctid as *mut u32) = new_pid as u32;
+    }
+    if flags.contains(CloneFlags::CHILD_CLEARTID) {
+        new_task.write().clear_child_tid = ctid;
+    }
+
     // modify trap context of new_task, because it returns immediately after switching
     let trap_cx = new_task.write().trap_context();
     // we do not have to move to next instruction since we have done it before
@@ -642,16 +654,18 @@ pub fn sys_sigaction(signum: isize, act: *const SigAction, oldact: *mut SigActio
     }
 
     // 当 sigaction 存在时， 在 pcb 中注册给定的 signaction
+
     if act as usize != 0 {
+        let mut sigaction = task.sigactions.write();
         if oldact as usize != 0 {
-            *translated_mut(token, oldact) = inner.sigactions[signum as usize];
+            *translated_mut(token, oldact) = sigaction[signum as usize];
         }
         //在 pcb 中注册给定的 signaction
         let mut sa = translated_ref(token, act).clone();
         // kill 和 stop 信号不能被屏蔽
         sa.sa_mask.sub(Signal::SIGKILL as u32); // sub 函数保证即使不存在 SIGKILL 也无影响
         sa.sa_mask.sub(Signal::SIGSTOP as u32);
-        inner.sigactions[signum as usize] = sa;
+        sigaction[signum as usize] = sa;
     }
 
     // println!(
