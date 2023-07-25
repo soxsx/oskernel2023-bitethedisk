@@ -139,11 +139,16 @@ pub fn exec_signal_handlers() {
 
     loop {
         // 取出 pending 的第一个 signal
-        let signum = match task_inner.pending_signals.fetch() {
+        let signum = match task_inner
+            .pending_signals
+            .difference(task_inner.sigmask)
+            .fetch()
+        {
             Some(s) => s,
             None => return,
         };
-        let sigaction = task_inner.sigactions[signum as usize];
+        task_inner.pending_signals.sub(signum);
+        let sigaction = task.sigactions.read()[signum as usize];
 
         // 如果信号对应的处理函数存在，则做好跳转到 handler 的准备
         let handler = sigaction.sa_handler;
@@ -176,17 +181,15 @@ pub fn exec_signal_handlers() {
                 sigmask.add_other(old_sigmask);
                 // 将信号掩码设置为 sigmask
                 task_inner.sigmask = sigmask;
-
                 // 将 SignalContext 数据放入栈中
                 let trap_cx = task_inner.trap_context();
                 // 保存 Trap 上下文与 old_sigmask 到 sig_context 中
                 let sig_context = SignalContext::from_another(trap_cx, old_sigmask);
                 trap_cx.x[2] -= core::mem::size_of::<SignalContext>(); // sp -= sizeof(sigcontext)
                 trap_cx.x[10] = signum as usize; // a0 (args0 = signum)
-                let token = current_user_token();
+                let token = task_inner.get_user_token();
                 let sig_context_ptr = trap_cx.x[2] as *mut SignalContext;
                 *translated_mut(token, sig_context_ptr) = sig_context;
-
                 if sigaction.sa_flags.contains(SAFlags::SA_SIGINFO) {
                     todo!("SA_SIGINFO")
                 }

@@ -41,6 +41,8 @@ pub enum Signal {
     SIGIO = 29,
     SIGPWR = 30,
     SIGSYS = 31,
+    SIGUND1 = 32,
+    SIGUND2 = 33,
 }
 
 impl Signal {
@@ -83,6 +85,8 @@ bitflags! {
         const SIGIO     = 1 << 29;
         const SIGPWR    = 1 << 30;
         const SIGSYS    = 1 << 31;
+        const SIGUND1    = 1 << 32;
+        const SIGUND2    = 1 << 33;
     }
 }
 
@@ -142,10 +146,9 @@ impl SignalContext {
 
 impl SigMask {
     pub fn fetch(&mut self) -> Option<u32> {
-        let mut signum = 0;
+        let mut signum = 1;
         while signum < MAX_SIGNUM {
             if self.if_contains(signum) {
-                self.sub(signum);
                 return Some(signum);
             }
             signum += 1;
