@@ -7,8 +7,11 @@ use core::cell::RefMut;
 use alloc::sync::Arc;
 
 use crate::task::{
-    check_hanging, manager::fetch_task, switch::__switch, task::TaskStatus, TaskContext,
-    TaskControlBlock,
+    check_hanging,
+    manager::{check_interupt, fetch_task},
+    switch::__switch,
+    task::TaskStatus,
+    unblock_task, TaskContext, TaskControlBlock,
 };
 
 use super::{acquire_processor, Processor};
@@ -21,6 +24,8 @@ pub fn run_tasks() {
 
         if let Some(hanging_task) = check_hanging() {
             run_task(hanging_task, processor);
+        } else if let Some(interupt_task) = check_interupt() {
+            unblock_task(interupt_task);
         } else if let Some(task) = fetch_task() {
             run_task(task, processor);
         }

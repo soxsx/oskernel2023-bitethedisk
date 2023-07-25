@@ -31,7 +31,7 @@ run:
 	@cd kernel/ && make run
 debug-server:
 	@cd kernel/ && make debug-server
-debug: 
+debug:
 	@cd kernel/ && make debug
 
 init: sdcard

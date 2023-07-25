@@ -10,7 +10,7 @@ QEMU = qemu-system-riscv64
 GDB = riscv64-unknown-elf-gdb
 
 SDCARD = ../workspace/sdcard.img
-SDCARD_BAK = ../workspace/sdcard.img.bak 
+SDCARD_BAK = ../workspace/sdcard.img.bak
 NCPU = 2
 
 RUST_LOG := info

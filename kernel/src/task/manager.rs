@@ -95,6 +95,15 @@ impl TaskManager {
             Some(self.hq.pop().unwrap().inner)
         }
     }
+    pub fn check_interupt(&mut self) -> Option<Arc<TaskControlBlock>> {
+        for tcb in self.waiting_queue.iter() {
+            let lock = tcb.read();
+            if !lock.pending_signals.difference(lock.sigmask).is_empty() {
+                return Some(tcb.clone());
+            }
+        }
+        None
+    }
 }
 
 lazy_static! {
@@ -116,6 +125,10 @@ pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
 
 pub fn check_hanging() -> Option<Arc<TaskControlBlock>> {
     TASK_MANAGER.borrow_mut().check_hanging()
+}
+
+pub fn check_interupt() -> Option<Arc<TaskControlBlock>> {
+    TASK_MANAGER.borrow_mut().check_interupt()
 }
 
 pub fn unblock_task(task: Arc<TaskControlBlock>) {
