@@ -244,36 +244,62 @@ pub fn is_signal_valid(signum: u32) -> bool {
     signum < MAX_SIGNUM
 }
 
-// pub struct _MContext {
-//     __gregs: [usize; 32],
-// }
+#[repr(C)]
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct SigInfo {
+    si_signo: i32,  /* Signal number */
+    si_errno: i32,  /* An errno value */
+    si_code: i32,   /* Signal code */
+    si_trapno: i32, /* Trap number that caused hardware-generated signal (unused on most architectures) */
+    si_pid: u32,    /* Sending process ID */
+    si_uid: u32,    /* Real user ID of sending process */
+    si_status: i32, /* Exit value or signal */
+    si_utime: i32,  /* User time consumed */
+    si_stime: i32,  /* System time consumed */
+}
 
-// pub struct _Signaltstack {
-//     ss_sp: usize,
-//     ss_flags: u32,
-//     ss_size: usize,
-// }
+#[repr(C)]
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct UContext {
+    pub uc_flags: usize,
+    pub uc_link: *mut UContext,
+    pub uc_stack: SignalStack,
+    pub sigmask: SigMask,
+    pub __unused: [u8; 1024 / 8 - core::mem::size_of::<SigMask>()],
+    pub uc_mcontext: _MContext,
+}
 
-// #[repr(C)]
-// pub struct UContext {
-//     pub __bits: [usize; 25],
-// }
+#[repr(C)]
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct SignalStack {
+    pub ss_sp: usize,
+    pub ss_flags: i32,
+    pub ss_size: usize,
+}
 
-// impl UContext {
-//     pub fn new() -> Self {
-//         Self { __bits: [0; 25] }
-//     }
+// The mcontext_t type is machine-dependent and opaque.
+#[repr(C)]
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct _MContext {
+    pub greps: [usize; 32],    // general registers
+    pub __reserved: [u8; 528], // size of mcontext_t is 784 bytes
+}
+/* ucontext.h
 
-//     pub fn as_bytes(&self) -> &[u8] {
-//         let size = core::mem::size_of::<Self>();
-//         unsafe { core::slice::from_raw_parts(self as *const _ as usize as *mut u8, size) }
-//     }
+// arch/risv/include/uapi/asm/ucontext.h
+struct ucontext {
+    unsigned long	  uc_flags;
+    struct ucontext	 *uc_link;
+    stack_t		  uc_stack;
+    sigset_t	  uc_sigmask;
+    __u8		  __unused[1024 / 8 - sizeof(sigset_t)];
+    struct sigcontext uc_mcontext;
+};
 
-//     pub fn pc_offset() -> usize {
-//         176
-//     }
+// arch/risv/include/uapi/asm/sigcontext.h
+struct sigcontext {
+    struct user_regs_struct sc_regs;
+    union __riscv_fp_state sc_fpregs;
+};
 
-//     pub fn mc_pc(&mut self) -> &mut usize {
-//         &mut self.__bits[Self::pc_offset() / size_of::<usize>()]
-//     }
-// }
+*/
