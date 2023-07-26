@@ -1,4 +1,5 @@
 use core::fmt::Debug;
+use core::mem;
 
 use super::kernel_stack::KernelStack;
 use super::{pid_alloc, PidHandle, SigMask, SigSet};
@@ -30,17 +31,18 @@ pub const FD_LIMIT: usize = 1024;
 pub struct TaskControlBlock {
     /// 进程标识符
     pub pid: PidHandle,
-
     /// thread group id
     pub tgid: usize,
-
     // pub set_child_tid: usize,   /* CLONE_CHILD_SETTID */
     // pub clear_child_tid: usize, /* CLONE_CHILD_CLEARTID */
     /// 应用内核栈
     pub kernel_stack: KernelStack,
 
-    inner: RwLock<TaskControlBlockInner>,
     pub sigactions: Arc<RwLock<[SigAction; MAX_SIGNUM as usize]>>,
+    pub memory_set: Arc<RwLock<MemorySet>>,
+    pub fd_table: Arc<RwLock<FDTable>>,
+
+    inner: RwLock<TaskControlBlockInner>,
 }
 
 impl Debug for TaskControlBlock {
@@ -69,17 +71,11 @@ pub struct TaskControlBlockInner {
     /// 退出码
     pub exit_code: i32,
 
-    /// 应用地址空间
-    pub memory_set: MemorySet,
-
-    /// 文件描述符表
-    pub fd_table: Vec<Option<Arc<dyn File>>>,
-
     pub pending_signals: SigSet,
 
     pub sigmask: SigMask,
 
-    pub current_path: AbsolutePath,
+    pub cwd: AbsolutePath,
 
     pub utime: TimeVal,
 
@@ -93,14 +89,11 @@ pub struct TaskControlBlockInner {
     pub trap_cause: Option<Scause>,
 }
 
+pub type FDTable = Vec<Option<Arc<dyn File>>>;
+
 impl TaskControlBlockInner {
     pub fn trap_context(&self) -> &'static mut TrapContext {
         self.trap_cx_ppn.as_mut()
-    }
-
-    /// 获取用户地址空间的 token (符合 satp CSR 格式要求的多级页表的根节点所在的物理页号)
-    pub fn get_user_token(&self) -> usize {
-        self.memory_set.token()
     }
 
     fn status(&self) -> TaskStatus {
@@ -111,35 +104,8 @@ impl TaskControlBlockInner {
         self.status() == TaskStatus::Zombie
     }
 
-    /// 查找空闲文件描述符下标
-    ///
-    /// 从文件描述符表中 **由低到高** 查找空位，返回向量下标，没有空位则在最后插入一个空位
-    pub fn alloc_fd(&mut self) -> usize {
-        if let Some(fd) = (0..self.fd_table.len()).find(|fd| self.fd_table[*fd].is_none()) {
-            fd
-        } else {
-            if self.fd_table.len() == FD_LIMIT {
-                return FD_LIMIT;
-            }
-            self.fd_table.push(None);
-            self.fd_table.len() - 1
-        }
-    }
-
     pub fn get_work_path(&self) -> AbsolutePath {
-        self.current_path.clone()
-    }
-
-    pub fn enquire_pte_via_vpn(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
-        self.memory_set.translate(vpn)
-    }
-
-    pub fn cow_alloc(&mut self, vpn: VirtPageNum, former_ppn: PhysPageNum) -> isize {
-        self.memory_set.cow_alloc(vpn, former_ppn)
-    }
-
-    pub fn lazy_alloc_heap(&mut self, vpn: VirtPageNum) -> isize {
-        self.memory_set.lazy_alloc_heap(vpn)
+        self.cwd.clone()
     }
 
     pub fn add_utime(&mut self, new_time: TimeVal) {
@@ -160,12 +126,49 @@ impl TaskControlBlockInner {
 }
 
 impl TaskControlBlock {
+    /// 获取用户地址空间的 token (符合 satp CSR 格式要求的多级页表的根节点所在的物理页号)
+    pub fn get_user_token(&self) -> usize {
+        self.memory_set.read().token()
+    }
+
+    /// 查找空闲文件描述符下标
+    ///
+    /// 从文件描述符表中 **由低到高** 查找空位，返回向量下标，没有空位则在最后插入一个空位
+    pub fn alloc_fd(&self) -> usize {
+        let mut fd_table = self.fd_table.write();
+        if let Some(fd) = (0..fd_table.len()).find(|fd| fd_table[*fd].is_none()) {
+            fd
+        } else {
+            if fd_table.len() == FD_LIMIT {
+                return FD_LIMIT;
+            }
+            fd_table.push(None);
+            fd_table.len() - 1
+        }
+    }
+
     pub fn write(&self) -> RwLockWriteGuard<'_, TaskControlBlockInner> {
         self.inner.write()
     }
 
     pub fn read(&self) -> RwLockReadGuard<'_, TaskControlBlockInner> {
         self.inner.read()
+    }
+
+    pub fn lazy_mmap(&self, vpn: VirtPageNum) {
+        self.memory_set.write().lazy_mmap(vpn)
+    }
+
+    pub fn enquire_pte_via_vpn(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
+        self.memory_set.read().translate(vpn)
+    }
+
+    pub fn cow_alloc(&self, vpn: VirtPageNum, former_ppn: PhysPageNum) -> isize {
+        self.memory_set.write().cow_alloc(vpn, former_ppn)
+    }
+
+    pub fn lazy_alloc_heap(&self, vpn: VirtPageNum) -> isize {
+        self.memory_set.write().lazy_alloc_heap(vpn)
     }
 
     /// 通过 elf 数据新建一个任务控制块，目前仅用于内核中手动创建唯一一个初始进程 initproc
@@ -189,11 +192,21 @@ impl TaskControlBlock {
         let pgid = pid_handle.0;
         let kernel_stack = KernelStack::new(&pid_handle);
         let kernel_stack_top = kernel_stack.top();
+
         // 在该进程的内核栈上压入初始化的任务上下文，使得第一次任务切换到它的时候可以跳转到 trap_return 并进入用户态开始执行
         let task_control_block = Self {
             pid: pid_handle,
             tgid,
             kernel_stack,
+            memory_set: Arc::new(RwLock::new(memory_set)),
+            fd_table: Arc::new(RwLock::new(vec![
+                // 0 -> stdin
+                Some(Arc::new(Stdin)),
+                // 1 -> stdout
+                Some(Arc::new(Stdout)),
+                // 2 -> stderr
+                Some(Arc::new(Stdout)),
+            ])),
 
             // set_child_tid: 0,
             // clear_child_tid: 0,
@@ -201,21 +214,12 @@ impl TaskControlBlock {
                 trap_cx_ppn,
                 task_cx: TaskContext::readied_for_switching(kernel_stack_top),
                 task_status: TaskStatus::Ready,
-                memory_set,
                 parent: None,
                 children: Vec::new(),
                 exit_code: 0,
-                fd_table: vec![
-                    // 0 -> stdin
-                    Some(Arc::new(Stdin)),
-                    // 1 -> stdout
-                    Some(Arc::new(Stdout)),
-                    // 2 -> stderr
-                    Some(Arc::new(Stdout)),
-                ],
                 sigmask: SigMask::empty(),
                 pending_signals: SigSet::empty(),
-                current_path: AbsolutePath::from_str("/"),
+                cwd: AbsolutePath::from_str("/"),
                 utime: TimeVal { sec: 0, usec: 0 },
                 stime: TimeVal { sec: 0, usec: 0 },
                 last_enter_umode_time: TimeVal { sec: 0, usec: 0 },
@@ -245,7 +249,7 @@ impl TaskControlBlock {
         envs: Vec<String>,
         auxv: &mut Vec<AuxEntry>,
     ) -> (usize, usize, usize) {
-        let token = self.write().get_user_token();
+        let token = self.get_user_token();
 
         // 计算共需要多少字节的空间
         let mut total_len = 0;
@@ -343,7 +347,7 @@ impl TaskControlBlock {
     }
 
     /// 用来实现 exec 系统调用，即当前进程加载并执行另一个 ELF 格式可执行文件
-    pub fn exec(&self, elf_file: Arc<Fat32File>, args: Vec<String>, envs: Vec<String>) {
+    pub fn exec(&self, elf_file: Arc<dyn File>, args: Vec<String>, envs: Vec<String>) {
         // 从 ELF 文件生成一个全新的地址空间并直接替换
         let LoadedELF {
             memory_set,
@@ -356,18 +360,23 @@ impl TaskControlBlock {
             .translate(VirtAddr::from(TRAP_CONTEXT).into())
             .unwrap()
             .ppn();
-        let mut inner = self.write();
-        inner.memory_set = memory_set;
-        // from_copy_on_wirte -> exec
+
+        // memory_set
         // 这将导致原有的地址空间生命周期结束, 里面包含的全部物理页帧都会被回收,
         // 结果表现为: 原有的地址空间中的所有页表项的 ppn 引用计数减 1
-        inner.trap_cx_ppn = trap_cx_ppn;
-        let trap_cx = inner.trap_context();
-        inner
-            .fd_table
+        let mut ms = self.memory_set.write();
+        *ms = memory_set;
+
+        // fd_table
+        let mut fd_table = self.fd_table.write();
+        fd_table
             .iter_mut()
             .find(|fd| fd.is_some() && !fd.as_ref().unwrap().available())
-            .take();
+            .take(); // TODO
+
+        let mut inner = self.write();
+        inner.trap_cx_ppn = trap_cx_ppn;
+        let trap_cx = inner.trap_context();
         drop(inner); // 避免接下来的操作导致死锁
 
         let (user_sp, _args_ptr, _envs_ptr) = self.init_ustack(user_sp, args, envs, &mut auxs);
@@ -383,15 +392,13 @@ impl TaskControlBlock {
 
     /// 用来实现 fork 系统调用，即当前进程 fork 出来一个与之几乎相同的子进程
     pub fn fork(self: &Arc<TaskControlBlock>, flags: CloneFlags) -> Arc<TaskControlBlock> {
-        let mut parent_inner = self.write();
-        // copy mmap_area
-        // mmap_area.debug_show();
-        // 拷贝用户地址空间
-        let memory_set = MemorySet::from_copy_on_write(&mut parent_inner.memory_set); // use 4 pages
+        let memory_set = MemorySet::from_copy_on_write(&mut self.memory_set.write()); // use 4 pages
+                                                                                      // 拷贝用户地址空间
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT).into())
             .unwrap()
             .ppn();
+
         // 分配一个 PID
         let pid_handle = pid_alloc();
         let tgid = if flags.contains(CloneFlags::THREAD) {
@@ -400,34 +407,45 @@ impl TaskControlBlock {
             pid_handle.0
         };
         let pgid = self.pid.0;
+
         // 根据 PID 创建一个应用内核栈
         let kernel_stack = KernelStack::new(&pid_handle);
         let kernel_stack_top = kernel_stack.top();
+
         // copy fd table
-        let mut new_fd_table = Vec::new();
-        for fd in parent_inner.fd_table.iter() {
+        let mut fd_table = Vec::new();
+        // parent fd table
+        let pfd_table_ref = self.fd_table.read();
+        for fd in pfd_table_ref.iter() {
             if let Some(file) = fd {
-                new_fd_table.push(Some(file.clone()));
+                fd_table.push(Some(file.clone()));
             } else {
-                new_fd_table.push(None);
+                fd_table.push(None);
             }
         }
-        let new_sigactions = if flags.contains(CloneFlags::SIGHAND) {
+
+        let sigactions = if flags.contains(CloneFlags::SIGHAND) {
             self.sigactions.clone()
         } else {
-            let lock = self.sigactions.read();
-            let mut sigactions = Arc::new(RwLock::new([SigAction::new(); MAX_SIGNUM as usize]));
-            let mut new_lock = sigactions.write();
+            // parent sigactions
+            let psa_ref = self.sigactions.read();
+            let mut sa = Arc::new(RwLock::new([SigAction::new(); MAX_SIGNUM as usize]));
+            let mut sa_mut = sa.write();
             for i in 1..MAX_SIGNUM as usize {
-                new_lock[i] = lock[i].clone();
+                sa_mut[i] = psa_ref[i].clone();
             }
-            drop(new_lock);
-            sigactions
+            drop(sa_mut);
+            sa
         };
+
+        let mut parent_inner = self.write();
 
         let task_control_block = Arc::new(TaskControlBlock {
             pid: pid_handle,
             tgid,
+            memory_set: Arc::new(RwLock::new(memory_set)),
+            fd_table: Arc::new(RwLock::new(fd_table)),
+            sigactions,
 
             // set_child_tid: 0,
             // clear_child_tid: 0,
@@ -436,17 +454,15 @@ impl TaskControlBlock {
                 trap_cx_ppn,
                 task_cx: TaskContext::readied_for_switching(kernel_stack_top),
                 task_status: TaskStatus::Ready,
-                memory_set,
                 parent: Some(Arc::downgrade(self)),
                 children: Vec::new(),
                 exit_code: 0,
-                fd_table: new_fd_table,
 
                 // [signal: msg about fork](https://man7.org/linux/man-pages/man7/signal.7.html)
                 sigmask: parent_inner.sigmask.clone(),
                 pending_signals: SigSet::empty(),
 
-                current_path: parent_inner.current_path.clone(),
+                cwd: parent_inner.cwd.clone(),
                 utime: TimeVal { sec: 0, usec: 0 },
                 stime: TimeVal { sec: 0, usec: 0 },
                 last_enter_umode_time: TimeVal { sec: 0, usec: 0 },
@@ -454,8 +470,8 @@ impl TaskControlBlock {
                 clear_child_tid: 0,
                 trap_cause: None,
             }),
-            sigactions: new_sigactions,
         });
+
         // 把新生成的进程加入到子进程向量中
         parent_inner.children.push(task_control_block.clone());
         // 更新子进程 trap 上下文中的栈顶指针
@@ -478,27 +494,22 @@ impl TaskControlBlock {
     ///     - 用户态：handler page fault
     ///     - 内核态： translate_bytes_buffer
     pub fn check_lazy(&self, va: VirtAddr, is_load: bool) -> isize {
-        let inner = self.write();
-        let mmap_start = inner.memory_set.mmap_manager.mmap_start;
-        let mmap_end = inner.memory_set.mmap_manager.mmap_top;
-        let heap_start = VirtAddr::from(inner.memory_set.brk_start);
-        let heap_end = VirtAddr::from(inner.memory_set.brk_start + USER_HEAP_SIZE);
-        drop(inner);
+        let memory_set = self.memory_set.read();
+        let mmap_start = memory_set.mmap_manager.mmap_start;
+        let mmap_end = memory_set.mmap_manager.mmap_top;
+        let heap_start = VirtAddr::from(memory_set.brk_start);
+        let heap_end = VirtAddr::from(memory_set.brk_start + USER_HEAP_SIZE);
+        drop(memory_set); // cow_alloc lazy_alloc_heap lazy_mmap 需要 memory_set mut borrow
+
         // fork
         let vpn: VirtPageNum = va.floor();
-        let pte = self.write().enquire_pte_via_vpn(vpn);
+        let pte = self.enquire_pte_via_vpn(vpn);
         if pte.is_some() && pte.unwrap().is_cow() {
             let former_ppn = pte.unwrap().ppn();
-            // info!("pte1 is readabled: {:?}", pte.unwrap().readable());
-            // info!("pte1 is writable: {:?}", pte.unwrap().writable());
-            // info!("pte1 is executable: {:?}", pte.unwrap().executable());
-            return self.write().cow_alloc(vpn, former_ppn);
+            return self.cow_alloc(vpn, former_ppn);
         } else {
             if let Some(pte1) = pte {
                 if pte1.is_valid() {
-                    // info!("pte1 is readabled: {:?}", pte1.readable());
-                    // info!("pte1 is writable: {:?}", pte1.writable());
-                    // info!("pte1 is executable: {:?}", pte1.executable());
                     return -4;
                 }
             }
@@ -508,9 +519,9 @@ impl TaskControlBlock {
 
         // lazy map / lazy alloc heap
         if va >= heap_start && va <= heap_end {
-            self.write().lazy_alloc_heap(va.floor())
+            self.lazy_alloc_heap(va.floor())
         } else if va >= mmap_start && va < mmap_end {
-            self.write().memory_set.lazy_mmap(vpn);
+            self.lazy_mmap(vpn);
             0
         } else {
             warn!("[check_lazy] {:x?}", va);
@@ -536,39 +547,39 @@ impl TaskControlBlock {
             panic!("mmap: addr not aligned");
         }
 
-        let mut inner = self.write();
-        let fd_table = inner.fd_table.clone();
+        let fd_table = self.fd_table.read().clone();
+        // memory_set mut borrow
+        let mut ms_mut = self.memory_set.write();
         let mut start_va = VirtAddr::from(0);
         // "prot<<1" 右移一位以符合 MapPermission 的权限定义
         // "1<<4" 增加 MapPermission::U 权限
         if addr == 0 {
-            start_va = inner.memory_set.mmap_manager.get_mmap_top();
+            start_va = ms_mut.mmap_manager.get_mmap_top();
         }
-        // println!("mmap start va{:x?}",start_va);
 
         if flags.contains(MmapFlags::MAP_FIXED) {
             start_va = VirtAddr::from(addr);
-            inner.memory_set.mmap_manager.remove(start_va, length);
+            ms_mut.mmap_manager.remove(start_va, length);
         }
         let file = if flags.contains(MmapFlags::MAP_ANONYMOUS) {
             None
         } else {
             fd_table[fd as usize].clone()
         };
-        inner
-            .memory_set
+        ms_mut
             .mmap_manager
             .push(start_va, length, prot, flags, offset, file);
         start_va.0
     }
 
     pub fn munmap(&self, addr: usize, length: usize) -> isize {
-        let mut inner = self.write();
-
         let start_va = VirtAddr(addr);
         // 可能会有 mmap 后没有访问直接 munmap 的情况，需要检查是否访问过 mmap 的区域(即
         // 是否引发了 lazy_mmap)，防止 unmap 页表中不存在的页表项引发 panic
-        inner.memory_set.mmap_manager.remove(start_va, length);
+        self.memory_set
+            .write()
+            .mmap_manager
+            .remove(start_va, length);
         0
     }
 
@@ -577,27 +588,31 @@ impl TaskControlBlock {
     }
 
     pub fn grow_proc(&self, grow_size: isize) -> usize {
+        // memory_set mut borrow
+        let mut ms_mut = self.memory_set.write();
+        let brk = ms_mut.brk;
+        let brk_start = ms_mut.brk_start;
         if grow_size > 0 {
-            let growed_addr: usize = self.inner.write().memory_set.brk + grow_size as usize;
-            let limit = self.inner.write().memory_set.brk_start + USER_HEAP_SIZE;
+            let growed_addr: usize = brk + grow_size as usize;
+            let limit = brk_start + USER_HEAP_SIZE;
             if growed_addr > limit {
                 panic!(
                     "process doesn't have enough memsize to grow! limit:0x{:x}, heap_pt:0x{:x}, growed_addr:0x{:x}, pid:{}",
                     limit,
-                    self.inner.write().memory_set.brk,
+                    brk,
                     growed_addr,
                     self.pid.0
                 );
             }
-            self.inner.write().memory_set.brk = growed_addr;
+            ms_mut.brk = growed_addr;
         } else {
-            let shrinked_addr: usize = self.inner.write().memory_set.brk + grow_size as usize;
-            if shrinked_addr < self.inner.write().memory_set.brk_start {
+            let shrinked_addr: usize = brk + grow_size as usize;
+            if shrinked_addr < brk_start {
                 panic!("Memory shrinked to the lowest boundary!")
             }
-            self.inner.write().memory_set.brk = shrinked_addr;
+            ms_mut.brk = shrinked_addr;
         }
-        return self.inner.write().memory_set.brk;
+        return ms_mut.brk;
     }
 }
 

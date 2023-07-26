@@ -29,7 +29,7 @@ pub fn current_task() -> Option<Arc<TaskControlBlock>> {
 /// 从全局变量 `PROCESSOR` 中取出当前正在执行任务的用户地址空间 token
 pub fn current_user_token() -> usize {
     let task = current_task().unwrap();
-    let token = task.write().get_user_token();
+    let token = task.get_user_token();
 
     token
 }

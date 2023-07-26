@@ -1,8 +1,10 @@
 //! 内存管理系统调用
 
+use core::mem;
+
 use crate::mm::shared_memory::{attach_shm, create_shm, detach_shm};
-use crate::mm::MapPermission;
 use crate::mm::PageTable;
+use crate::mm::{memory_set, MapPermission};
 use crate::mm::{page_table::PTEFlags, VirtPageNum};
 use crate::mm::{VPNRange, VirtAddr};
 use crate::return_errno;
@@ -94,15 +96,14 @@ pub fn sys_mmap(
     }
     let length = length + padding;
     let task = current_task().unwrap();
-    let inner = task.read();
+    let fd_table = task.fd_table.read();
     let prot = MmapProts::from_bits(prot).expect("unsupported mmap prot");
     let flags = MmapFlags::from_bits(flags).expect("unsupported mmap flags");
     if !flags.contains(MmapFlags::MAP_ANONYMOUS)
-        && (fd as usize >= inner.fd_table.len() || inner.fd_table[fd as usize].is_none())
+        && (fd as usize >= fd_table.len() || fd_table[fd as usize].is_none())
     {
         return Err(Errno::EBADF);
     }
-    drop(inner);
 
     let result_addr = task.mmap(addr, length, prot, flags, fd, offset);
 
@@ -132,20 +133,20 @@ pub fn sys_shmctl(key: usize, cmd: usize, buf: *const u8) -> Result {
 
 pub fn sys_shmat(key: usize, address: usize, shmflg: usize) -> Result {
     let task = current_task().unwrap();
-    let mut inner = task.write();
+    let mut memory_set = task.memory_set.write();
     let address = if address == 0 {
-        inner.memory_set.shm_top
+        memory_set.shm_top
     } else {
         address
     };
-    inner.memory_set.attach_shm(key, address.into());
+    memory_set.attach_shm(key, address.into());
     Ok(address as isize)
 }
 
 pub fn sys_shmdt(address: usize) -> Result {
     let task = current_task().unwrap();
-    let mut inner = task.write();
-    let nattch = inner.memory_set.detach_shm(address.into());
+    let mut memory_set = task.memory_set.write();
+    let nattch = memory_set.detach_shm(address.into());
     // detach_shm called when drop SharedMemoryTracker
 
     Ok(nattch as isize)
@@ -168,14 +169,13 @@ pub fn sys_mprotect(addr: usize, length: usize, prot: usize) -> Result {
             pte.set_flags(pte_flags);
         } else {
             let task = current_task().unwrap();
-            let mut inner = task.write();
-            let mmap_start = inner.memory_set.mmap_manager.mmap_start;
-            let mmap_top = inner.memory_set.mmap_manager.mmap_top;
+            let mut memory_set = task.memory_set.write();
+            let mmap_start = memory_set.mmap_manager.mmap_start;
+            let mmap_top = memory_set.mmap_manager.mmap_top;
             let mmap_perm = MmapProts::from_bits(prot).unwrap();
             let va: VirtAddr = vpn.into();
             if va >= mmap_start && va < mmap_top {
-                inner
-                    .memory_set
+                memory_set
                     .mmap_manager
                     .mmap_map
                     .get_mut(&vpn)

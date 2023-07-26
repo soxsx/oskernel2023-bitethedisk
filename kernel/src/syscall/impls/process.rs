@@ -54,7 +54,7 @@ pub fn sys_do_fork(flags: usize, stack_ptr: usize, ptid: usize, tls: usize, ctid
         trap_cx.set_sp(stack_ptr);
     }
     let new_pid = new_task.pid.0;
-    let child_token = new_task.read().get_user_token();
+    let child_token = new_task.get_user_token();
     if flags.contains(CloneFlags::PARENT_SETTID) {
         *translated_mut(current_user_token(), ptid as *mut u32) = new_pid as u32;
     }
@@ -147,7 +147,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
     let task = current_task().unwrap();
 
     let inner = task.write();
-    let new_path = inner.current_path.clone().join_string(path);
+    let new_path = inner.cwd.clone().join_string(path);
     if let Some(app_inode) = open(new_path.clone(), OpenFlags::O_RDONLY, CreateMode::empty()) {
         drop(inner);
         task.exec(app_inode, args_vec, envs_vec);
@@ -213,7 +213,7 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result {
             // ++++ release child PCB
             // 将子进程的退出码写入到当前进程的应用地址空间中
             if exit_code_ptr as usize != 0 {
-                *translated_mut(inner.memory_set.token(), exit_code_ptr) = exit_code << 8;
+                *translated_mut(task.get_user_token(), exit_code_ptr) = exit_code << 8;
             }
 
             return Ok(found_pid as isize);

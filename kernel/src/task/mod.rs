@@ -65,6 +65,9 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     let task = take_current_task().unwrap();
     remove_from_pid2task(task.pid());
     let mut inner = task.write();
+    // memory_set mut borrow
+    let mut ms_mut = task.memory_set.write();
+
     inner.task_status = TaskStatus::Zombie; // 后续才能被父进程在 waitpid 系统调用的时候回收
                                             // 记录退出码，后续父进程在 waitpid 的时候可以收集
     inner.exit_code = exit_code;
@@ -86,7 +89,8 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // 引用计数 +1
     // 对于当前进程占用的资源进行早期回收
     inner.children.clear();
-    inner.memory_set.recycle_data_pages();
+    ms_mut.recycle_data_pages();
+    drop(ms_mut);
     drop(inner);
     drop(task);
 
@@ -186,8 +190,7 @@ pub fn exec_signal_handlers() {
                 // 保存 Trap 上下文与 old_sigmask 到 sig_context 中
                 let sig_context = SignalContext::from_another(trap_cx, old_sigmask);
                 trap_cx.x[10] = signum as usize; // a0 (args0 = signum)
-                let token = task_inner.get_user_token();
-                // 如果 sa_flags 中包含 SA_SIGINFO，则将 siginfo 和 ucontext 放入栈中
+                                                 // 如果 sa_flags 中包含 SA_SIGINFO，则将 siginfo 和 ucontext 放入栈中
                 if sigaction.sa_flags.contains(SAFlags::SA_SIGINFO) {
                     trap_cx.x[2] -= core::mem::size_of::<UContext>(); // sp -= sizeof(ucontext)
                     let ucontext_ptr = trap_cx.x[2];
@@ -199,6 +202,7 @@ pub fn exec_signal_handlers() {
                 }
                 trap_cx.x[2] -= core::mem::size_of::<SignalContext>(); // sp -= sizeof(sigcontext)
                 let sig_context_ptr = trap_cx.x[2] as *mut SignalContext;
+                let token = task.get_user_token();
                 *translated_mut(token, sig_context_ptr) = sig_context;
 
                 // 将 sigreturn 的地址放入 ra 中
