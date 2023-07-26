@@ -337,7 +337,6 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_PWRITE64 => sys_pwrite64(args[0] as i32, args[1] as *const u8, args[2], args[3]),
         SYS_STATFS => sys_statfs(args[0] as *const u8, args[1] as *const u8),
         SYS_SIGTIMEDWAIT => Ok(0),
-        SYS_SIGRETURN => Ok(0),
         SYS_MPROTECT => sys_mprotect(args[0], args[1], args[2]),
         SYS_MEMBARRIER => Ok(0),
         SYS_SCHED_GETAFFINITY => {
