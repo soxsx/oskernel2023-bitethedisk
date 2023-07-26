@@ -329,7 +329,7 @@ pub struct UContext {
     pub uc_stack: SignalStack,
     pub sigmask: SigMask,
     pub __unused: [u8; 1024 / 8 - core::mem::size_of::<SigMask>()],
-    pub uc_mcontext: _MContext,
+    pub uc_mcontext: MContext,
 }
 
 #[repr(C)]
@@ -343,7 +343,7 @@ pub struct SignalStack {
 // The mcontext_t type is machine-dependent and opaque.
 #[repr(C)]
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub struct _MContext {
+pub struct MContext {
     pub greps: [usize; 32],    // general registers
     pub __reserved: [u8; 528], // size of mcontext_t is 784 bytes
 }

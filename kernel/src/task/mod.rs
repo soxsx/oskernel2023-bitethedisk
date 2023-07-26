@@ -187,22 +187,25 @@ pub fn exec_signal_handlers() {
                 task_inner.sigmask = sigmask;
                 // 将 SignalContext 数据放入栈中
                 let trap_cx = task_inner.trap_context();
+                let token = task.get_user_token();
                 // 保存 Trap 上下文与 old_sigmask 到 sig_context 中
                 let sig_context = SignalContext::from_another(trap_cx, old_sigmask);
                 trap_cx.x[10] = signum as usize; // a0 (args0 = signum)
                                                  // 如果 sa_flags 中包含 SA_SIGINFO，则将 siginfo 和 ucontext 放入栈中
-                if sigaction.sa_flags.contains(SAFlags::SA_SIGINFO) {
-                    trap_cx.x[2] -= core::mem::size_of::<UContext>(); // sp -= sizeof(ucontext)
-                    let ucontext_ptr = trap_cx.x[2];
-                    trap_cx.x[2] -= core::mem::size_of::<SigInfo>(); // sp -= sizeof(siginfo)
-                    let siginfo_ptr = trap_cx.x[2];
-
-                    trap_cx.x[11] = siginfo_ptr; // a1 (args1 = siginfo)
-                    trap_cx.x[12] = ucontext_ptr; // a2 (args2 = ucontext)
-                }
                 trap_cx.x[2] -= core::mem::size_of::<SignalContext>(); // sp -= sizeof(sigcontext)
                 let sig_context_ptr = trap_cx.x[2] as *mut SignalContext;
-                let token = task.get_user_token();
+
+                trap_cx.x[2] -= core::mem::size_of::<UContext>(); // sp -= sizeof(ucontext)
+                let ucontext_ptr = trap_cx.x[2];
+                trap_cx.x[2] -= core::mem::size_of::<SigInfo>(); // sp -= sizeof(siginfo)
+                let siginfo_ptr = trap_cx.x[2];
+
+                trap_cx.x[11] = siginfo_ptr; // a1 (args1 = siginfo)
+                trap_cx.x[12] = ucontext_ptr; // a2 (args2 = ucontext)
+
+                let ucontext = translated_mut(token, ucontext_ptr as *mut UContext);
+                ucontext.uc_mcontext.greps[0] = trap_cx.sepc; //pc
+
                 *translated_mut(token, sig_context_ptr) = sig_context;
 
                 // 将 sigreturn 的地址放入 ra 中
