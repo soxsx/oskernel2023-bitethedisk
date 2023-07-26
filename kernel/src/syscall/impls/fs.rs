@@ -1096,7 +1096,7 @@ pub fn sys_fcntl(fd: i32, cmd: usize, arg: Option<usize>) -> Result {
             _ = new_fd;
             let mut tmp_fd = Vec::new();
             loop {
-                let new_fd = TaskControlBlock::alloc_fd(&mut fd_table);
+                new_fd = TaskControlBlock::alloc_fd(&mut fd_table);
                 fd_table[new_fd] = Some(Arc::new(Stdin));
                 if new_fd >= start_num {
                     break;
