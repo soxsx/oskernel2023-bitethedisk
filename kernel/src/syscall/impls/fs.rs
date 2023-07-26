@@ -10,8 +10,8 @@ use crate::mm::{
     UserBuffer, VirtAddr,
 };
 use crate::return_errno;
-use crate::task::suspend_current_and_run_next;
 use crate::task::{current_task, current_user_token, FD_LIMIT};
+use crate::task::{suspend_current_and_run_next, TaskControlBlock};
 use crate::timer::get_timeval;
 
 use alloc::borrow::ToOwned;
@@ -258,7 +258,7 @@ pub fn sys_openat(fd: i32, filename: *const u8, flags: u32, mode: u32) -> Result
     if fd as isize == AT_FDCWD {
         let open_path = inner.get_work_path().join_string(path);
         if let Some(inode) = open(open_path.clone(), flags, mode) {
-            let fd = task.alloc_fd();
+            let fd = TaskControlBlock::alloc_another_fd(&mut fd_table);
             if fd == FD_LIMIT {
                 return_errno!(Errno::EMFILE);
             }
@@ -280,7 +280,7 @@ pub fn sys_openat(fd: i32, filename: *const u8, flags: u32, mode: u32) -> Result
             let open_path = file.path().join_string(path.clone());
             // target file 存在
             if let Some(tar_file) = open(open_path.clone(), flags, mode) {
-                let fd = task.alloc_fd();
+                let fd = task::alloc_another_fd(&mut fd_table);
                 if fd == FD_LIMIT {
                     return_errno!(Errno::EMFILE);
                 }

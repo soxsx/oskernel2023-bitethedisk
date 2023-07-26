@@ -146,6 +146,17 @@ impl TaskControlBlock {
             fd_table.len() - 1
         }
     }
+    pub fn alloc_another_fd(fd_table: &mut FDTable) -> usize {
+        if let Some(fd) = (0..fd_table.len()).find(|fd| fd_table[*fd].is_none()) {
+            fd
+        } else {
+            if fd_table.len() == FD_LIMIT {
+                return FD_LIMIT;
+            }
+            fd_table.push(None);
+            fd_table.len() - 1
+        }
+    }
 
     pub fn write(&self) -> RwLockWriteGuard<'_, TaskControlBlockInner> {
         self.inner.write()
