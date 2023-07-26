@@ -24,7 +24,7 @@ pub use processor::{
 pub use signals::*;
 pub use task::FD_LIMIT;
 
-use crate::mm::translated_mut;
+use crate::{consts::SIGNAL_TRAMPOLINE, mm::translated_mut};
 
 use self::{
     initproc::INITPROC,
