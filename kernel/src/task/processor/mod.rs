@@ -12,7 +12,7 @@ use alloc::sync::Arc;
 pub use processor::*;
 pub use schedule::*;
 
-use crate::trap::TrapContext;
+use crate::{mm::memory_set, trap::TrapContext};
 
 use super::{switch::__switch, task::TaskControlBlock, TaskContext};
 
@@ -29,13 +29,15 @@ pub fn current_task() -> Option<Arc<TaskControlBlock>> {
 /// 从全局变量 `PROCESSOR` 中取出当前正在执行任务的用户地址空间 token
 pub fn current_user_token() -> usize {
     let task = current_task().unwrap();
-    let token = task.get_user_token();
+    let memory_set = task.memory_set.read();
+    let token = memory_set.token();
+    drop(memory_set);
 
     token
 }
 
 pub fn current_trap_cx() -> &'static mut TrapContext {
-    current_task().unwrap().write().trap_context()
+    current_task().unwrap().inner_mut().trap_context()
 }
 
 /// 换到 idle 控制流并开启新一轮的任务调度

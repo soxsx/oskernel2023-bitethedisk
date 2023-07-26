@@ -105,6 +105,8 @@ pub fn sys_mmap(
         return Err(Errno::EBADF);
     }
 
+    drop(fd_table);
+
     let result_addr = task.mmap(addr, length, prot, flags, fd, offset);
 
     Ok(result_addr as isize)
@@ -140,6 +142,7 @@ pub fn sys_shmat(key: usize, address: usize, shmflg: usize) -> Result {
         address
     };
     memory_set.attach_shm(key, address.into());
+    drop(memory_set);
     Ok(address as isize)
 }
 
@@ -147,6 +150,7 @@ pub fn sys_shmdt(address: usize) -> Result {
     let task = current_task().unwrap();
     let mut memory_set = task.memory_set.write();
     let nattch = memory_set.detach_shm(address.into());
+    drop(memory_set);
     // detach_shm called when drop SharedMemoryTracker
 
     Ok(nattch as isize)

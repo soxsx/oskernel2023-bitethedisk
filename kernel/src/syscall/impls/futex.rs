@@ -135,7 +135,7 @@ pub fn futex_wait(uaddr: usize, val: u32, timeout: usize) -> Result {
     block_current_and_run_next();
 
     let task = current_task().unwrap();
-    let inner = task.read();
+    let inner = task.inner_ref();
     // woke by signal
     if !inner.pending_signals.difference(inner.sigmask).is_empty() {
         return Err(Errno::EINTR);

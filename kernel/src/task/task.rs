@@ -126,27 +126,10 @@ impl TaskControlBlockInner {
 }
 
 impl TaskControlBlock {
-    /// 获取用户地址空间的 token (符合 satp CSR 格式要求的多级页表的根节点所在的物理页号)
-    pub fn get_user_token(&self) -> usize {
-        self.memory_set.read().token()
-    }
-
     /// 查找空闲文件描述符下标
     ///
     /// 从文件描述符表中 **由低到高** 查找空位，返回向量下标，没有空位则在最后插入一个空位
-    pub fn alloc_fd(&self) -> usize {
-        let mut fd_table = self.fd_table.write();
-        if let Some(fd) = (0..fd_table.len()).find(|fd| fd_table[*fd].is_none()) {
-            fd
-        } else {
-            if fd_table.len() == FD_LIMIT {
-                return FD_LIMIT;
-            }
-            fd_table.push(None);
-            fd_table.len() - 1
-        }
-    }
-    pub fn alloc_another_fd(fd_table: &mut FDTable) -> usize {
+    pub fn alloc_fd(fd_table: &mut FDTable) -> usize {
         if let Some(fd) = (0..fd_table.len()).find(|fd| fd_table[*fd].is_none()) {
             fd
         } else {
@@ -158,28 +141,12 @@ impl TaskControlBlock {
         }
     }
 
-    pub fn write(&self) -> RwLockWriteGuard<'_, TaskControlBlockInner> {
+    pub fn inner_mut(&self) -> RwLockWriteGuard<'_, TaskControlBlockInner> {
         self.inner.write()
     }
 
-    pub fn read(&self) -> RwLockReadGuard<'_, TaskControlBlockInner> {
+    pub fn inner_ref(&self) -> RwLockReadGuard<'_, TaskControlBlockInner> {
         self.inner.read()
-    }
-
-    pub fn lazy_mmap(&self, vpn: VirtPageNum) {
-        self.memory_set.write().lazy_mmap(vpn)
-    }
-
-    pub fn enquire_pte_via_vpn(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
-        self.memory_set.read().translate(vpn)
-    }
-
-    pub fn cow_alloc(&self, vpn: VirtPageNum, former_ppn: PhysPageNum) -> isize {
-        self.memory_set.write().cow_alloc(vpn, former_ppn)
-    }
-
-    pub fn lazy_alloc_heap(&self, vpn: VirtPageNum) -> isize {
-        self.memory_set.write().lazy_alloc_heap(vpn)
     }
 
     /// 通过 elf 数据新建一个任务控制块，目前仅用于内核中手动创建唯一一个初始进程 initproc
@@ -242,7 +209,7 @@ impl TaskControlBlock {
         };
         // 初始化位于该进程应用地址空间中的 Trap 上下文，使得第一次进入用户态的时候时候能正
         // 确跳转到应用入口点并设置好用户栈，同时也保证在 Trap 的时候用户态能正确进入内核态
-        let trap_cx = task_control_block.write().trap_context();
+        let trap_cx = task_control_block.inner_mut().trap_context();
         *trap_cx = TrapContext::app_init_context(
             entry_point,
             user_sp,
@@ -260,7 +227,9 @@ impl TaskControlBlock {
         envs: Vec<String>,
         auxv: &mut Vec<AuxEntry>,
     ) -> (usize, usize, usize) {
-        let token = self.get_user_token();
+        let memory_set = self.memory_set.read();
+        let token = memory_set.token();
+        drop(memory_set);
 
         // 计算共需要多少字节的空间
         let mut total_len = 0;
@@ -377,6 +346,7 @@ impl TaskControlBlock {
         // 结果表现为: 原有的地址空间中的所有页表项的 ppn 引用计数减 1
         let mut ms = self.memory_set.write();
         *ms = memory_set;
+        drop(ms); // 避免接下来的操作导致死锁
 
         // fd_table
         let mut fd_table = self.fd_table.write();
@@ -385,7 +355,7 @@ impl TaskControlBlock {
             .find(|fd| fd.is_some() && !fd.as_ref().unwrap().available())
             .take(); // TODO
 
-        let mut inner = self.write();
+        let mut inner = self.inner_mut();
         inner.trap_cx_ppn = trap_cx_ppn;
         let trap_cx = inner.trap_context();
         drop(inner); // 避免接下来的操作导致死锁
@@ -449,7 +419,7 @@ impl TaskControlBlock {
             sa
         };
 
-        let mut parent_inner = self.write();
+        let mut parent_inner = self.inner_mut();
 
         let task_control_block = Arc::new(TaskControlBlock {
             pid: pid_handle,
@@ -486,7 +456,7 @@ impl TaskControlBlock {
         // 把新生成的进程加入到子进程向量中
         parent_inner.children.push(task_control_block.clone());
         // 更新子进程 trap 上下文中的栈顶指针
-        let trap_cx = task_control_block.write().trap_context();
+        let trap_cx = task_control_block.inner_mut().trap_context();
         trap_cx.kernel_sp = kernel_stack_top;
 
         task_control_block
@@ -505,19 +475,19 @@ impl TaskControlBlock {
     ///     - 用户态：handler page fault
     ///     - 内核态： translate_bytes_buffer
     pub fn check_lazy(&self, va: VirtAddr, is_load: bool) -> isize {
-        let memory_set = self.memory_set.read();
+        let mut memory_set = self.memory_set.write();
+
         let mmap_start = memory_set.mmap_manager.mmap_start;
         let mmap_end = memory_set.mmap_manager.mmap_top;
         let heap_start = VirtAddr::from(memory_set.brk_start);
         let heap_end = VirtAddr::from(memory_set.brk_start + USER_HEAP_SIZE);
-        drop(memory_set); // cow_alloc lazy_alloc_heap lazy_mmap 需要 memory_set mut borrow
 
         // fork
         let vpn: VirtPageNum = va.floor();
-        let pte = self.enquire_pte_via_vpn(vpn);
+        let pte = memory_set.translate(vpn);
         if pte.is_some() && pte.unwrap().is_cow() {
             let former_ppn = pte.unwrap().ppn();
-            return self.cow_alloc(vpn, former_ppn);
+            return memory_set.cow_alloc(vpn, former_ppn);
         } else {
             if let Some(pte1) = pte {
                 if pte1.is_valid() {
@@ -530,9 +500,9 @@ impl TaskControlBlock {
 
         // lazy map / lazy alloc heap
         if va >= heap_start && va <= heap_end {
-            self.lazy_alloc_heap(va.floor())
+            memory_set.lazy_alloc_heap(va.floor())
         } else if va >= mmap_start && va < mmap_end {
-            self.lazy_mmap(vpn);
+            memory_set.lazy_mmap(vpn);
             0
         } else {
             warn!("[check_lazy] {:x?}", va);
@@ -580,6 +550,7 @@ impl TaskControlBlock {
         ms_mut
             .mmap_manager
             .push(start_va, length, prot, flags, offset, file);
+        drop(ms_mut);
         start_va.0
     }
 

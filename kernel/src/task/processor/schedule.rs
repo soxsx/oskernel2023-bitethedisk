@@ -34,7 +34,7 @@ pub fn run_tasks() {
 
 fn run_task(task: Arc<TaskControlBlock>, mut processor: RefMut<'_, Processor>) {
     let idle_task_cx_ptr = processor.idle_task_cx_ptr();
-    let mut task_inner = task.write();
+    let mut task_inner = task.inner_mut();
     let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
     task_inner.task_status = TaskStatus::Running;
     drop(task_inner);

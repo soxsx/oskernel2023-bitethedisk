@@ -6,7 +6,7 @@ use core::usize;
 use crate::fs::open_flags::CreateMode;
 use crate::fs::{open, OpenFlags};
 use crate::mm::{
-    translated_bytes_buffer, translated_mut, translated_ref, translated_str, UserBuffer,
+    memory_set, translated_bytes_buffer, translated_mut, translated_ref, translated_str, UserBuffer,
 };
 use crate::return_errno;
 use crate::task::{
@@ -50,11 +50,15 @@ pub fn sys_do_fork(flags: usize, stack_ptr: usize, ptid: usize, tls: usize, ctid
     let new_task = current_task.fork(flags);
 
     if stack_ptr != 0 {
-        let trap_cx = new_task.write().trap_context();
+        let trap_cx = new_task.inner_mut().trap_context();
         trap_cx.set_sp(stack_ptr);
     }
     let new_pid = new_task.pid.0;
-    let child_token = new_task.get_user_token();
+
+    let memory_set = new_task.memory_set.read();
+    let child_token = memory_set.token();
+    drop(memory_set);
+
     if flags.contains(CloneFlags::PARENT_SETTID) {
         *translated_mut(current_user_token(), ptid as *mut u32) = new_pid as u32;
     }
@@ -62,15 +66,15 @@ pub fn sys_do_fork(flags: usize, stack_ptr: usize, ptid: usize, tls: usize, ctid
         *translated_mut(child_token, ctid as *mut u32) = new_pid as u32;
     }
     if flags.contains(CloneFlags::CHILD_CLEARTID) {
-        new_task.write().clear_child_tid = ctid;
+        new_task.inner_mut().clear_child_tid = ctid;
     }
     if flags.contains(CloneFlags::SETTLS) {
-        let trap_cx = new_task.write().trap_context();
+        let trap_cx = new_task.inner_mut().trap_context();
         trap_cx.set_tp(tls);
     }
 
     // modify trap context of new_task, because it returns immediately after switching
-    let trap_cx = new_task.write().trap_context();
+    let trap_cx = new_task.inner_mut().trap_context();
     // we do not have to move to next instruction since we have done it before
     // trap_handler 已经将当前进程 Trap 上下文中的 sepc 向后移动了 4 字节，
     // 使得它回到用户态之后，会从发出系统调用的 ecall 指令的下一条指令开始执行
@@ -146,7 +150,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
 
     let task = current_task().unwrap();
 
-    let inner = task.write();
+    let inner = task.inner_mut();
     let new_path = inner.cwd.clone().join_string(path);
     if let Some(app_inode) = open(new_path.clone(), OpenFlags::O_RDONLY, CreateMode::empty()) {
         drop(inner);
@@ -176,7 +180,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
 pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result {
     let task = current_task().unwrap();
 
-    let inner = task.write();
+    let inner = task.inner_mut();
 
     // 根据pid参数查找有没有符合要求的进程
     if pid == -1 && inner.children.len() == 0 {
@@ -192,13 +196,13 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result {
     drop(inner);
 
     loop {
-        let mut inner = task.write();
+        let mut inner = task.inner_mut();
         // 查找所有符合PID要求的处于僵尸状态的进程，如果有的话还需要同时找出它在当前进程控制块子进程向量中的下标
         let pair = inner
             .children
             .iter()
             .enumerate()
-            .find(|(_, p)| p.write().is_zombie() && (pid == -1 || pid as usize == p.pid()));
+            .find(|(_, p)| p.inner_mut().is_zombie() && (pid == -1 || pid as usize == p.pid()));
         if let Some((idx, _)) = pair {
             // 将子进程从向量中移除并置于当前上下文中
             let child = inner.children.remove(idx);
@@ -209,11 +213,14 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result {
             assert_eq!(Arc::strong_count(&child), 1);
             // 收集的子进程信息返回
             let found_pid = child.pid();
-            let exit_code = child.write().exit_code;
+            let exit_code = child.inner_mut().exit_code;
             // ++++ release child PCB
             // 将子进程的退出码写入到当前进程的应用地址空间中
             if exit_code_ptr as usize != 0 {
-                *translated_mut(task.get_user_token(), exit_code_ptr) = exit_code << 8;
+                let memory_set = task.memory_set.read();
+                let token = memory_set.token();
+                drop(memory_set);
+                *translated_mut(token, exit_code_ptr) = exit_code << 8;
             }
 
             return Ok(found_pid as isize);
@@ -319,7 +326,7 @@ pub fn sys_kill(pid: usize, signal: u32) -> Result {
     let signal = 1 << signal;
     if let Some(task) = pid2task(pid) {
         if let Some(flag) = SigMask::from_bits(signal) {
-            task.write().pending_signals |= flag;
+            task.inner_mut().pending_signals |= flag;
             Ok(0)
         } else {
             return_errno!(Errno::EINVAL, "invalid signal, signum: {}", signal);
@@ -343,7 +350,7 @@ pub fn sys_tkill(tid: usize, signal: usize) -> Result {
     let signal = 1 << signal;
     if let Some(task) = pid2task(pid) {
         if let Some(flag) = SigMask::from_bits(signal) {
-            task.write().pending_signals |= flag;
+            task.inner_mut().pending_signals |= flag;
             Ok(0)
         } else {
             return_errno!(Errno::EINVAL, "invalid signal, signum: {}", signal);
@@ -366,7 +373,7 @@ pub fn sys_getrusage(who: isize, usage: *mut u8) -> Result {
     ));
     let mut rusage = RUsage::new();
     let task = current_task().unwrap();
-    let mut inner = task.write();
+    let mut inner = task.inner_mut();
     rusage.ru_stime = inner.stime;
     rusage.ru_utime = inner.utime;
     userbuf.write(rusage.as_bytes());
@@ -385,7 +392,7 @@ pub fn sys_tgkill(tgid: isize, tid: usize, sig: isize) -> Result {
     let master_pid = tgid as usize;
     let son_pid = tid;
     if let Some(parent_task) = pid2task(master_pid) {
-        let inner = parent_task.write();
+        let inner = parent_task.inner_mut();
         if let Some(target_task) = inner.children.iter().find(|child| child.pid() == son_pid) {
             todo!("发送信号")
         } else {
@@ -576,7 +583,7 @@ pub struct SchedPolicy(isize);
 // };
 pub fn sys_sched_setscheduler(pid: usize, policy: isize, param: *const SchedParam) -> Result {
     let task = pid2task(pid).ok_or(Errno::UNCLEAR)?;
-    let inner = task.read();
+    let inner = task.inner_ref();
 
     {
         info!("sched_setscheduler: pid: {}, policy: {}", pid, policy);
@@ -630,7 +637,7 @@ pub fn sys_socketpair(domain: isize, type_: isize, protocol: isize, sv: *mut [is
 pub fn sys_sigreturn() -> Result {
     let token = current_user_token();
     let task = current_task().unwrap();
-    let mut task_inner = task.write();
+    let mut task_inner = task.inner_mut();
 
     let trap_cx = task_inner.trap_context();
 
@@ -650,7 +657,9 @@ pub fn sys_sigreturn() -> Result {
     // 还原 signal handler 之前的 signal mask
     task_inner.sigmask = sigmask;
     // restore sepc
+    // if sigaction.sa_flags.contains(SAFlags::SA_SIGINFO) { // if contains SA_SIGINFO, ucontext msg is actually needed
     trap_cx.sepc = ucontext.uc_mcontext.greps[0];
+    // }
 
     Ok(0)
 }
@@ -672,7 +681,7 @@ pub fn sys_sigreturn() -> Result {
 pub fn sys_sigaction(signum: isize, act: *const SigAction, oldact: *mut SigAction) -> Result {
     let token = current_user_token();
     let task = current_task().unwrap();
-    let mut inner = task.write();
+    let mut inner = task.inner_mut();
     let signum = signum as u32;
 
     // signum 超出范围，返回错误
@@ -724,7 +733,7 @@ pub fn sys_sigaction(signum: isize, act: *const SigAction, oldact: *mut SigActio
 pub fn sys_sigprocmask(how: usize, set: *const usize, old_set: *mut usize) -> Result {
     let token = current_user_token();
     let task = current_task().unwrap();
-    let mut task_inner = task.write();
+    let mut task_inner = task.inner_mut();
     let mut old_mask = task_inner.sigmask.clone();
 
     if old_set as usize != 0 {

@@ -50,7 +50,7 @@ pub fn trap_return() -> ! {
     }
 
     let task = current_task().unwrap();
-    let mut inner = task.write();
+    let mut inner = task.inner_mut();
     let diff = get_timeval() - inner.last_enter_smode_time;
     inner.add_stime(diff);
     inner.set_last_enter_umode(get_timeval());
@@ -58,7 +58,7 @@ pub fn trap_return() -> ! {
     // 参考 [`trap_handler`] 中的注释
     //
     //      if let Some(scause) = inner.trap_cause {
-    //          if scause.cause() == Trap::Interrupt(Interrupt::SupervisorTimer) {
+    //          if scauseinner_mute() == Trap::Interrupt(Interrupt::SupervisorTimer) {
     //              set_next_trigger();
     //          }
     //          inner.trap_cause = None;

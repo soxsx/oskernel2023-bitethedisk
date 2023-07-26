@@ -24,7 +24,10 @@ pub use processor::{
 pub use signals::*;
 pub use task::FD_LIMIT;
 
-use crate::{consts::SIGNAL_TRAMPOLINE, mm::translated_mut};
+use crate::{
+    consts::SIGNAL_TRAMPOLINE,
+    mm::{memory_set, translated_mut},
+};
 
 use self::{
     initproc::INITPROC,
@@ -36,7 +39,7 @@ use self::{
 pub fn suspend_current_and_run_next() -> isize {
     // 取出当前正在执行的任务
     let task_cp = current_task().unwrap();
-    let mut task_inner = task_cp.write();
+    let mut task_inner = task_cp.inner_mut();
     if task_inner.pending_signals.contains(SigMask::SIGKILL) {
         let exit_code = task_inner.exit_code;
         drop(task_inner);
@@ -64,7 +67,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // 获取访问权限，修改进程状态
     let task = take_current_task().unwrap();
     remove_from_pid2task(task.pid());
-    let mut inner = task.write();
+    let mut inner = task.inner_mut();
     // memory_set mut borrow
     let mut ms_mut = task.memory_set.write();
 
@@ -79,9 +82,9 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     }
 
     // 将这个进程的子进程转移到 initproc 进程的子进程中
-    let mut initproc_inner = INITPROC.write();
+    let mut initproc_inner = INITPROC.inner_mut();
     for child in inner.children.iter() {
-        child.write().parent = Some(Arc::downgrade(&INITPROC));
+        child.inner_mut().parent = Some(Arc::downgrade(&INITPROC));
         initproc_inner.children.push(child.clone()); // 引用计数 -1
     }
     drop(initproc_inner);
@@ -101,7 +104,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 
 pub fn hanging_current_and_run_next(sleep_time: usize, duration: usize) {
     let task = current_task().unwrap();
-    let mut inner = task.write();
+    let mut inner = task.inner_mut();
     let current_cx_ptr = &mut inner.task_cx as *mut TaskContext;
     inner.task_status = TaskStatus::Hanging;
     drop(inner);
@@ -114,7 +117,7 @@ pub fn block_current_and_run_next() {
     let task = current_task().unwrap();
 
     // ---- access current TCB exclusively
-    let mut task_inner = task.write();
+    let mut task_inner = task.inner_mut();
     let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
     // Change status to Ready
     task_inner.task_status = TaskStatus::Blocking;
@@ -135,7 +138,7 @@ pub fn add_initproc() {
 pub fn exec_signal_handlers() {
     let task = current_task().unwrap();
     let pid = task.pid();
-    let mut task_inner = task.write();
+    let mut task_inner = task.inner_mut();
 
     if task_inner.pending_signals == SigSet::empty() {
         return;
@@ -187,13 +190,14 @@ pub fn exec_signal_handlers() {
                 task_inner.sigmask = sigmask;
                 // 将 SignalContext 数据放入栈中
                 let trap_cx = task_inner.trap_context();
-                let token = task.get_user_token();
                 // 保存 Trap 上下文与 old_sigmask 到 sig_context 中
                 let sig_context = SignalContext::from_another(trap_cx, old_sigmask);
                 trap_cx.x[10] = signum as usize; // a0 (args0 = signum)
                                                  // 如果 sa_flags 中包含 SA_SIGINFO，则将 siginfo 和 ucontext 放入栈中
-                trap_cx.x[2] -= core::mem::size_of::<SignalContext>(); // sp -= sizeof(sigcontext)
-                let sig_context_ptr = trap_cx.x[2] as *mut SignalContext;
+
+                let memory_set = task.memory_set.read();
+                let token = memory_set.token();
+                drop(memory_set);
 
                 trap_cx.x[2] -= core::mem::size_of::<UContext>(); // sp -= sizeof(ucontext)
                 let ucontext_ptr = trap_cx.x[2];
@@ -204,15 +208,14 @@ pub fn exec_signal_handlers() {
                 trap_cx.x[12] = ucontext_ptr; // a2 (args2 = ucontext)
 
                 let ucontext = translated_mut(token, ucontext_ptr as *mut UContext);
+                // if sigaction.sa_flags.contains(SAFlags::SA_SIGINFO) { // if contains SA_SIGINFO, ucontext msg is actually needed
                 ucontext.uc_mcontext.greps[0] = trap_cx.sepc; //pc
+                                                              // }
 
+                trap_cx.x[2] -= core::mem::size_of::<SignalContext>(); // sp -= sizeof(sigcontext)
+                let sig_context_ptr = trap_cx.x[2] as *mut SignalContext;
                 *translated_mut(token, sig_context_ptr) = sig_context;
 
-                // 将 sigreturn 的地址放入 ra 中
-                // extern "C" {
-                //     fn user_sigreturn();
-                // }
-                // trap_cx.x[1] = user_sigreturn as usize; // ra = user_sigreturn
                 trap_cx.x[1] = SIGNAL_TRAMPOLINE; // ra = user_sigreturn
 
                 println!(

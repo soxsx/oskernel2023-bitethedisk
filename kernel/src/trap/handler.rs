@@ -36,7 +36,7 @@ pub fn user_trap_handler() -> ! {
     let stval = stval::read();
 
     let task = current_task().unwrap();
-    let mut inner = task.write();
+    let mut inner = task.inner_mut();
 
     // 考虑以下情况，当一个进程因为耗尽时间片而让出执行流，切换回一个因为在内核态阻塞而让出执行流的
     // 另外一个进程的时候(内核态让出 `suspend` 可能是因为读取了一个空的管道等原因)，由于我们没有对
