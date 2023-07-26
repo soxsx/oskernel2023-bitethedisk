@@ -185,12 +185,8 @@ pub fn exec_signal_handlers() {
                 let trap_cx = task_inner.trap_context();
                 // 保存 Trap 上下文与 old_sigmask 到 sig_context 中
                 let sig_context = SignalContext::from_another(trap_cx, old_sigmask);
-                trap_cx.x[2] -= core::mem::size_of::<SignalContext>(); // sp -= sizeof(sigcontext)
                 trap_cx.x[10] = signum as usize; // a0 (args0 = signum)
                 let token = task_inner.get_user_token();
-                let sig_context_ptr = trap_cx.x[2] as *mut SignalContext;
-                *translated_mut(token, sig_context_ptr) = sig_context;
-
                 // 如果 sa_flags 中包含 SA_SIGINFO，则将 siginfo 和 ucontext 放入栈中
                 if sigaction.sa_flags.contains(SAFlags::SA_SIGINFO) {
                     trap_cx.x[2] -= core::mem::size_of::<UContext>(); // sp -= sizeof(ucontext)
@@ -201,14 +197,21 @@ pub fn exec_signal_handlers() {
                     trap_cx.x[11] = siginfo_ptr; // a1 (args1 = siginfo)
                     trap_cx.x[12] = ucontext_ptr; // a2 (args2 = ucontext)
                 }
+                trap_cx.x[2] -= core::mem::size_of::<SignalContext>(); // sp -= sizeof(sigcontext)
+                let sig_context_ptr = trap_cx.x[2] as *mut SignalContext;
+                *translated_mut(token, sig_context_ptr) = sig_context;
 
                 // 将 sigreturn 的地址放入 ra 中
-                extern "C" {
-                    fn user_sigreturn();
-                }
-                trap_cx.x[1] = user_sigreturn as usize; // ra = user_sigreturn
+                // extern "C" {
+                //     fn user_sigreturn();
+                // }
+                // trap_cx.x[1] = user_sigreturn as usize; // ra = user_sigreturn
+                trap_cx.x[1] = SIGNAL_TRAMPOLINE; // ra = user_sigreturn
 
-                // debug!("prepare to jump to `handler`, original sepc = {:#x?}", trap_cx.sepc);
+                println!(
+                    "prepare to jump to `handler`, original sepc = {:#x?}",
+                    trap_cx.sepc
+                );
                 trap_cx.sepc = handler; // sepc = handler
                 return;
             }

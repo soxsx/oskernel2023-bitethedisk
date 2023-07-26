@@ -41,8 +41,39 @@ pub enum Signal {
     SIGIO = 29,
     SIGPWR = 30,
     SIGSYS = 31,
-    SIGUND1 = 32,
-    SIGUND2 = 33,
+    /* --- other realtime signals --- */
+    SIGTIMER = 32,
+    SIGCANCEL = 33,
+    SIGSYNCCALL = 34,
+    SIGRT_3 = 35,
+    SIGRT_4 = 36,
+    SIGRT_5 = 37,
+    SIGRT_6 = 38,
+    SIGRT_7 = 39,
+    SIGRT_8 = 40,
+    SIGRT_9 = 41,
+    SIGRT_10 = 42,
+    SIGRT_11 = 43,
+    SIGRT_12 = 44,
+    SIGRT_13 = 45,
+    SIGRT_14 = 46,
+    SIGRT_15 = 47,
+    SIGRT_16 = 48,
+    SIGRT_17 = 49,
+    SIGRT_18 = 50,
+    SIGRT_19 = 51,
+    SIGRT_20 = 52,
+    SIGRT_21 = 53,
+    SIGRT_22 = 54,
+    SIGRT_23 = 55,
+    SIGRT_24 = 56,
+    SIGRT_25 = 57,
+    SIGRT_26 = 58,
+    SIGRT_27 = 59,
+    SIGRT_28 = 60,
+    SIGRT_29 = 61,
+    SIGRT_30 = 62,
+    SIGRT_31 = 63,
 }
 
 impl Signal {
@@ -85,8 +116,40 @@ bitflags! {
         const SIGIO     = 1 << 29;
         const SIGPWR    = 1 << 30;
         const SIGSYS    = 1 << 31;
-        const SIGUND1    = 1 << 32;
-        const SIGUND2    = 1 << 33;
+        const   SIGTIMER    = 1 << 32;
+        const   SIGCANCEL   = 1 << 33;
+        const   SIGSYNCCALL = 1 << 34;
+        /* --- other realtime signals --- */
+        const   SIGRT_3     = 1 << 35;
+        const   SIGRT_4     = 1 << 36;
+        const   SIGRT_5     = 1 << 37;
+        const   SIGRT_6     = 1 << 38;
+        const   SIGRT_7     = 1 << 39;
+        const   SIGRT_8     = 1 << 40;
+        const   SIGRT_9     = 1 << 41;
+        const   SIGRT_10    = 1 << 42;
+        const   SIGRT_11    = 1 << 43;
+        const   SIGRT_12    = 1 << 44;
+        const   SIGRT_13    = 1 << 45;
+        const   SIGRT_14    = 1 << 46;
+        const   SIGRT_15    = 1 << 47;
+        const   SIGRT_16    = 1 << 48;
+        const   SIGRT_17    = 1 << 49;
+        const   SIGRT_18    = 1 << 50;
+        const   SIGRT_19    = 1 << 51;
+        const   SIGRT_20    = 1 << 52;
+        const   SIGRT_21    = 1 << 53;
+        const   SIGRT_22    = 1 << 54;
+        const   SIGRT_23    = 1 << 55;
+        const   SIGRT_24    = 1 << 56;
+        const   SIGRT_25    = 1 << 57;
+        const   SIGRT_26    = 1 << 58;
+        const   SIGRT_27    = 1 << 59;
+        const   SIGRT_28    = 1 << 60;
+        const   SIGRT_29    = 1 << 61;
+        const   SIGRT_30    = 1 << 62;
+        const   SIGRT_31    = 1 << 63;
+
     }
 }
 

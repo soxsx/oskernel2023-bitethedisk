@@ -42,13 +42,7 @@ use crate::task::*;
 /// ```c
 /// pid_t ret = syscall(SYS_clone, flags, stack, ptid, tls, ctid)
 /// ```
-pub fn sys_do_fork(
-    flags: usize,
-    stack_ptr: usize,
-    ptid: usize,
-    _tls: usize,
-    ctid: usize,
-) -> Result {
+pub fn sys_do_fork(flags: usize, stack_ptr: usize, ptid: usize, tls: usize, ctid: usize) -> Result {
     let current_task = current_task().unwrap();
     let signal = flags & 0xff;
     let flags = CloneFlags::from_bits(flags & !0xff).unwrap();
@@ -69,6 +63,10 @@ pub fn sys_do_fork(
     }
     if flags.contains(CloneFlags::CHILD_CLEARTID) {
         new_task.write().clear_child_tid = ctid;
+    }
+    if flags.contains(CloneFlags::SETTLS) {
+        let trap_cx = new_task.write().trap_context();
+        trap_cx.set_tp(tls);
     }
 
     // modify trap context of new_task, because it returns immediately after switching
@@ -689,6 +687,9 @@ pub fn sys_sigaction(signum: isize, act: *const SigAction, oldact: *mut SigActio
         // kill 和 stop 信号不能被屏蔽
         sa.sa_mask.sub(Signal::SIGKILL as u32); // sub 函数保证即使不存在 SIGKILL 也无影响
         sa.sa_mask.sub(Signal::SIGSTOP as u32);
+        sa.sa_mask.sub(Signal::SIGILL as u32);
+        sa.sa_mask.sub(Signal::SIGSEGV as u32);
+
         sigaction[signum as usize] = sa;
     }
 
@@ -723,9 +724,12 @@ pub fn sys_sigprocmask(how: usize, set: *const usize, old_set: *mut usize) -> Re
 
     if set as usize != 0 {
         // let mut new_set = translated_ref(token, set as *const SigMask).clone();
-        // new_set.sub(Signal::SIGKILL as u32); // sub 函数保证即使不存在 SIGKILL 也无影响
-        // new_set.sub(Signal::SIGSTOP as u32);
-        let new_set = translated_ref(token, set as *const SigMask).clone();
+        let mut new_set = translated_ref(token, set as *const SigMask).clone();
+        new_set.sub(Signal::SIGKILL as u32); // sub 函数保证即使不存在 SIGKILL 也无影响
+        new_set.sub(Signal::SIGSTOP as u32);
+        new_set.sub(Signal::SIGILL as u32);
+        new_set.sub(Signal::SIGSEGV as u32);
+
         let how = MaskFlags::from_how(how);
         match how {
             MaskFlags::SIG_BLOCK => old_mask |= new_set,

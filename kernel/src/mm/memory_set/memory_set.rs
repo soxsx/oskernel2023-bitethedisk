@@ -203,12 +203,12 @@ impl MemorySet {
 
     pub fn map_signal_trampoline(&mut self) {
         extern "C" {
-            fn signal_trampoline();
+            fn user_sigreturn();
         }
         self.page_table.map(
             VirtAddr::from(SIGNAL_TRAMPOLINE).into(),
-            PhysAddr::from(signal_trampoline as usize).into(),
-            PTEFlags::R | PTEFlags::X,
+            PhysAddr::from(user_sigreturn as usize).into(),
+            PTEFlags::R | PTEFlags::X | PTEFlags::U,
         );
     }
 

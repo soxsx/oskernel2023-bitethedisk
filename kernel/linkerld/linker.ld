@@ -13,7 +13,6 @@ SECTIONS
         strampoline = .;
         *(.text.trampoline);
         . = ALIGN(0x1000);
-        signal_trampoline = .;
         *(.text.signal);
         . = ALIGN(0x1000);
         *(.text .text.*)
