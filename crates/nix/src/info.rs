@@ -41,17 +41,17 @@ bitflags! {
     #[derive(Debug,Clone,Copy)]
     pub struct CloneFlags: usize{
          /* set if VM shared between processes */
-         const VM = 0x0000100;  
+         const VM = 0x0000100;
          /* set if fs info shared between processes */
-         const FS = 0x0000200;  
+         const FS = 0x0000200;
          /* set if open files shared between processes */
-         const FILES = 0x0000400; 
+         const FILES = 0x0000400;
          /* set if signal handlers and blocked signals shared */
-         const SIGHAND = 0x00000800; 
+         const SIGHAND = 0x00000800;
          /* set if we want to have the same parent as the cloner */
-         const PARENT = 0x00008000; 
+         const PARENT = 0x00008000;
          /* Same thread group? */
-         const THREAD = 0x00010000; 
+         const THREAD = 0x00010000;
          /* share system V SEM_UNDO semantics */
          const SYSVSEM = 0x00040000;
          /* create a new TLS for the child */
