@@ -150,15 +150,14 @@ impl TaskControlBlock {
     }
 
     /// 通过 elf 数据新建一个任务控制块，目前仅用于内核中手动创建唯一一个初始进程 initproc
-    pub fn new(initproc: Arc<Fat32File>) -> Self {
+    pub fn new(elf: Arc<dyn File>) -> Self {
         // 解析传入的 ELF 格式数据构造应用的地址空间 memory_set 并获得其他信息
         let LoadedELF {
             memory_set,
             elf_entry: entry_point,
             user_stack_top: user_sp,
             auxs,
-        } = MemorySet::load_elf(initproc.clone());
-        initproc.delete();
+        } = MemorySet::load_elf(elf.clone());
         // 从地址空间 memory_set 中查多级页表找到应用地址空间中的 Trap 上下文实际被放在哪个物理页帧
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT).into())
@@ -387,7 +386,6 @@ impl TaskControlBlock {
         } else {
             pid_handle.0
         };
-        let pgid = self.pid.0;
 
         // 根据 PID 创建一个应用内核栈
         let kernel_stack = KernelStack::new(&pid_handle);

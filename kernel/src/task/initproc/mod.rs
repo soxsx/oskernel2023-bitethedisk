@@ -23,9 +23,11 @@ lazy_static! {
         let initproc = unsafe { core::slice::from_raw_parts(entry as *const u8, siz) };
         let path = AbsolutePath::from_str("/initproc");
 
-        let inode = fs::open(path, OpenFlags::O_CREATE, CreateMode::empty()).expect("initproc create failed!");
+        let  inode = fs::open(path, OpenFlags::O_CREATE, CreateMode::empty()).expect("initproc create failed!");
         inode.write_all(&initproc.to_owned());
 
-        TaskControlBlock::new(inode)
+        let tcb = TaskControlBlock::new(inode.clone());
+        inode.delete(); // 删除 initproc 文件
+        tcb
     });
 }
