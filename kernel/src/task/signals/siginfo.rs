@@ -332,6 +332,26 @@ pub struct UContext {
     pub uc_mcontext: MContext,
 }
 
+impl UContext {
+    pub fn empty() -> Self {
+        Self {
+            uc_flags: 0,
+            uc_link: core::ptr::null_mut(),
+            uc_stack: SignalStack {
+                ss_sp: 0,
+                ss_flags: 0,
+                ss_size: 0,
+            },
+            sigmask: SigMask::empty(),
+            __unused: [0; 1024 / 8 - core::mem::size_of::<SigMask>()],
+            uc_mcontext: MContext {
+                greps: [0; 32],
+                __reserved: [0; 528],
+            },
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct SignalStack {
