@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use super::vm_area::VmArea;
+use super::vm_area::{VmArea, VmAreaType};
 use super::{MapPermission, MapType};
 use crate::consts::{
     CLOCK_FREQ, PAGE_SIZE, SIGNAL_TRAMPOLINE, TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE,
@@ -123,6 +123,7 @@ impl MemorySet {
                 0.into(),
                 0.into(),
                 MapType::Framed,
+                VmAreaType::UserHeap,
                 MapPermission::R | MapPermission::W | MapPermission::U,
                 None,
                 0,
@@ -147,9 +148,18 @@ impl MemorySet {
         start_va: VirtAddr,
         end_va: VirtAddr,
         permission: MapPermission,
+        area_tpye: VmAreaType,
     ) {
         self.insert(
-            VmArea::new(start_va, end_va, MapType::Framed, permission, None, 0),
+            VmArea::new(
+                start_va,
+                end_va,
+                MapType::Framed,
+                area_tpye,
+                permission,
+                None,
+                0,
+            ),
             None,
         );
     }
@@ -218,6 +228,7 @@ impl MemorySet {
                 TRAP_CONTEXT.into(),
                 SIGNAL_TRAMPOLINE.into(),
                 MapType::Framed,
+                VmAreaType::TrapContext,
                 MapPermission::R | MapPermission::W,
                 None,
                 0,
@@ -349,6 +360,7 @@ impl MemorySet {
                         start_va,
                         end_va,
                         MapType::Framed,
+                        VmAreaType::Elf,
                         map_perm,
                         Some(Arc::clone(&elf_file)),
                         start_va.page_offset(),
@@ -415,6 +427,7 @@ impl MemorySet {
                         start_va,
                         end_va,
                         MapType::Framed,
+                        VmAreaType::Elf,
                         map_perm,
                         Some(interpreter_file.clone()),
                         0,
@@ -478,6 +491,7 @@ impl MemorySet {
                 user_stack_bottom.into(),
                 user_stack_top.into(),
                 MapType::Framed,
+                VmAreaType::UserStack,
                 MapPermission::R | MapPermission::W | MapPermission::U,
                 Some(Arc::clone(&elf_file)),
                 VirtAddr(user_stack_bottom).page_offset(),
@@ -493,6 +507,7 @@ impl MemorySet {
             user_heap_bottom.into(),
             user_heap_top.into(),
             MapType::Framed,
+            VmAreaType::UserHeap,
             MapPermission::R | MapPermission::W | MapPermission::U,
             Some(Arc::clone(&elf_file)),
             VirtAddr(user_heap_bottom).page_offset(),
@@ -518,49 +533,49 @@ impl MemorySet {
         //              Trap_Context
         new_memory_set.map_trampoline();
         new_memory_set.map_signal_trampoline();
-        for area in user_space.vm_areas.iter() {
-            // use 1 page
-            let start_vpn = area.vpn_range.get_start();
-            if start_vpn == VirtAddr::from(TRAP_CONTEXT).floor() {
-                let new_area = VmArea::from_another(area);
-                new_memory_set.insert(new_area, None);
-                for vpn in area.vpn_range {
-                    let src_ppn = user_space.translate(vpn).unwrap().ppn();
-                    let dst_ppn = new_memory_set.translate(vpn).unwrap().ppn();
-                    // println!{"[COW TRAP_CONTEXT] mapping {:?} --- {:?}, src: {:?}", vpn, dst_ppn, src_ppn};
-                    dst_ppn
-                        .as_bytes_array()
-                        .copy_from_slice(src_ppn.as_bytes_array());
-                }
-                break;
-            }
-        }
+
         // This part is for copy on write
         let parent_areas = &user_space.vm_areas;
-        let parent_page_table = &mut user_space.page_table;
+        let mut parent_page_table = &mut user_space.page_table;
         for area in parent_areas.iter() {
-            let start_vpn = area.vpn_range.get_start();
-            if start_vpn != VirtAddr::from(TRAP_CONTEXT).floor() {
-                let mut new_area = VmArea::from_another(area);
-                // map the former physical address
-                for vpn in area.vpn_range {
-                    // change the map permission of both pagetable
-                    // get the former flags and ppn
-                    let pte = parent_page_table.translate(vpn).unwrap();
-                    let pte_flags = pte.flags() & !PTEFlags::W;
-                    let src_ppn = pte.ppn();
-                    // frame_add_ref(src_ppn);
-                    // change the flags of the src_pte
-                    parent_page_table.set_flags(vpn, pte_flags);
-                    parent_page_table.set_cow(vpn);
-                    // map the cow page table to src_ppn
-                    new_memory_set.page_table.map(vpn, src_ppn, pte_flags);
-                    new_memory_set.page_table.set_cow(vpn);
-                    new_area
-                        .frame_map
-                        .insert(vpn, FrameTracker::from_ppn(src_ppn));
+            match area.area_type {
+                VmAreaType::TrapContext => {
+                    let new_area = VmArea::from_another(area);
+                    new_memory_set.insert(new_area, None);
+                    for vpn in area.vpn_range {
+                        let src_ppn = parent_page_table.translate(vpn).unwrap().ppn();
+                        let dst_ppn = new_memory_set.translate(vpn).unwrap().ppn();
+                        // println!{"[COW TRAP_CONTEXT] mapping {:?} --- {:?}, src: {:?}", vpn, dst_ppn, src_ppn};
+                        dst_ppn
+                            .as_bytes_array()
+                            .copy_from_slice(src_ppn.as_bytes_array());
+                    }
                 }
-                new_memory_set.push_mapped_area(new_area);
+                VmAreaType::UserStack | VmAreaType::Elf => {
+                    let mut new_area = VmArea::from_another(area);
+                    // map the former physical address
+                    for vpn in area.vpn_range {
+                        // change the map permission of both pagetable
+                        // get the former flags and ppn
+                        let pte = parent_page_table.translate(vpn).unwrap();
+                        let pte_flags = pte.flags() & !PTEFlags::W;
+                        let src_ppn = pte.ppn();
+                        // frame_add_ref(src_ppn);
+                        // change the flags of the src_pte
+                        parent_page_table.set_flags(vpn, pte_flags);
+                        parent_page_table.set_cow(vpn);
+                        // map the cow page table to src_ppn
+                        new_memory_set.page_table.map(vpn, src_ppn, pte_flags);
+                        new_memory_set.page_table.set_cow(vpn);
+                        new_area
+                            .frame_map
+                            .insert(vpn, FrameTracker::from_ppn(src_ppn));
+                    }
+                    new_memory_set.push_mapped_area(new_area);
+                }
+                _ => {
+                    unreachable!()
+                }
             }
         }
         new_memory_set.mmap_manager = user_space.mmap_manager.clone();
@@ -762,6 +777,7 @@ impl MemorySet {
             start_va,
             (start_va.0 + size).into(),
             MapType::Framed,
+            VmAreaType::Shared,
             MapPermission::R | MapPermission::W,
             None,
             0,

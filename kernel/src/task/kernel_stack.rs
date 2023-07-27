@@ -2,14 +2,14 @@
 
 use crate::{
     consts::{KERNEL_STACK_SIZE, PAGE_SIZE, SIGNAL_TRAMPOLINE},
-    mm::{kernel_vmm::acquire_kvmm, MapPermission, VirtAddr},
+    mm::{kernel_vmm::acquire_kvmm, memory_set::VmAreaType, MapPermission, VirtAddr},
 };
 
 use super::PidHandle;
 
 /// Return (bottom, top) of a kernel stack in kernel space.
-pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
-    let top = SIGNAL_TRAMPOLINE - app_id * (KERNEL_STACK_SIZE + PAGE_SIZE);
+pub fn kernel_stack_position(id: usize) -> (usize, usize) {
+    let top = SIGNAL_TRAMPOLINE - id * (KERNEL_STACK_SIZE + PAGE_SIZE);
     let bottom = top - KERNEL_STACK_SIZE;
 
     (bottom, top)
@@ -29,6 +29,7 @@ impl KernelStack {
             kernel_stack_bottom.into(),
             kernel_stack_top.into(),
             MapPermission::R | MapPermission::W,
+            VmAreaType::KernelStack,
         );
 
         KernelStack { pid: pid_handle.0 }

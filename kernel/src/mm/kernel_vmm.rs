@@ -5,7 +5,7 @@ use crate::{
     board::MMIO,
     consts::PHYS_END,
     mm::{
-        memory_set::{vm_area::VmArea, MapType},
+        memory_set::{vm_area::VmArea, MapType, VmAreaType},
         MapPermission, MemorySet,
     },
 };
@@ -38,6 +38,7 @@ lazy_static! {
                             ($start as usize).into(),
                             ($end as usize).into(),
                             MapType::Identical,
+                            VmAreaType::KernelSpace,
                             $permission,
                             $file,
                             $page_offset,

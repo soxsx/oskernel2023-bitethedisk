@@ -13,6 +13,7 @@ use crate::{
 use super::{MapPermission, MapType};
 
 pub struct VmArea {
+    pub area_type: VmAreaType,
     pub vpn_range: VPNRange,
     pub map_type: MapType,
     pub permission: MapPermission,
@@ -25,11 +26,24 @@ pub struct VmArea {
                                                         // pub end_va: VirtAddr,                                   // 该段的结束虚拟地址
 }
 
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum VmAreaType {
+    UserHeap,
+    UserStack,
+    Elf,
+    TrapContext,
+    Shared, // Mmap
+
+    KernelStack,
+    KernelSpace,
+}
+
 impl VmArea {
     pub fn new(
         start_va: VirtAddr,
         end_va: VirtAddr,
         map_type: MapType,
+        area_type: VmAreaType,
         permission: MapPermission,
         file: Option<Arc<dyn File>>,
         file_offset: usize,
@@ -37,6 +51,7 @@ impl VmArea {
         Self {
             vpn_range: VPNRange::from_va(start_va, end_va),
             map_type,
+            area_type,
             permission,
             frame_map: BTreeMap::new(),
             file,
@@ -49,6 +64,7 @@ impl VmArea {
             vpn_range: another.vpn_range,
             frame_map: BTreeMap::new(),
             map_type: another.map_type,
+            area_type: another.area_type,
             permission: another.permission,
             file: another.file.clone(),
             file_offset: another.file_offset,
