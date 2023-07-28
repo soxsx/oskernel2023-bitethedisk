@@ -3,4 +3,4 @@
 pub mod dispatcher;
 pub mod errno;
 pub mod futex;
-mod impls;
+pub mod impls;

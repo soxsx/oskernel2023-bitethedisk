@@ -26,7 +26,8 @@ pub use task::FD_LIMIT;
 
 use crate::{
     consts::SIGNAL_TRAMPOLINE,
-    mm::{memory_set, translated_mut},
+    mm::{copyout, memory_set, translated_mut},
+    syscall::impls::futex::futex_wake,
 };
 
 use self::{
@@ -70,6 +71,11 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     let mut inner = task.inner_mut();
     // memory_set mut borrow
     let mut ms_mut = task.memory_set.write();
+    let clear_child_tid = inner.clear_child_tid;
+    if clear_child_tid != 0 {
+        *translated_mut(ms_mut.token(), clear_child_tid as *mut usize) = 0;
+        futex_wake(clear_child_tid, 1);
+    }
 
     inner.task_status = TaskStatus::Zombie; // 后续才能被父进程在 waitpid 系统调用的时候回收
                                             // 记录退出码，后续父进程在 waitpid 的时候可以收集

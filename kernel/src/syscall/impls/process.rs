@@ -285,8 +285,9 @@ pub fn sys_getpid() -> Result {
 
 pub fn sys_set_tid_address(tidptr: *mut usize) -> Result {
     let token = current_user_token();
-    *translated_mut(token, tidptr) = 0 as usize;
-    Ok(0)
+    let task = current_task().unwrap();
+    task.inner_mut().clear_child_tid = tidptr as usize;
+    Ok(task.pid() as isize)
 }
 
 pub fn sys_getuid() -> Result {
