@@ -48,15 +48,15 @@ pub fn sys_futex(
 ) -> Result {
     let option = futex_op & FUTEX_CMD_MASK;
     let token = current_user_token();
-    println!(
-        "*****sys_futex(uaddr: {:#x?}, futex_op: {:x?}, val: {:x?}, timeout: {:#x?}, uaddr2: {:#x?}, val3: {:x?}) = ?",
-        uaddr,
-        futex_op,
-        val,
-        val2,
-        uaddr2,
-        val3,
-    );
+    // println!(
+    //     "*****sys_futex(uaddr: {:#x?}, futex_op: {:x?}, val: {:x?}, timeout: {:#x?}, uaddr2: {:#x?}, val3: {:x?}) = ?",
+    //     uaddr,
+    //     futex_op,
+    //     val,
+    //     val2,
+    //     uaddr2,
+    //     val3,
+    // );
     if futex_op & FUTEX_CLOCK_REALTIME != 0 {
         if option != FUTEX_WAIT {
             // return Err(-EPERM); // ENOSYS
@@ -81,16 +81,16 @@ pub fn sys_futex(
         }
         _ => panic!("ENOSYS"),
     };
-    println!(
-        "sys_futex(uaddr: {:#x?}, futex_op: {:x?}, val: {:x?}, timeout: {:#x?}, uaddr2: {:#x?}, val3: {:x?}) = {:?}",
-        uaddr,
-        futex_op,
-        val,
-        val2,
-        uaddr2,
-        val3,
-        ret,
-    );
+    // println!(
+    //     "sys_futex(uaddr: {:#x?}, futex_op: {:x?}, val: {:x?}, timeout: {:#x?}, uaddr2: {:#x?}, val3: {:x?}) = {:?}",
+    //     uaddr,
+    //     futex_op,
+    //     val,
+    //     val2,
+    //     uaddr2,
+    //     val3,
+    //     ret,
+    // );
     ret
 }
 

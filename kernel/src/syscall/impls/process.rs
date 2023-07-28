@@ -325,7 +325,7 @@ pub fn sys_kill(pid: usize, signal: u32) -> Result {
     if signal == 0 {
         return Ok(0);
     }
-    let signal = 1 << signal;
+    let signal = 1 << (signal - 1);
     if let Some(task) = pid2task(pid) {
         if let Some(flag) = SigMask::from_bits(signal) {
             task.inner_mut().pending_signals |= flag;
@@ -339,7 +339,7 @@ pub fn sys_kill(pid: usize, signal: u32) -> Result {
 }
 pub fn sys_tkill(tid: usize, signal: usize) -> Result {
     //TODO pid==-1
-    println!("[DEBUG] tkill tid:{:?} signal:0x{:x?}", tid, signal);
+    // println!("[DEBUG] tkill tid:{:?} signal:0x{:x?}", tid, signal);
     if signal == 0 {
         return Ok(0);
     }
@@ -349,7 +349,7 @@ pub fn sys_tkill(tid: usize, signal: usize) -> Result {
         tid
     };
 
-    let signal = 1 << signal;
+    let signal = 1 << (signal - 1);
     if let Some(task) = pid2task(pid) {
         if let Some(flag) = SigMask::from_bits(signal) {
             task.inner_mut().pending_signals |= flag;
@@ -729,7 +729,12 @@ pub fn sys_sigaction(signum: isize, act: *const SigAction, oldact: *mut SigActio
 // - SIG_BLOCK：将 set 中指定的信号添加到进程的信号屏蔽字中。
 // - SIG_UNBLOCK：将 set 中指定的信号从进程的信号屏蔽字中移除。
 // - SIG_SETMASK：将进程的信号屏蔽字设置为 set 中指定的信号。
-pub fn sys_sigprocmask(how: usize, set: *const usize, old_set: *mut usize) -> Result {
+pub fn sys_sigprocmask(
+    how: usize,
+    set: *const usize,
+    old_set: *mut usize,
+    sigsetsize: usize,
+) -> Result {
     let token = current_user_token();
     let task = current_task().unwrap();
     let mut task_inner = task.inner_mut();

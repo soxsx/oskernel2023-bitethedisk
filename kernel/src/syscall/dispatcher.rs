@@ -366,6 +366,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[0] as usize,
             args[1] as *const usize,
             args[2] as *mut usize,
+            args[3],
         ),
         SYS_SIGRETURN => sys_sigreturn(),
         SYS_FUTEX => sys_futex(
