@@ -53,6 +53,11 @@ pub fn init() {
         CreateMode::empty(),
     );
     open(
+        "/dev/shm".into(),
+        OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE,
+        CreateMode::empty(),
+    );
+    open(
         "/var/tmp".into(),
         OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE,
         CreateMode::empty(),
