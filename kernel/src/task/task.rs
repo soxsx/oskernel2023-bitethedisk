@@ -7,11 +7,12 @@ use super::{SigAction, TaskContext, MAX_SIGNUM};
 use crate::consts::*;
 use crate::fs::{file::File, Fat32File, Stdin, Stdout};
 use crate::mm::kernel_vmm::acquire_kvmm;
-use crate::mm::memory_set::{AuxEntry, LoadedELF};
+use crate::mm::memory_set::{self, AuxEntry, LoadedELF};
 use crate::mm::MmapFlags;
 use crate::mm::{
     translated_mut, MemorySet, MmapProts, PageTableEntry, PhysPageNum, VirtAddr, VirtPageNum,
 };
+use crate::task::{current_task, current_trap_cx, current_user_token};
 use crate::trap::handler::user_trap_handler;
 use crate::trap::TrapContext;
 use alloc::string::String;
@@ -372,13 +373,6 @@ impl TaskControlBlock {
 
     /// 用来实现 fork 系统调用，即当前进程 fork 出来一个与之几乎相同的子进程
     pub fn fork(self: &Arc<TaskControlBlock>, flags: CloneFlags) -> Arc<TaskControlBlock> {
-        let memory_set = MemorySet::from_copy_on_write(&mut self.memory_set.write()); // use 4 pages
-                                                                                      // 拷贝用户地址空间
-        let trap_cx_ppn = memory_set
-            .translate(VirtAddr::from(TRAP_CONTEXT).into())
-            .unwrap()
-            .ppn();
-
         // 分配一个 PID
         let pid_handle = pid_alloc();
         let tgid = if flags.contains(CloneFlags::THREAD) {
@@ -386,22 +380,54 @@ impl TaskControlBlock {
         } else {
             pid_handle.0
         };
-
+        let pgid = self.pid.0;
+        let private_tid = pid_handle.0 - tgid;
         // 根据 PID 创建一个应用内核栈
         let kernel_stack = KernelStack::new(&pid_handle);
+
         let kernel_stack_top = kernel_stack.top();
 
-        // copy fd table
-        let mut fd_table = Vec::new();
-        // parent fd table
-        let pfd_table_ref = self.fd_table.read();
-        for fd in pfd_table_ref.iter() {
-            if let Some(file) = fd {
-                fd_table.push(Some(file.clone()));
-            } else {
-                fd_table.push(None);
-            }
+        // 拷贝用户地址空间
+        let memory_set = if flags.contains(CloneFlags::VM) {
+            self.memory_set.clone()
+        } else {
+            Arc::new(RwLock::new(MemorySet::from_copy_on_write(
+                &mut self.memory_set.write(),
+            ))) // use 4 pages
+        };
+
+        if flags.contains(CloneFlags::THREAD) {
+            memory_set.write().map_thread_trap_context(private_tid);
         }
+
+        let vpn: VirtPageNum = trap_context_position(private_tid).into();
+        let trap_cx_ppn = memory_set
+            .read()
+            .translate(trap_context_position(private_tid).into())
+            .unwrap()
+            .ppn();
+
+        if flags.contains(CloneFlags::THREAD) {
+            let trap_cx: &mut TrapContext = trap_cx_ppn.as_mut() as &mut TrapContext;
+            *trap_cx = self.inner_ref().trap_context().clone();
+
+        }
+        // copy fd table
+        let fd_table = if flags.contains(CloneFlags::FILES) {
+            self.fd_table.clone()
+        } else {
+            let mut new_fd_table = Vec::new();
+            // parent fd table
+            let pfd_table_ref = self.fd_table.read();
+            for fd in pfd_table_ref.iter() {
+                if let Some(file) = fd {
+                    new_fd_table.push(Some(file.clone()));
+                } else {
+                    new_fd_table.push(None);
+                }
+            }
+            Arc::new(RwLock::new(new_fd_table))
+        };
 
         let sigactions = if flags.contains(CloneFlags::SIGHAND) {
             self.sigactions.clone()
@@ -422,10 +448,9 @@ impl TaskControlBlock {
         let task_control_block = Arc::new(TaskControlBlock {
             pid: pid_handle,
             tgid,
-            memory_set: Arc::new(RwLock::new(memory_set)),
-            fd_table: Arc::new(RwLock::new(fd_table)),
+            memory_set,
+            fd_table,
             sigactions,
-
             // set_child_tid: 0,
             // clear_child_tid: 0,
             kernel_stack,

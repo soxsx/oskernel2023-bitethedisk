@@ -92,7 +92,10 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // 引用计数 +1
     // 对于当前进程占用的资源进行早期回收
     inner.children.clear();
-    ms_mut.recycle_data_pages();
+    // TODO thread
+    if (task.pid.0 == task.tgid) {
+        ms_mut.recycle_data_pages();
+    }
     drop(ms_mut);
     drop(inner);
     drop(task);
