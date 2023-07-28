@@ -2,7 +2,8 @@
 
 use crate::{
     consts::{KERNEL_STACK_SIZE, PAGE_SIZE, SIGNAL_TRAMPOLINE},
-    mm::{kernel_vmm::acquire_kvmm, memory_set::VmAreaType, MapPermission, VirtAddr},
+    mm::{kernel_vmm::acquire_kvmm, translated_mut, MapPermission, VirtAddr},
+    task::{current_trap_cx, current_user_token},
 };
 
 use super::PidHandle;

@@ -334,7 +334,7 @@ impl TaskControlBlock {
             elf_entry: entry_point,
             mut auxs,
         } = MemorySet::load_elf(elf_file);
-
+        assert!(self.pid.0 == self.tgid, "todo for thread");
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT).into())
             .unwrap()
@@ -610,4 +610,7 @@ pub enum TaskStatus {
     Blocking, // 阻塞态
     Hanging,  // 挂起态
     Zombie,   // 僵尸态
+}
+pub fn trap_context_position(tid: usize) -> VirtAddr {
+    VirtAddr::from(TRAP_CONTEXT - tid * PAGE_SIZE)
 }

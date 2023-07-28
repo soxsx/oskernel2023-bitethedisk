@@ -13,6 +13,7 @@ use crate::mm::{
     alloc_frame, FrameTracker, MmapManager, PageTable, PageTableEntry, PhysAddr, PhysPageNum,
     VirtAddr, VirtPageNum,
 };
+use crate::task::task::trap_context_position;
 use alloc::collections::BTreeMap;
 use alloc::{sync::Arc, vec::Vec};
 
@@ -236,6 +237,22 @@ impl MemorySet {
             None,
         );
     }
+    pub fn map_thread_trap_context(&mut self, tid: usize) {
+        assert!(tid > 0 && tid < 100);
+        let start_va = trap_context_position(tid);
+        let end_va = VirtAddr::from(start_va.0 + PAGE_SIZE);
+        self.insert(
+            VmArea::new(
+                start_va,
+                end_va,
+                MapType::Framed,
+                MapPermission::R | MapPermission::W,
+                None,
+                0,
+            ),
+            None,
+        );
+    }
 
     /// 中 ELF 文件中构建出一个 [`MemorySet`]
     ///
@@ -305,6 +322,7 @@ impl MemorySet {
 
         memory_set.map_trampoline();
         memory_set.map_signal_trampoline();
+        // TODO thread
         memory_set.map_trap_context();
 
         // 第一次读取前64字节确定程序表的位置与大小
@@ -445,7 +463,8 @@ impl MemorySet {
         } else {
             auxs.push(AuxEntry(AT_BASE, 0));
         }
-        let user_stack_top = TRAP_CONTEXT - PAGE_SIZE;
+        // TODO thread
+        let user_stack_top = TRAP_CONTEXT - 100 * PAGE_SIZE;
         let user_stack_bottom = user_stack_top - USER_STACK_SIZE;
 
         // auxs.push(AuxEntry(AT_BASE, 0));

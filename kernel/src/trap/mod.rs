@@ -3,7 +3,8 @@ pub mod handler;
 
 use self::handler::kernel_trap_handler;
 use crate::consts::{TRAMPOLINE, TRAP_CONTEXT};
-use crate::task::{current_task, current_user_token};
+use crate::task::task::trap_context_position;
+use crate::task::{current_task, current_trap_cx, current_user_token};
 use crate::timer::get_timeval;
 use core::arch::{asm, global_asm};
 use riscv::register::{mtvec::TrapMode, sie, stvec};
@@ -65,7 +66,7 @@ pub fn trap_return() -> ! {
     //      }
     //
     // 之后考虑使能上面的代码，并删除处理时钟中断的 trap 分支中的时间片设置操作
-
+    let trap_addr = trap_context_position(task.pid() - task.tgid).0;
     drop(inner);
     drop(task);
 
@@ -75,7 +76,7 @@ pub fn trap_return() -> ! {
             "fence.i",              // 指令清空指令缓存 i-cache
             "jr {user_trapret}",
             user_trapret = in(reg) trapret_addr,
-            in("a0") TRAP_CONTEXT,  // trap 上下文在应用地址空间中的位置
+            in("a0") trap_addr,  // trap 上下文在应用地址空间中的位置
             in("a1") user_satp,     // 即将回到的应用的地址空间的 token
             options(noreturn)
         );
