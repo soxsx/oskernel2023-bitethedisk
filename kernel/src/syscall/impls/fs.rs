@@ -259,16 +259,16 @@ pub fn sys_openat(fd: i32, filename: *const u8, flags: u32, mode: u32) -> Result
     let flags = OpenFlags::from_bits(flags).unwrap_or(OpenFlags::empty());
     if fd as isize == AT_FDCWD {
         let open_path = inner.get_work_path().join_string(path);
-        if let Some(inode) = open(open_path.clone(), flags, mode) {
-            let fd = TaskControlBlock::alloc_fd(&mut fd_table);
-            if fd == FD_LIMIT {
-                return_errno!(Errno::EMFILE);
-            }
-            fd_table[fd] = Some(inode);
-            Ok(fd as isize)
-        } else {
-            return_errno!(Errno::ENOENT, "try open path {:?}", open_path);
+        let inode = open(open_path.clone(), flags, mode)?;
+        let fd = TaskControlBlock::alloc_fd(&mut fd_table, fd_limit);
+        if fd >= fd_limit {
+            return_errno!(Errno::EMFILE);
         }
+        fd_table[fd] = Some(inode);
+        Ok(fd as isize)
+        // } else {
+        //     return_errno!(Errno::ENOENT, "try open path {:?}", open_path);
+        // }
     } else {
         let dirfd = fd as usize;
         // dirfd 不合法
@@ -281,16 +281,16 @@ pub fn sys_openat(fd: i32, filename: *const u8, flags: u32, mode: u32) -> Result
         if let Some(file) = &fd_table[dirfd] {
             let open_path = file.path().join_string(path.clone());
             // target file 存在
-            if let Some(tar_file) = open(open_path.clone(), flags, mode) {
-                let fd = TaskControlBlock::alloc_fd(&mut fd_table);
-                if fd == FD_LIMIT {
-                    return_errno!(Errno::EMFILE);
-                }
-                fd_table[fd] = Some(tar_file);
-                Ok(fd as isize)
-            } else {
-                return_errno!(Errno::ENOENT, "try to open {:?}", path);
+            let tar_file = open(open_path.clone(), flags, mode)?;
+            let fd = TaskControlBlock::alloc_fd(&mut fd_table, fd_limit);
+            if fd >= fd_limit {
+                return_errno!(Errno::EMFILE);
             }
+            fd_table[fd] = Some(tar_file);
+            Ok(fd as isize)
+            // } else {
+            //     return_errno!(Errno::ENOENT, "try to open {:?}", path);
+            // }
         } else {
             // dirfd 对应条目为 None
             return_errno!(Errno::ENOENT, "no such a file, fd: {}", dirfd);
@@ -373,22 +373,22 @@ pub fn sys_getdents64(fd: isize, buf: *mut u8, len: usize) -> Result {
     let fd_table = task.fd_table.read();
 
     if fd == AT_FDCWD {
-        if let Some(file) = open(work_path.clone(), OpenFlags::O_RDONLY, CreateMode::empty()) {
-            loop {
-                if total_len + dent_len > len {
-                    break;
-                }
-                if file.dirent(&mut dirent) > 0 {
-                    userbuf.write_at(total_len, dirent.as_bytes());
-                    total_len += dent_len;
-                } else {
-                    break;
-                }
+        let file = open(work_path.clone(), OpenFlags::O_RDONLY, CreateMode::empty())?;
+        loop {
+            if total_len + dent_len > len {
+                break;
             }
-            Ok(total_len as isize)
-        } else {
-            return_errno!(Errno::EBADF, "could not open {:?}", work_path);
+            if file.dirent(&mut dirent) > 0 {
+                userbuf.write_at(total_len, dirent.as_bytes());
+                total_len += dent_len;
+            } else {
+                break;
+            }
         }
+        Ok(total_len as isize)
+        // } else {
+        //     return_errno!(Errno::EBADF, "could not open {:?}", work_path);
+        // }
     } else {
         let fd = fd as usize;
         if let Some(file) = &fd_table[fd] {
@@ -691,12 +691,12 @@ pub fn sys_unlinkat(fd: isize, path: *const u8, flags: u32) -> Result {
     let open_path = inner.get_work_path().join_string(path);
 
     if fd == AT_FDCWD {
-        if let Some(file) = open(open_path.clone(), OpenFlags::O_RDWR, CreateMode::empty()) {
-            file.delete();
-            Ok(0)
-        } else {
-            return_errno!(Errno::ENOENT, "could not open: {:?}", open_path);
-        }
+        let file = open(open_path.clone(), OpenFlags::O_RDWR, CreateMode::empty())?;
+        file.delete();
+        Ok(0)
+        // } else {
+        //     return_errno!(Errno::ENOENT, "could not open: {:?}", open_path);
+        // }
     } else {
         unimplemented!("in sys_unlinkat");
     }
@@ -734,11 +734,13 @@ pub fn sys_mkdirat(dirfd: i32, path: *const u8, _mode: u32) -> Result {
             open_path.clone(),
             OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE,
             CreateMode::empty(),
-        ) {
-            Ok(0)
-        } else {
-            return_errno!(Errno::ENOENT, "could not open: {:?}", open_path);
-        }
+        );
+        // ) {
+        //     Ok(0)
+        // } else {
+        //     return_errno!(Errno::ENOENT, "could not open: {:?}", open_path);
+        // }
+        Ok(0)
     } else {
         let dirfd = dirfd as usize;
         if dirfd >= fd_table.len() && dirfd > FD_LIMIT {
@@ -747,15 +749,15 @@ pub fn sys_mkdirat(dirfd: i32, path: *const u8, _mode: u32) -> Result {
         if let Some(file) = &fd_table[dirfd] {
             let open_path = file.path().join_string(path);
 
-            if let Some(_) = open(
+            let _ = open(
                 open_path.clone(),
                 OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE,
                 CreateMode::empty(),
-            ) {
-                Ok(0)
-            } else {
-                return_errno!(Errno::ENOENT, "could not open: {:?}", open_path);
-            }
+            );
+            Ok(0)
+        // else {
+        //     return_errno!(Errno::ENOENT, "could not open: {:?}", open_path);
+        // }
         } else {
             return_errno!(Errno::EBADF, "could not find fd: {}", dirfd);
         }
@@ -1139,13 +1141,13 @@ pub fn sys_newfstatat(
     // 相对路径, 在当前工作目录
     if dirfd == AT_FDCWD {
         let open_path = inner.get_work_path().join_string(path);
-        if let Some(inode) = open(open_path.clone(), OpenFlags::O_RDONLY, CreateMode::empty()) {
-            inode.fstat(&mut kstat);
-            userbuf.write(kstat.as_bytes());
-            Ok(0)
-        } else {
-            return_errno!(Errno::ENOENT, "could not open {:?}", open_path);
-        }
+        let inode = open(open_path.clone(), OpenFlags::O_RDONLY, CreateMode::empty())?;
+        inode.fstat(&mut kstat);
+        userbuf.write(kstat.as_bytes());
+        Ok(0)
+        // } else {
+        //     return_errno!(Errno::ENOENT, "could not open {:?}", open_path);
+        // }
     } else {
         let dirfd = dirfd as usize;
         if dirfd >= fd_table.len() {
@@ -1157,13 +1159,13 @@ pub fn sys_newfstatat(
 
         if let Some(file) = &fd_table[dirfd] {
             let open_path = inner.get_work_path().join_string(path);
-            if let Some(inode) = open(open_path, OpenFlags::O_RDONLY, CreateMode::empty()) {
-                inode.fstat(&mut kstat);
-                userbuf.write(kstat.as_bytes());
-                Ok(0)
-            } else {
-                return_errno!(Errno::UNCLEAR);
-            }
+            let inode = open(open_path, OpenFlags::O_RDONLY, CreateMode::empty())?;
+            inode.fstat(&mut kstat);
+            userbuf.write(kstat.as_bytes());
+            Ok(0)
+            // } else {
+            //     return_errno!(Errno::UNCLEAR);
+            // }
         } else {
             return_errno!(Errno::EBADF, "fd {} could not be found", dirfd);
         }
@@ -1213,16 +1215,18 @@ pub fn sys_utimensat(
         } else {
             let pathname = translated_str(token, pathname);
             let path = inner.get_work_path().join_string(pathname);
-            if let Some(_file) = open(
+            let _file = open(
                 path,
                 OpenFlags::O_RDWR | OpenFlags::O_CREATE,
                 CreateMode::empty(),
-            ) {
-                Ok(0)
-            } else {
-                return_errno!(Errno::UNCLEAR);
-                // Ok(-ENOENT)
-            }
+            );
+            // {
+            //     Ok(0)
+            // } else {
+            //     return_errno!(Errno::UNCLEAR);
+            //     // Ok(-ENOENT)
+            // }
+            Ok(0)
         }
     } else {
         if pathname as usize == 0 {
@@ -1264,24 +1268,24 @@ pub fn sys_renameat2(
     let old_path = inner.get_work_path().join_string(old_path);
 
     if old_dirfd == AT_FDCWD {
-        if let Some(old_file) = open(old_path, OpenFlags::O_RDWR, CreateMode::empty()) {
-            let flag = {
-                if old_file.is_dir() {
-                    OpenFlags::O_RDWR | OpenFlags::O_CREATE | OpenFlags::O_DIRECTROY
-                } else {
-                    OpenFlags::O_RDWR | OpenFlags::O_CREATE
-                }
-            };
-            if new_dirfd == AT_FDCWD {
-                let new_path = inner.get_work_path().join_string(new_path);
-                old_file.rename(new_path, flag);
-                Ok(0)
+        let old_file = open(old_path, OpenFlags::O_RDWR, CreateMode::empty())?;
+        let flag = {
+            if old_file.is_dir() {
+                OpenFlags::O_RDWR | OpenFlags::O_CREATE | OpenFlags::O_DIRECTROY
             } else {
-                unimplemented!();
+                OpenFlags::O_RDWR | OpenFlags::O_CREATE
             }
+        };
+        if new_dirfd == AT_FDCWD {
+            let new_path = inner.get_work_path().join_string(new_path);
+            old_file.rename(new_path, flag);
+            Ok(0)
         } else {
-            panic!("can't find old file");
+            unimplemented!();
         }
+        // } else {
+        //     panic!("can't find old file");
+        // }
     } else {
         unimplemented!();
     }

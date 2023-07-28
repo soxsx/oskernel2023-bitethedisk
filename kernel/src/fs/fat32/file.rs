@@ -1,16 +1,20 @@
-use crate::fs::{
-    file::File,
-    open_flags::CreateMode,
-    stat::{S_IFCHR, S_IFDIR, S_IFREG},
-    AbsolutePath, Dirent, Kstat, OpenFlags, TimeSpec,
-};
+use crate::return_errno;
 use crate::{drivers::BLOCK_DEVICE, mm::UserBuffer};
+use crate::{
+    fs::{
+        file::File,
+        open_flags::CreateMode,
+        stat::{S_IFCHR, S_IFDIR, S_IFREG},
+        AbsolutePath, Dirent, Kstat, OpenFlags, TimeSpec,
+    },
+    syscall::impls::Errno,
+};
 use alloc::{
     string::{String, ToString},
     sync::Arc,
     vec::Vec,
 };
-use fat32::{root, Dir as FatDir, FileSystem, VirFile, VirFileType, ATTR_DIRECTORY};
+use fat32::{root, Dir as FatDir, DirError, FileSystem, VirFile, VirFileType, ATTR_DIRECTORY};
 use spin::Mutex;
 
 /// 表示进程中一个被打开的常规文件或目录
@@ -180,8 +184,11 @@ pub enum OpenError {
 }
 
 // work_path 绝对路径
-pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Option<Arc<Fat32File>> {
-    let mut _result: Result<Arc<Fat32File>, OpenError>;
+pub fn open(
+    path: AbsolutePath,
+    flags: OpenFlags,
+    _mode: CreateMode,
+) -> Result<Arc<Fat32File>, Errno> {
     let mut pathv = path.as_vec_str();
     let (readable, writable) = flags.read_write();
     // 创建文件
@@ -194,7 +201,7 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Option<A
                 } else {
                     "/"
                 };
-                Some(Arc::new(Fat32File::new(
+                Ok(Arc::new(Fat32File::new(
                     readable,
                     writable,
                     inode,
@@ -203,6 +210,9 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Option<A
                 )))
             }
             Err(_err) => {
+                if _err == DirError::NotDir {
+                    return Err(Errno::ENOTDIR);
+                }
                 // 设置创建类型
                 let mut create_type = VirFileType::File;
                 if flags.contains(OpenFlags::O_DIRECTROY) {
@@ -213,16 +223,18 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Option<A
                 let name = pathv.pop().unwrap();
                 match ROOT_INODE.find(pathv.clone()) {
                     Ok(parent) => match parent.create(name, create_type as VirFileType) {
-                        Ok(inode) => Some(Arc::new(Fat32File::new(
+                        Ok(inode) => Ok(Arc::new(Fat32File::new(
                             readable,
                             writable,
                             Arc::new(inode),
                             path.clone(),
                             name.to_string(),
                         ))),
-                        Err(_err) => None,
+                        Err(_err) => Err(Errno::UNCLEAR),
                     },
-                    Err(_err) => None,
+                    Err(_err) => {
+                        return_errno!(Errno::ENOENT, "parent path not exist path:{:?}", path)
+                    }
                 }
             }
         }
@@ -236,7 +248,7 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Option<A
                 }
 
                 let name = inode.name().to_string();
-                Some(Arc::new(Fat32File::new(
+                Ok(Arc::new(Fat32File::new(
                     readable,
                     writable,
                     inode,
@@ -244,7 +256,7 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Option<A
                     name,
                 )))
             }
-            Err(_err) => None,
+            Err(_err) => return_errno!(Errno::ENOENT, "no such file or path:{:?}", path),
         }
     }
 }
