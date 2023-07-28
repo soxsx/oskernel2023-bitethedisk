@@ -107,6 +107,16 @@ pub const SYS_SIGRETURN: usize = 139;
 // const SYS_ACCEPT: usize = 202;
 // const SYS_CONNECT: usize = 203;
 // const SYS_GETSOCKNAME: usize = 204;
+pub const SYS_SOCKET: usize = 198;
+pub const SYS_BIND: usize = 200;
+pub const SYS_LISTEN: usize = 201;
+pub const SYS_ACCEPT: usize = 202;
+pub const SYS_CONNECT: usize = 203;
+pub const SYS_GETSOCKNAME: usize = 204;
+pub const SYS_SENDTO: usize = 206;
+pub const SYS_RECVFROM: usize = 207;
+pub const SYS_SETSOCKOPT: usize = 208;
+
 pub fn syscall_name(id: usize) -> &'static str {
     match id {
         SYS_GETCWD => "SYS_GETCWD",
@@ -387,6 +397,16 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[5] as u32,
         ),
         SYS_TILL => sys_tkill(args[0], args[1]),
+        SYS_SOCKET => Ok(0),
+        SYS_BIND => Ok(0),
+        SYS_LISTEN => Ok(0),
+        SYS_ACCEPT => Ok(0),
+        SYS_CONNECT => Ok(0),
+        SYS_GETSOCKNAME => Ok(0),
+        SYS_SENDTO => Ok(0),
+        SYS_RECVFROM => Ok(0),
+        SYS_SETSOCKOPT => Ok(0),
+
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
     // println!(
