@@ -47,7 +47,6 @@ macro_rules! gen_into_usize {
 
 gen_into_usize! {
     PhysAddr
-    VirtAddr
     PhysPageNum
     VirtPageNum
 }
@@ -63,11 +62,24 @@ macro_rules! gen_from_usize {
         )*
     };
 }
+impl From<usize> for VirtAddr {
+    fn from(value: usize) -> Self {
+        if value >> VA_WIDTH_SV39 == 0 {
+            Self(value & ((1 << VA_WIDTH_SV39) - 1))
+        } else {
+            Self((value & ((1 << VA_WIDTH_SV39) - 1)) | (usize::MAX & !((1 << VA_WIDTH_SV39) - 1)))
+        }
+    }
+}
+impl From<VirtAddr> for usize {
+    fn from(value: VirtAddr) -> Self {
+        value.0
+    }
+}
 
 gen_from_usize! {
     PhysAddr,    PA_WIDTH_SV39
     PhysPageNum, PPN_WIDTH_SV39
-    VirtAddr,    VA_WIDTH_SV39
     VirtPageNum, VPN_WIDTH_SV39
 }
 
