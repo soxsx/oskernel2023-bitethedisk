@@ -6,8 +6,8 @@ use core::usize;
 use crate::fs::open_flags::CreateMode;
 use crate::fs::{open, OpenFlags};
 use crate::mm::{
-    memory_set, translated_bytes_buffer, translated_mut, translated_ref, translated_str,
-    UserBuffer, VirtPageNum,
+    copyin, copyout, memory_set, translated_bytes_buffer, translated_mut, translated_ref,
+    translated_str, UserBuffer, VirtPageNum,
 };
 use crate::return_errno;
 use crate::task::{
@@ -19,6 +19,8 @@ use crate::timer::{get_time, NSEC_PER_SEC};
 
 use alloc::{string::String, string::ToString, sync::Arc, vec::Vec};
 use nix::info::{CloneFlags, RUsage, Utsname};
+use nix::resource::{RLimit, Resource};
+use nix::robustlist::RobustList;
 use nix::time::{TimeSpec, TimeVal};
 
 use super::super::errno::*;
@@ -768,4 +770,74 @@ pub fn sys_sigprocmask(
     //     how, set, old_set
     // );
     Ok(0)
+}
+pub fn sys_set_robust_list(head: usize, len: usize) -> Result {
+    if len != RobustList::HEAD_SIZE {
+        return_errno!(Errno::EINVAL, "robust list head len missmatch:{:?}", len);
+    }
+    let task = current_task().unwrap();
+    task.robust_list.write().head = head;
+    Ok(0)
+}
+
+pub fn sys_get_robust_list(pid: usize, head_ptr: *mut usize, len_ptr: *mut usize) -> Result {
+    let task = if pid == 0 {
+        current_task().unwrap()
+    } else {
+        match pid2task(pid) {
+            Some(taskk) => taskk,
+            None => return_errno!(Errno::ESRCH, "no such pid:{:?}", pid),
+        }
+    };
+    let token = current_user_token();
+    let lock = task.robust_list.read();
+    copyout(token, head_ptr, &lock.head);
+    copyout(token, len_ptr, &lock.len);
+    Ok(0)
+}
+
+pub fn sys_prlimit64(
+    pid: usize,
+    resource: u32,
+    new_limit: *const RLimit,
+    old_limit: *mut RLimit,
+) -> Result {
+    if pid == 0 {
+        let task = current_task().unwrap();
+        let token = current_user_token();
+        let resource = if resource == 7 {
+            Resource::NOFILE
+        } else {
+            Resource::ILLEAGAL
+        };
+        // info!("[sys_prlimit] pid: {}, resource: {:?}", pid, resource);
+        if !old_limit.is_null() {
+            match resource {
+                Resource::NOFILE => {
+                    let lock = task.rlimit_nofile.read();
+                    copyout(token, old_limit, &lock);
+                }
+                // TODO
+                // Resource::ILLEAGAL => return_errno!(Errno::EINVAL),
+                // _ => todo!(),
+                _ => (),
+            }
+        }
+        if !new_limit.is_null() {
+            let mut rlimit = RLimit::new(0, 0);
+            copyin(token, &mut rlimit, new_limit);
+            match resource {
+                Resource::NOFILE => {
+                    *task.rlimit_nofile.write() = rlimit;
+                }
+                // TODO
+                // Resource::ILLEAGAL => return_errno!(Errno::EINVAL),
+                // _ => todo!(),
+                _ => (),
+            }
+        }
+        Ok(0)
+    } else {
+        todo!()
+    }
 }

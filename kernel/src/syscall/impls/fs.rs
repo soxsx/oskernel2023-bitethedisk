@@ -96,13 +96,17 @@ pub fn sys_pipe2(pipe: *mut i32, _flag: i32) -> Result {
 
     // fd_table mut borrow
     let mut fd_table = task.fd_table.write();
-    let read_fd = TaskControlBlock::alloc_fd(&mut fd_table);
-    if read_fd == FD_LIMIT {
+    let fd_limit = task.rlimit_nofile.read().rlim_cur;
+    let read_fd = TaskControlBlock::alloc_fd(&mut fd_table, fd_limit);
+    if read_fd >= fd_limit {
         return_errno!(Errno::EMFILE);
     }
     fd_table[read_fd] = Some(pipe_read);
 
-    let write_fd = TaskControlBlock::alloc_fd(&mut fd_table);
+    let write_fd = TaskControlBlock::alloc_fd(&mut fd_table, fd_limit);
+    if write_fd >= fd_limit {
+        return_errno!(Errno::EMFILE);
+    }
     fd_table[write_fd] = Some(pipe_write);
 
     drop(fd_table);
@@ -136,7 +140,7 @@ pub fn sys_dup(old_fd: usize) -> Result {
     let task = current_task().unwrap();
     // fd_table mut borrow
     let mut fd_table = task.fd_table.write();
-
+    let fd_limit = task.rlimit_nofile.read().rlim_cur;
     // 超出范围
     if old_fd >= fd_table.len() {
         return_errno!(Errno::EBADF, "oldfd is out of range, oldfd: {}", old_fd);
@@ -146,11 +150,12 @@ pub fn sys_dup(old_fd: usize) -> Result {
         return_errno!(Errno::EBADF, "oldfd is not exist, oldfd {}", old_fd);
     }
 
-    let new_fd = TaskControlBlock::alloc_fd(&mut fd_table);
-    if new_fd > FD_LIMIT {
+    let new_fd = TaskControlBlock::alloc_fd(&mut fd_table, fd_limit);
+    if new_fd >= fd_limit {
         return_errno!(Errno::EMFILE, "too many fd, newfd: {}", new_fd);
     }
     fd_table[new_fd] = Some(Arc::clone(fd_table[old_fd].as_ref().unwrap()));
+    // println!("fd:{:?},limit:{:?}",new_fd,fd_limit);
 
     Ok(new_fd as isize)
 }
@@ -257,6 +262,7 @@ pub fn sys_openat(fd: i32, filename: *const u8, flags: u32, mode: u32) -> Result
     let path = translated_str(token, filename);
     let mode = CreateMode::from_bits(mode).unwrap_or(CreateMode::empty());
     let flags = OpenFlags::from_bits(flags).unwrap_or(OpenFlags::empty());
+    let fd_limit = task.rlimit_nofile.read().rlim_cur;
     if fd as isize == AT_FDCWD {
         let open_path = inner.get_work_path().join_string(path);
         let inode = open(open_path.clone(), flags, mode)?;
@@ -275,7 +281,7 @@ pub fn sys_openat(fd: i32, filename: *const u8, flags: u32, mode: u32) -> Result
         if dirfd >= fd_table.len() {
             return_errno!(Errno::EINVAL);
         }
-        if dirfd > FD_LIMIT {
+        if dirfd >= fd_limit {
             return_errno!(Errno::EMFILE);
         }
         if let Some(file) = &fd_table[dirfd] {
@@ -727,10 +733,10 @@ pub fn sys_mkdirat(dirfd: i32, path: *const u8, _mode: u32) -> Result {
     let inner = task.inner_mut();
     let fd_table = task.fd_table.read();
     let path = translated_str(token, path);
-
+    let fd_limit = task.rlimit_nofile.read().rlim_cur;
     if dirfd as isize == AT_FDCWD {
         let open_path = inner.get_work_path().join_string(path);
-        if let Some(_) = open(
+        let _ = open(
             open_path.clone(),
             OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE,
             CreateMode::empty(),
@@ -743,7 +749,7 @@ pub fn sys_mkdirat(dirfd: i32, path: *const u8, _mode: u32) -> Result {
         Ok(0)
     } else {
         let dirfd = dirfd as usize;
-        if dirfd >= fd_table.len() && dirfd > FD_LIMIT {
+        if dirfd >= fd_table.len() && dirfd >= fd_limit {
             return_errno!(Errno::EBADF, "fd {} is out of range or reach limit", dirfd);
         }
         if let Some(file) = &fd_table[dirfd] {
@@ -875,7 +881,7 @@ pub fn sys_fstat(fd: i32, buf: *mut u8) -> Result {
 
     let mut userbuf = UserBuffer::wrap(buf_vec);
     let mut kstat = Kstat::new();
-
+    let fd_limit = task.rlimit_nofile.read().rlim_cur;
     let dirfd = fd as usize;
     if dirfd >= fd_table.len() {
         return_errno!(
@@ -885,7 +891,7 @@ pub fn sys_fstat(fd: i32, buf: *mut u8) -> Result {
             fd_table.len()
         );
     }
-    if dirfd > FD_LIMIT {
+    if dirfd >= fd_limit {
         return_errno!(Errno::EBADF, "fd {} reached limit", dirfd);
     }
     if let Some(file) = &fd_table[dirfd] {
@@ -1100,8 +1106,9 @@ pub fn sys_fcntl(fd: i32, cmd: usize, arg: Option<usize>) -> Result {
             let mut new_fd = 0;
             _ = new_fd;
             let mut tmp_fd = Vec::new();
+            let fd_limit = task.rlimit_nofile.read().rlim_cur;
             loop {
-                new_fd = TaskControlBlock::alloc_fd(&mut fd_table);
+                new_fd = TaskControlBlock::alloc_fd(&mut fd_table, fd_limit);
                 fd_table[new_fd] = Some(Arc::new(Stdin));
                 if new_fd >= start_num {
                     break;
@@ -1140,7 +1147,7 @@ pub fn sys_newfstatat(
     let buf_vec = translated_bytes_buffer(token, satabuf as *const u8, size_of::<Kstat>());
     let mut userbuf = UserBuffer::wrap(buf_vec);
     let mut kstat = Kstat::new();
-
+    let fd_limit = task.rlimit_nofile.read().rlim_cur;
     // 相对路径, 在当前工作目录
     if dirfd == AT_FDCWD {
         let open_path = inner.get_work_path().join_string(path);
@@ -1156,7 +1163,7 @@ pub fn sys_newfstatat(
         if dirfd >= fd_table.len() {
             return_errno!(Errno::EBADF, "fd {} is out of fd_table_len", dirfd);
         }
-        if dirfd > FD_LIMIT {
+        if dirfd >= fd_limit {
             return_errno!(Errno::EBADF, "too many fd, fd: {}", dirfd);
         }
 

@@ -20,7 +20,7 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
 use nix::time::TimeVal;
-use nix::CloneFlags;
+use nix::{CloneFlags, RLimit, RobustList};
 use riscv::register::scause::Scause;
 use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -42,7 +42,8 @@ pub struct TaskControlBlock {
     pub sigactions: Arc<RwLock<[SigAction; MAX_SIGNUM as usize]>>,
     pub memory_set: Arc<RwLock<MemorySet>>,
     pub fd_table: Arc<RwLock<FDTable>>,
-
+    pub robust_list: Arc<RwLock<RobustList>>,
+    pub rlimit_nofile: Arc<RwLock<RLimit>>,
     inner: RwLock<TaskControlBlockInner>,
 }
 
@@ -130,12 +131,12 @@ impl TaskControlBlock {
     /// 查找空闲文件描述符下标
     ///
     /// 从文件描述符表中 **由低到高** 查找空位，返回向量下标，没有空位则在最后插入一个空位
-    pub fn alloc_fd(fd_table: &mut FDTable) -> usize {
+    pub fn alloc_fd(fd_table: &mut FDTable, fd_limit: usize) -> usize {
         if let Some(fd) = (0..fd_table.len()).find(|fd| fd_table[*fd].is_none()) {
             fd
         } else {
-            if fd_table.len() == FD_LIMIT {
-                return FD_LIMIT;
+            if fd_table.len() >= fd_limit {
+                return fd_limit;
             }
             fd_table.push(None);
             fd_table.len() - 1
@@ -185,6 +186,8 @@ impl TaskControlBlock {
                 // 2 -> stderr
                 Some(Arc::new(Stdout)),
             ])),
+            robust_list: Arc::new(RwLock::new(RobustList::default())),
+            rlimit_nofile: Arc::new(RwLock::new(RLimit::new(FD_LIMIT, FD_LIMIT))),
 
             // set_child_tid: 0,
             // clear_child_tid: 0,
@@ -454,6 +457,8 @@ impl TaskControlBlock {
             // set_child_tid: 0,
             // clear_child_tid: 0,
             kernel_stack,
+            robust_list: Arc::new(RwLock::new(RobustList::default())),
+            rlimit_nofile: Arc::new(RwLock::new(RLimit::new(FD_LIMIT, FD_LIMIT))),
             inner: RwLock::new(TaskControlBlockInner {
                 trap_cx_ppn,
                 task_cx: TaskContext::readied_for_switching(kernel_stack_top),

@@ -3,7 +3,7 @@
 use crate::task::{current_task, SigAction};
 
 use super::impls::*;
-use nix::time::TimeSpec;
+use nix::{time::TimeSpec, RLimit};
 
 // 系统调用号
 // const SYS_RT_SIGPROMASK: usize = 135;
@@ -48,6 +48,7 @@ const SYS_EXIT_GROUP: usize = 94;
 const SYS_SET_TID_ADDRESS: usize = 96;
 const SYS_FUTEX: usize = 98;
 const SYS_SET_ROBUST_LIST: usize = 99;
+const SYS_GET_ROBUST_LIST: usize = 100;
 const SYS_NANOSLEEP: usize = 101;
 const SYS_SETITIMER: usize = 103;
 const SYS_CLOCK_GETTIME: usize = 113;
@@ -304,8 +305,16 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_LSEEK => sys_lseek(args[0], args[1] as isize, args[2]),
         SYS_GETEGID => Ok(0),
         SYS_GETGID => Ok(0),
-        SYS_SET_ROBUST_LIST => Ok(-1),
-        SYS_PRLIMIT64 => Ok(0),
+        SYS_SET_ROBUST_LIST => sys_set_robust_list(args[0], args[1]),
+        SYS_GET_ROBUST_LIST => {
+            sys_get_robust_list(args[0], args[1] as *mut usize, args[2] as *mut usize)
+        }
+        SYS_PRLIMIT64 => sys_prlimit64(
+            args[0],
+            args[1] as u32,
+            args[2] as *const RLimit,
+            args[3] as *mut RLimit,
+        ),
         SYS_READLINKAT => sys_readlinkat(
             args[0] as isize,
             args[1] as *const u8,
