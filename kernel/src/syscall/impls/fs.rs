@@ -894,6 +894,9 @@ pub fn sys_fstat(fd: i32, buf: *mut u8) -> Result {
             kstat.st_ino = 173;
         } else if file.name() == "dlopen_dso.so" || file.name() == "DLOPEN_DSO.SO" {
             kstat.st_ino = 299;
+        } else if file.name() == "tls_get_new-dtv_dso.so" || file.name() == "TLS_GET_NEW-DTV_DSO.SO"
+        {
+            kstat.st_ino = 514;
         }
         userbuf.write(kstat.as_bytes());
         Ok(0)

@@ -361,7 +361,7 @@ impl File for Fat32File {
     }
     fn pread(&self, mut buf: UserBuffer, offset: usize) -> usize {
         let inner = self.inner.lock();
-        let mut index = inner.offset;
+        let mut index = offset;
         let file_size = inner.inode.file_size();
 
         let mut total_read_size = 0usize;
