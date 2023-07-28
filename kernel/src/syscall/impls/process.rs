@@ -6,7 +6,8 @@ use core::usize;
 use crate::fs::open_flags::CreateMode;
 use crate::fs::{open, OpenFlags};
 use crate::mm::{
-    memory_set, translated_bytes_buffer, translated_mut, translated_ref, translated_str, UserBuffer,
+    memory_set, translated_bytes_buffer, translated_mut, translated_ref, translated_str,
+    UserBuffer, VirtPageNum,
 };
 use crate::return_errno;
 use crate::task::{
@@ -642,14 +643,14 @@ pub fn sys_sigreturn() -> Result {
 
     let trap_cx = task_inner.trap_context();
 
+    // 还原被保存的 signal_context
+    let sig_context_ptr = trap_cx.x[2]; // 函数调用保证了 x[2] 的值是 sig_context 的地址 (user signal handler 执行前后 x[2] 值不变)
+    trap_cx.x[2] += core::mem::size_of::<SignalContext>();
     let siginfo_ptr = trap_cx.x[2];
     trap_cx.x[2] += core::mem::size_of::<SigInfo>();
     let ucontext_ptr = trap_cx.x[2];
     trap_cx.x[2] += core::mem::size_of::<UContext>();
 
-    // 还原被保存的 signal_context
-    let sig_context_ptr = trap_cx.x[2]; // 函数调用保证了 x[2] 的值是 sig_context 的地址 (user signal handler 执行前后 x[2] 值不变)
-    trap_cx.x[2] += core::mem::size_of::<SignalContext>();
     let ucontext = translated_ref(token, ucontext_ptr as *const UContext);
     let sig_context = translated_ref(token, sig_context_ptr as *mut SignalContext);
     let sigmask = sig_context.mask.clone();
@@ -657,10 +658,7 @@ pub fn sys_sigreturn() -> Result {
     *trap_cx = sig_context.context.clone();
     // 还原 signal handler 之前的 signal mask
     task_inner.sigmask = sigmask;
-    // restore sepc
-    // if sigaction.sa_flags.contains(SAFlags::SA_SIGINFO) { // if contains SA_SIGINFO, ucontext msg is actually needed
-    trap_cx.sepc = ucontext.uc_mcontext.greps[0];
-    // }
+    trap_cx.sepc = ucontext.uc_mcontext.greps[1];
 
     Ok(0)
 }

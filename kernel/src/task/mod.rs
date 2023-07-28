@@ -215,21 +215,20 @@ pub fn exec_signal_handlers() {
 
                 trap_cx.x[11] = siginfo_ptr; // a1 (args1 = siginfo)
                 trap_cx.x[12] = ucontext_ptr; // a2 (args2 = ucontext)
-
-                let ucontext = translated_mut(token, ucontext_ptr as *mut UContext);
-                // if sigaction.sa_flags.contains(SAFlags::SA_SIGINFO) { // if contains SA_SIGINFO, ucontext msg is actually needed
-                ucontext.uc_mcontext.greps[0] = trap_cx.sepc; //pc
-                                                              // }
+                let mut ucontext = UContext::empty();
+                ucontext.uc_mcontext.greps[1] = trap_cx.sepc; //pc
+                copyout(token, ucontext_ptr as *mut UContext, &ucontext);
 
                 trap_cx.x[2] -= core::mem::size_of::<SignalContext>(); // sp -= sizeof(sigcontext)
                 let sig_context_ptr = trap_cx.x[2] as *mut SignalContext;
-                *translated_mut(token, sig_context_ptr) = sig_context;
+                copyout(token, sig_context_ptr, &sig_context);
+                // *translated_mut(token, sig_context_ptr) = sig_context;
 
                 trap_cx.x[1] = SIGNAL_TRAMPOLINE; // ra = user_sigreturn
 
                 println!(
-                    "prepare to jump to `handler`, original sepc = {:#x?}",
-                    trap_cx.sepc
+                    "prepare to jump to `handler`:{:x?}, original sepc = {:#x?},current sp:{:x?}",
+                    handler, trap_cx.sepc, trap_cx.x[2]
                 );
                 trap_cx.sepc = handler; // sepc = handler
                 return;

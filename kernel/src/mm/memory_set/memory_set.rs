@@ -246,6 +246,7 @@ impl MemorySet {
                 start_va,
                 end_va,
                 MapType::Framed,
+		VmAreaType::TrapContext,
                 MapPermission::R | MapPermission::W,
                 None,
                 0,

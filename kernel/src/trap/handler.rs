@@ -11,7 +11,6 @@ use riscv::register::{
     stval,
 };
 
-use crate::mm::VirtAddr;
 use crate::{
     consts::TRAMPOLINE,
     syscall::dispatcher::{syscall, SYS_SIGRETURN},
@@ -20,6 +19,10 @@ use crate::{
         suspend_current_and_run_next, SigMask,
     },
     timer::{get_timeval, set_next_trigger},
+};
+use crate::{
+    mm::{translated_mut, VirtAddr},
+    task::current_user_token,
 };
 
 use super::{set_kernel_trap_entry, trap_return};
@@ -86,8 +89,10 @@ pub fn user_trap_handler() -> ! {
             );
 
             // cx is changed during sys_exec, so we have to call it again
-            cx = current_trap_cx();
-            cx.x[10] = result as usize;
+            if !is_sigreturn {
+                cx = current_trap_cx();
+                cx.x[10] = result as usize;
+            }
         }
 
         Trap::Exception(Exception::StoreFault)

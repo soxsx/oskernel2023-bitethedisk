@@ -92,6 +92,9 @@ impl VmArea {
                 self.vpn_range.into_iter().for_each(|vpn| {
                     let frame = alloc_frame().expect("out of memory");
                     let ppn = frame.ppn;
+                    if self.frame_map.contains_key(&vpn) {
+                        panic!("vm area overlap");
+                    }
                     self.frame_map.insert(vpn, frame);
                     let flags = PTEFlags::from_bits(self.permission.bits()).unwrap();
                     page_table.map(vpn, ppn, flags);

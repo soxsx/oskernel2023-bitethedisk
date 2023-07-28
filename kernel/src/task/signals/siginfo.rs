@@ -252,17 +252,15 @@ impl MaskFlags {
 #[derive(Copy, Clone, Debug)]
 pub struct SigAction {
     pub sa_handler: usize,
-    pub sa_sigaction: usize,
-    pub sa_mask: SigMask,
     pub sa_flags: SAFlags,
     pub _sa_restorer: usize, // not used
+    pub sa_mask: SigMask,
 }
 
 impl SigAction {
     pub fn new() -> Self {
         Self {
             sa_handler: SIG_DFL,
-            sa_sigaction: SIG_DFL,
             sa_mask: SigMask::empty(),
             sa_flags: SAFlags::empty(),
             _sa_restorer: 0,
@@ -270,10 +268,7 @@ impl SigAction {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.sa_handler == SIG_DFL
-            && self.sa_sigaction == SIG_DFL
-            && self.sa_mask.is_empty()
-            && self.sa_flags.is_empty()
+        self.sa_handler == SIG_DFL && self.sa_mask.is_empty() && self.sa_flags.is_empty()
     }
 
     pub fn mask_block(&mut self, signum: u32) {
@@ -290,7 +285,7 @@ impl SigAction {
 }
 bitflags! {
     #[derive(Copy, Clone, Debug)]
-    pub struct SAFlags: isize {
+    pub struct SAFlags: u32 {
         const SA_NOCLDSTOP = 1;		 /* Don't send SIGCHLD when children stop.  */
         const SA_NOCLDWAIT = 2;		 /* Don't create zombie on child death.  */
         const SA_SIGINFO   = 4;  	 /* Invoke signal-catching function with
@@ -331,7 +326,6 @@ pub struct UContext {
     pub __unused: [u8; 1024 / 8 - core::mem::size_of::<SigMask>()],
     pub uc_mcontext: MContext,
 }
-
 impl UContext {
     pub fn empty() -> Self {
         Self {
@@ -361,6 +355,7 @@ pub struct SignalStack {
 }
 
 // The mcontext_t type is machine-dependent and opaque.
+// TODO layout musl
 #[repr(C)]
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct MContext {
