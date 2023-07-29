@@ -26,6 +26,6 @@ pub fn yield_() {
     sys_sched_yield()
 }
 
-pub fn waitpid(pid: usize, exit_code: &mut i32) -> isize {
+pub fn waitpid(pid: isize, exit_code: &mut i32) -> isize {
     sys_waitpid(pid, exit_code)
 }

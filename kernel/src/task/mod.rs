@@ -28,6 +28,7 @@ use crate::{
     consts::SIGNAL_TRAMPOLINE,
     mm::{copyout, memory_set, translated_mut},
     syscall::impls::futex::futex_wake,
+    timer::check_interval_timer,
 };
 
 use self::{
@@ -38,22 +39,17 @@ use self::{
 
 /// 将当前任务置为就绪态，放回到进程管理器中的就绪队列中，重新选择一个进程运行
 pub fn suspend_current_and_run_next() -> isize {
+    // TODO: check_interval_timer();
+    exec_signal_handlers();
+
     // 取出当前正在执行的任务
-    let task_cp = current_task().unwrap();
-    let mut task_inner = task_cp.inner_mut();
-    if task_inner.pending_signals.contains(SigMask::SIGKILL) {
-        let exit_code = task_inner.exit_code;
-        drop(task_inner);
-        drop(task_cp);
-        exit_current_and_run_next(exit_code);
-        return 0;
-    }
     let task = take_current_task().unwrap();
-    let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
+    let mut inner = task.inner_mut();
+    let task_cx_ptr = &mut inner.task_cx as *mut TaskContext;
 
     // 修改其进程控制块内的状态为就绪状态
-    task_inner.task_status = TaskStatus::Ready;
-    drop(task_inner);
+    inner.task_status = TaskStatus::Ready;
+    drop(inner);
 
     // 将进程加入进程管理器中的就绪队列
     add_task(task);
@@ -226,10 +222,10 @@ pub fn exec_signal_handlers() {
 
                 trap_cx.x[1] = SIGNAL_TRAMPOLINE; // ra = user_sigreturn
 
-                println!(
-                    "prepare to jump to `handler`:{:x?}, original sepc = {:#x?},current sp:{:x?}",
-                    handler, trap_cx.sepc, trap_cx.x[2]
-                );
+                // println!(
+                //     "prepare to jump to `handler`:{:x?}, original sepc = {:#x?},current sp:{:x?}",
+                //     handler, trap_cx.sepc, trap_cx.x[2]
+                // );
                 trap_cx.sepc = handler; // sepc = handler
                 return;
             }

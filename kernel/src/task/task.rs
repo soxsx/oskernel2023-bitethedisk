@@ -502,7 +502,7 @@ impl TaskControlBlock {
                 last_enter_smode_time: TimeVal { sec: 0, usec: 0 },
                 clear_child_tid: 0,
                 trap_cause: None,
-                interval_timer: parent_inner.interval_timer.clone(),
+                interval_timer: None,
             }),
         });
 

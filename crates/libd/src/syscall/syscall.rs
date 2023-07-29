@@ -56,8 +56,8 @@ pub fn sys_exec(path: *const i8, argv: *const i8, envp: *const i8) -> isize {
     syscall(SYS_EXECVE, [path as usize, argv as usize, envp as usize])
 }
 
-pub fn sys_waitpid(pid: usize, exit_code_ptr: *mut i32) -> isize {
-    syscall(SYS_WAIT4, [pid, exit_code_ptr as usize, 0])
+pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
+    syscall(SYS_WAIT4, [pid as usize, exit_code_ptr as usize, 0])
 }
 
 pub fn sys_exit(exit_code: isize) -> ! {

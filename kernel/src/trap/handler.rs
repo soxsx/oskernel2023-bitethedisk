@@ -172,7 +172,7 @@ pub fn user_trap_handler() -> ! {
     check_interval_timer();
 
     if !is_sigreturn {
-        exec_signal_handlers()
+        exec_signal_handlers();
     }
 
     trap_return();

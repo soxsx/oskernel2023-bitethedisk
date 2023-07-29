@@ -210,6 +210,7 @@ pub fn syscall_name(id: usize) -> &'static str {
 
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
+    // println!("[{}]", syscall_name(syscall_id));
     let ret = match syscall_id {
         SYS_CLONE => sys_do_fork(args[0], args[1], args[2], args[3], args[4]),
 
