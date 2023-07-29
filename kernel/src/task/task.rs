@@ -95,7 +95,7 @@ pub struct TaskControlBlockInner {
     pub trap_cause: Option<Scause>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IntervalTimer {
     /// 定时器创建时间
     pub creation_time: TimeVal,
@@ -502,7 +502,7 @@ impl TaskControlBlock {
                 last_enter_smode_time: TimeVal { sec: 0, usec: 0 },
                 clear_child_tid: 0,
                 trap_cause: None,
-                interval_timer: None,
+                interval_timer: parent_inner.interval_timer.clone(),
             }),
         });
 

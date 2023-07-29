@@ -266,4 +266,8 @@ impl File for Pipe {
         let loop_write = ring_buffer.available_write();
         loop_write > 0
     }
+
+    fn fstat(&self, _kstat: &mut super::Kstat) {
+        // TODO: 是否要实现
+    }
 }
