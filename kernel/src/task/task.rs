@@ -13,6 +13,7 @@ use crate::mm::{
     translated_mut, MemorySet, MmapProts, PageTableEntry, PhysPageNum, VirtAddr, VirtPageNum,
 };
 use crate::task::{current_task, current_trap_cx, current_user_token};
+use crate::timer::get_timeval;
 use crate::trap::handler::user_trap_handler;
 use crate::trap::TrapContext;
 use alloc::string::String;
@@ -21,6 +22,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use nix::time::TimeVal;
 use nix::{CloneFlags, RLimit, RobustList};
+use nix::{itimerval, CloneFlags};
 use riscv::register::scause::Scause;
 use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -79,6 +81,8 @@ pub struct TaskControlBlockInner {
 
     pub cwd: AbsolutePath,
 
+    pub interval_timer: Option<IntervalTimer>,
+
     pub utime: TimeVal,
 
     pub stime: TimeVal,
@@ -89,6 +93,22 @@ pub struct TaskControlBlockInner {
     pub clear_child_tid: usize, /* CLONE_CHILD_CLEARTID */
 
     pub trap_cause: Option<Scause>,
+}
+
+#[derive(Debug)]
+pub struct IntervalTimer {
+    /// 定时器创建时间
+    pub creation_time: TimeVal,
+    pub timer_value: itimerval,
+}
+
+impl IntervalTimer {
+    pub fn new(timer_value: itimerval) -> Self {
+        Self {
+            creation_time: get_timeval(),
+            timer_value,
+        }
+    }
 }
 
 pub type FDTable = Vec<Option<Arc<dyn File>>>;
@@ -128,6 +148,10 @@ impl TaskControlBlockInner {
 }
 
 impl TaskControlBlock {
+    pub fn token(&self) -> usize {
+        self.memory_set.read().token()
+    }
+
     /// 查找空闲文件描述符下标
     ///
     /// 从文件描述符表中 **由低到高** 查找空位，返回向量下标，没有空位则在最后插入一个空位
@@ -207,6 +231,7 @@ impl TaskControlBlock {
                 last_enter_smode_time: TimeVal { sec: 0, usec: 0 },
                 clear_child_tid: 0,
                 trap_cause: None,
+                interval_timer: None,
             }),
             sigactions: Arc::new(RwLock::new([SigAction::new(); MAX_SIGNUM as usize])),
         };
@@ -413,7 +438,6 @@ impl TaskControlBlock {
         if flags.contains(CloneFlags::THREAD) {
             let trap_cx: &mut TrapContext = trap_cx_ppn.as_mut() as &mut TrapContext;
             *trap_cx = self.inner_ref().trap_context().clone();
-
         }
         // copy fd table
         let fd_table = if flags.contains(CloneFlags::FILES) {
@@ -478,6 +502,7 @@ impl TaskControlBlock {
                 last_enter_smode_time: TimeVal { sec: 0, usec: 0 },
                 clear_child_tid: 0,
                 trap_cause: None,
+                interval_timer: None,
             }),
         });
 

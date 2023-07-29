@@ -1,14 +1,16 @@
 //! 根据 SYS_id 分发具体系统调用
 
-use crate::task::{current_task, SigAction};
+use crate::task::SigAction;
 
 use super::impls::*;
-use nix::{time::TimeSpec, RLimit};
+use nix::RLimit;
+use nix::{itimerval, time::TimeSpec};
 
 // 系统调用号
 // const SYS_RT_SIGPROMASK: usize = 135;
 // const SYS_RT_SIGACTION: usize = 134;
 // const SYS_KILL: usize = 129;
+const SYS_GETITIMER: usize = 102;
 const SYS_GETCWD: usize = 17;
 const SYS_DUP: usize = 23;
 const SYS_DUP3: usize = 24;
@@ -344,7 +346,12 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[4] as *mut usize,
         ),
         SYS_GETRUSAGE => sys_getrusage(args[0] as isize, args[1] as *mut u8),
-        SYS_SETITIMER => Ok(0),
+        SYS_SETITIMER => sys_setitimer(
+            args[0] as i32,
+            args[1] as *const itimerval,
+            args[2] as *mut itimerval,
+        ),
+        SYS_GETITIMER => sys_getitimer(args[0] as i32, args[1] as *mut itimerval),
         SYS_UMASK => Ok(0),
         SYS_FSYNC => Ok(0),
         SYS_MSYNC => Ok(0),

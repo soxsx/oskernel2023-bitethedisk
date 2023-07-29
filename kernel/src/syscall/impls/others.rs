@@ -1,7 +1,10 @@
 use nix::info::Utsname;
-use nix::{tms, TimeVal};
+use nix::{itimerval, tms, IntervalTimerType, TimeVal, ITIMER_PROF, ITIMER_REAL, ITIMER_VIRTUAL};
 
-use crate::task::hanging_current_and_run_next;
+use crate::mm::translated_mut;
+use crate::return_errno;
+use crate::task::task::IntervalTimer;
+use crate::task::{current_task, hanging_current_and_run_next};
 use crate::{
     mm::{translated_bytes_buffer, translated_ref, UserBuffer},
     task::{current_user_token, suspend_current_and_run_next},
@@ -136,4 +139,86 @@ pub fn sys_nanosleep(buf: *const u8) -> Result {
 
 pub fn sys_getrandom(buf: *const u8, buf_size: usize, flags: usize) -> Result {
     Ok(buf_size as isize)
+}
+
+pub fn sys_setitimer(which: i32, new_value: *const itimerval, old_value: *mut itimerval) -> Result {
+    const NULL: usize = 0;
+    let nvp_usize = new_value as usize;
+    let ovp_usize = old_value as usize;
+    if nvp_usize == NULL {
+        return_errno!(Errno::EFAULT);
+    }
+    if let Ok(itimer_type) = IntervalTimerType::try_from(which) {
+        let task = current_task().unwrap();
+        if ovp_usize != NULL {
+            let inner = task.inner_ref();
+            if let Some(itimer) = &inner.interval_timer {
+                let ov = translated_mut(task.token(), old_value);
+                *ov = itimer.timer_value;
+            }
+        }
+        match itimer_type {
+            IntervalTimerType::Real => {
+                // 是否删除当前 itmer/新设置的 itmer 是否只触发一次
+                let nv = translated_ref(task.token(), new_value);
+                let zero = TimeVal::zero();
+                let mut inner = task.inner_mut();
+                if nv.it_interval == zero && nv.it_value == zero {
+                    inner.interval_timer = None;
+                    return Ok(0);
+                }
+                inner.interval_timer = Some(IntervalTimer::new(*nv));
+            }
+            // TODO: 用到再写
+            IntervalTimerType::Virtual => {
+                unimplemented!("ITIMER_VIRTUAL")
+            }
+            IntervalTimerType::Profile => {
+                unimplemented!("ITIMER_PROF")
+            }
+        }
+    } else {
+        return_errno!(
+            Errno::EINVAL,
+            "which {} is not one of ITIMER_REAL, ITIMER_VIRTUAL, or ITIMER_PROF",
+            which
+        );
+    }
+    Ok(0)
+}
+
+pub fn sys_getitimer(which: i32, curr_value: *mut itimerval) -> Result {
+    const NULL: usize = 0;
+    let cv_usize = curr_value as usize;
+    if cv_usize == NULL {
+        return_errno!(Errno::EFAULT);
+    }
+    if let Ok(itimer_type) = IntervalTimerType::try_from(which) {
+        let task = current_task().unwrap();
+        match itimer_type {
+            IntervalTimerType::Real => {
+                let inner = task.inner_ref();
+                let cv = translated_mut(task.token(), curr_value);
+                *cv = if let Some(itimerval) = &inner.interval_timer {
+                    itimerval.timer_value
+                } else {
+                    itimerval::empty()
+                };
+            }
+            // TODO: 用到再写
+            IntervalTimerType::Virtual => {
+                unimplemented!("ITIMER_VIRTUAL")
+            }
+            IntervalTimerType::Profile => {
+                unimplemented!("ITIMER_PROF")
+            }
+        }
+    } else {
+        return_errno!(
+            Errno::EINVAL,
+            "which {} is not one of ITIMER_REAL, ITIMER_VIRTUAL, or ITIMER_PROF",
+            which
+        );
+    }
+    Ok(0)
 }

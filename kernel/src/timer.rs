@@ -2,7 +2,12 @@
 
 #![allow(unused)]
 
-use crate::{consts::CLOCK_FREQ, sbi::set_timer};
+use crate::{
+    consts::CLOCK_FREQ,
+    sbi::set_timer,
+    task::{current_add_signal, current_task, SigMask, TaskControlBlock},
+};
+use alloc::sync::Arc;
 use core::ops::{Add, Sub};
 use nix::TimeVal;
 use riscv::register::time;
@@ -47,4 +52,25 @@ pub fn get_timeval() -> TimeVal {
 /// 设置下次触发时钟中断的时间
 pub fn set_next_trigger() {
     set_timer((get_time() + CLOCK_FREQ / TICKS_PER_SEC) as u64);
+}
+
+pub fn check_interval_timer() {
+    let task = current_task().unwrap();
+    let mut inner = task.inner_mut();
+    if inner.interval_timer.is_none() {
+        return;
+    }
+
+    let itimer = inner.interval_timer.as_mut().unwrap();
+    let duration = get_timeval() - itimer.creation_time;
+    let itime_value = itimer.timer_value;
+    // INFO: 现在只处理 ITIMER_REAL
+    if duration > itime_value.it_value {
+        if itime_value.it_interval == TimeVal::zero() {
+            inner.interval_timer = None;
+        } else {
+            itimer.timer_value.it_value = itimer.timer_value.it_interval;
+        }
+        inner.pending_signals.set(SigMask::SIGALRM, true);
+    }
 }

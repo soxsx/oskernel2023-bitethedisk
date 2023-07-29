@@ -4,12 +4,17 @@ pub const TICKS_PER_SEC: usize = 100;
 pub const MSEC_PER_SEC: usize = 1000;
 pub const USEC_PER_SEC: usize = 1000_000;
 pub const NSEC_PER_SEC: usize = 1000_000_000;
+
 /// Linux 时间格式
 ///
 /// - `sec`：秒
 /// - `usec`：微秒
 /// - 两个值相加的结果是结构体表示的时间
-#[derive(Copy, Clone, Debug)]
+///
+/// # Note
+///
+/// [PartialOrd] 使用了默认实现，所以当前结构体的字段顺序不可改变
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TimeVal {
     pub sec: usize,  // 秒
     pub usec: usize, // 微秒
@@ -57,6 +62,11 @@ impl Sub for TimeVal {
 
 impl TimeVal {
     pub fn new() -> Self {
+        Self { sec: 0, usec: 0 }
+    }
+
+    #[inline]
+    pub fn zero() -> Self {
         Self { sec: 0, usec: 0 }
     }
 
@@ -124,5 +134,45 @@ impl TimeSpec {
     pub fn as_bytes(&self) -> &[u8] {
         let size = core::mem::size_of::<Self>();
         unsafe { core::slice::from_raw_parts(self as *const _ as usize as *const u8, size) }
+    }
+}
+
+/// https://github.com/torvalds/linux/blob/ffabf7c731765da3dbfaffa4ed58b51ae9c2e650/include/uapi/linux/time.h#L42-L44
+pub enum IntervalTimerType {
+    Real = 0,
+    Virtual = 1,
+    Profile = 2,
+}
+
+pub const ITIMER_REAL: i32 = 0;
+pub const ITIMER_VIRTUAL: i32 = 1;
+pub const ITIMER_PROF: i32 = 2;
+
+impl TryFrom<i32> for IntervalTimerType {
+    type Error = ();
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            ITIMER_REAL => Ok(IntervalTimerType::Real),
+            ITIMER_VIRTUAL => Ok(IntervalTimerType::Virtual),
+            ITIMER_PROF => Ok(IntervalTimerType::Profile),
+            _ => Err(()),
+        }
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy)]
+pub struct itimerval {
+    pub it_interval: TimeVal,
+    pub it_value: TimeVal,
+}
+
+impl itimerval {
+    pub fn empty() -> Self {
+        Self {
+            it_interval: TimeVal::zero(),
+            it_value: TimeVal::zero(),
+        }
     }
 }

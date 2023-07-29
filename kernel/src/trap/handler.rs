@@ -18,7 +18,7 @@ use crate::{
         current_add_signal, current_task, current_trap_cx, exec_signal_handlers,
         suspend_current_and_run_next, SigMask,
     },
-    timer::{get_timeval, set_next_trigger},
+    timer::{get_timeval, set_next_trigger, check_interval_timer},
 };
 use crate::{
     mm::{translated_mut, VirtAddr},
@@ -168,6 +168,8 @@ pub fn user_trap_handler() -> ! {
             stval
         ),
     }
+
+    check_interval_timer();
 
     if !is_sigreturn {
         exec_signal_handlers()
