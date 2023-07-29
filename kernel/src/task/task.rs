@@ -1,18 +1,14 @@
 use core::fmt::Debug;
-use core::mem;
 
 use super::kernel_stack::KernelStack;
 use super::{pid_alloc, PidHandle, SigMask, SigSet};
 use super::{SigAction, TaskContext, MAX_SIGNUM};
 use crate::consts::*;
-use crate::fs::{file::File, Fat32File, Stdin, Stdout};
+use crate::fs::{file::File, Stdin, Stdout};
 use crate::mm::kernel_vmm::acquire_kvmm;
-use crate::mm::memory_set::{self, AuxEntry, LoadedELF};
+use crate::mm::memory_set::{AuxEntry, LoadedELF};
 use crate::mm::MmapFlags;
-use crate::mm::{
-    translated_mut, MemorySet, MmapProts, PageTableEntry, PhysPageNum, VirtAddr, VirtPageNum,
-};
-use crate::task::{current_task, current_trap_cx, current_user_token};
+use crate::mm::{translated_mut, MemorySet, MmapProts, PhysPageNum, VirtAddr, VirtPageNum};
 use crate::timer::get_timeval;
 use crate::trap::handler::user_trap_handler;
 use crate::trap::TrapContext;
@@ -21,8 +17,7 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
 use nix::time::TimeVal;
-use nix::{CloneFlags, RLimit, RobustList};
-use nix::{itimerval, CloneFlags};
+use nix::{itimerval, CloneFlags, RLimit, RobustList};
 use riscv::register::scause::Scause;
 use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -182,7 +177,7 @@ impl TaskControlBlock {
             memory_set,
             elf_entry: entry_point,
             user_stack_top: user_sp,
-            auxs,
+            auxs: _,
         } = MemorySet::load_elf(elf.clone());
         // 从地址空间 memory_set 中查多级页表找到应用地址空间中的 Trap 上下文实际被放在哪个物理页帧
         let trap_cx_ppn = memory_set
