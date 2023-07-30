@@ -1,6 +1,7 @@
 //! 根据 SYS_id 分发具体系统调用
 
-use crate::task::SigAction;
+use crate::fs::fdset::PollFd;
+use crate::task::{SigAction, SigMask, SigSet};
 
 use super::impls::*;
 use nix::RLimit;
@@ -299,7 +300,12 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             Option::<usize>::from(args[2]),
         ),
         SYS_GETEUID => sys_geteuid(),
-        SYS_PPOLL => sys_ppoll(),
+        SYS_PPOLL => sys_ppoll(
+            args[0],
+            args[1],
+            args[2] as *const TimeSpec,
+            args[3] as *const SigMask,
+        ),
         SYS_NEWFSTATAT => sys_newfstatat(
             args[0] as isize,
             args[1] as *const u8,
@@ -316,7 +322,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_UTIMENSAT => sys_utimensat(
             args[0] as isize,
             args[1] as *const u8,
-            args[2] as *const usize,
+            args[2] as *const [TimeSpec; 2],
             args[3],
         ),
         SYS_RENAMEAT2 => sys_renameat2(
@@ -392,7 +398,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[0] as isize,
             args[1] as isize,
             args[2] as isize,
-            args[3] as *mut [isize; 2],
+            args[3] as *mut [i32; 2],
         ),
         SYS_SIGACTION => sys_sigaction(
             args[0] as isize,

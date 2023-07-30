@@ -6,7 +6,7 @@ use nix::time::TimeSpec;
 
 use crate::mm::UserBuffer;
 
-use super::{AbsolutePath, Dirent, Kstat, OpenFlags};
+use super::{AbsolutePath, Dirent, Kstat, OpenFlags, TimeInfo};
 
 pub trait File: Send + Sync {
     fn readable(&self) -> bool;
@@ -39,8 +39,12 @@ pub trait File: Send + Sync {
         panic!("{} not implement get_fstat", self.name());
     }
 
-    fn set_time(&self, _timespec: &TimeSpec) {
+    fn set_time(&self, _xtime_info: TimeInfo) {
         panic!("{} not implement set_time", self.name());
+    }
+
+    fn get_time(&self) -> TimeInfo {
+        panic!("{} not implement get_time", self.name());
     }
 
     fn dirent(&self, _dirent: &mut Dirent) -> isize {

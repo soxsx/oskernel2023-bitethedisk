@@ -3,8 +3,8 @@
 use super::super::errno::*;
 use crate::fs::fdset::FdSet;
 use crate::fs::open_flags::CreateMode;
-use crate::fs::Statfs;
 use crate::fs::{chdir, file::File, make_pipe, open, Dirent, Kstat, OpenFlags, Stdin, MNT_TABLE};
+use crate::fs::{Statfs, TimeInfo};
 use crate::mm::{
     memory_set, translated_bytes_buffer, translated_mut, translated_ref, translated_str,
     UserBuffer, VirtAddr,
@@ -12,7 +12,7 @@ use crate::mm::{
 use crate::return_errno;
 use crate::task::{current_task, current_user_token, FD_LIMIT};
 use crate::task::{suspend_current_and_run_next, TaskControlBlock};
-use crate::timer::get_timeval;
+use crate::timer::{get_time, get_timeval};
 
 use alloc::borrow::ToOwned;
 use alloc::string::ToString;
@@ -1206,16 +1206,59 @@ pub fn sys_sendfile(out_fd: i32, in_fd: i32, offset: usize, _count: usize) -> Re
     }
 }
 
+const UTIME_NOW: u64 = 0x3fffffff;
+const UTIME_OMIT: u64 = 0x3ffffffe;
+
 pub fn sys_utimensat(
     dirfd: isize,
     pathname: *const u8,
-    time: *const usize,
+    times: *const [TimeSpec; 2],
     flags: usize,
 ) -> Result {
     let token = current_user_token();
     let task = current_task().unwrap();
     let inner = task.inner_mut();
     let fd_table = task.fd_table.read();
+
+    let mut time0 = TimeSpec::empty();
+    let mut time1 = TimeSpec::empty();
+
+    let time = TimeSpec::from_ticks(get_time());
+    let mut time_info = TimeInfo::empty();
+
+    if times as usize != 0 {
+        let times = translated_ref(token, times);
+        time0 = times[0];
+        time1 = times[1];
+        {
+            info!(
+                "utimensat: {:?}, {:?}, {:x?}, {:x?}",
+                dirfd, pathname, time0, time1
+            );
+        }
+        match time0.tv_nsec {
+            UTIME_NOW => {
+                time_info.atime = time.tv_sec;
+            }
+            UTIME_OMIT => {
+                time_info.atime = 0;
+            }
+            _ => {
+                time_info.atime = time0.tv_sec;
+            }
+        }
+        match time1.tv_nsec {
+            UTIME_NOW => {
+                time_info.mtime = time.tv_sec;
+            }
+            UTIME_OMIT => {
+                time_info.mtime = 0;
+            }
+            _ => {
+                time_info.mtime = time1.tv_sec;
+            }
+        }
+    }
 
     _ = flags;
 
@@ -1225,7 +1268,7 @@ pub fn sys_utimensat(
         } else {
             let pathname = translated_str(token, pathname);
             let path = inner.get_work_path().join_string(pathname);
-            let _file = open(
+            let file = open(
                 path,
                 OpenFlags::O_RDWR | OpenFlags::O_CREATE,
                 CreateMode::empty(),
@@ -1244,13 +1287,7 @@ pub fn sys_utimensat(
                 return Ok(0);
             }
             if let Some(file) = &fd_table[dirfd as usize] {
-                let timespec_buf =
-                    translated_bytes_buffer(token, time as *const u8, size_of::<Kstat>())
-                        .pop()
-                        .unwrap();
-                let addr = timespec_buf.as_ptr() as *const _ as usize;
-                let timespec = unsafe { &*(addr as *const TimeSpec) };
-                file.set_time(timespec);
+                file.set_time(time_info);
                 Ok(0)
             } else {
                 return_errno!(Errno::UNCLEAR);

@@ -1,4 +1,6 @@
+use crate::fs::TimeInfo;
 use crate::return_errno;
+use crate::timer::{get_time, get_time_s};
 use crate::{drivers::BLOCK_DEVICE, mm::UserBuffer};
 use crate::{
     fs::{
@@ -24,6 +26,8 @@ pub struct Fat32File {
     pub inner: Mutex<Fat32FileInner>,
     path: AbsolutePath, // contain file name
     name: String,
+
+    time_info: Mutex<TimeInfo>,
 }
 
 pub struct Fat32FileInner {
@@ -53,6 +57,8 @@ impl Fat32File {
             }),
             path,
             name,
+
+            time_info: Mutex::new(TimeInfo::empty()),
         }
     }
 
@@ -473,16 +479,14 @@ impl File for Fat32File {
         base
     }
 
-    fn set_time(&self, timespec: &TimeSpec) {
-        let tv_sec = timespec.tv_sec;
-        let tv_nsec = timespec.tv_nsec;
-
-        let inner = self.inner.lock();
-        let vfile = inner.inode.clone();
-
-        // 属于是针对测试用例了, 待完善
-        if tv_sec == 1 << 32 {
-            vfile.set_time(tv_sec, tv_nsec);
+    fn set_time(&self, time_info: TimeInfo) {
+        let mut time_lock = self.time_info.lock();
+        // 根据测例改动
+        if time_info.mtime < time_lock.mtime {
+            time_lock.atime = time_info.atime;
+            time_lock.ctime = time_info.ctime;
+        } else {
+            *time_lock = time_info;
         }
     }
 
@@ -546,12 +550,18 @@ impl File for Fat32File {
         {
             st_mode = S_IFCHR;
         }
+        let time_info = self.time_info.lock();
+        let atime = time_info.atime;
+        let mtime = time_info.mtime;
+        let ctime = time_info.ctime;
         kstat.init(
             st_size as i64,
             st_blksize as i32,
             st_blocks as u64,
             st_mode as u32,
-            time as u64,
+            atime as i64,
+            mtime as i64,
+            ctime as i64,
         );
     }
 
