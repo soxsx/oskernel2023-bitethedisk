@@ -5,19 +5,13 @@
 //!
 //! [`Cpu`]: crate::task::processor::cpu::Cpu
 
-use alloc::vec::Vec;
-
 use sync_cell::SyncRefCell;
 
 static PID_ALLOCATOR: SyncRefCell<PidAllocator> = SyncRefCell::new(PidAllocator::new());
 
 /// 栈式进程标识符分配器
 struct PidAllocator {
-    /// 当前可用的最小PID
     current: usize,
-
-    /// 已回收的 PID
-    recycled: Vec<usize>,
 }
 
 /// 进程标识符
@@ -26,32 +20,22 @@ pub struct PidHandle(pub usize);
 impl PidAllocator {
     /// 返回一个初始化好的进程标识符分配器
     pub const fn new() -> Self {
-        PidAllocator {
-            current: 0,
-            recycled: vec![],
-        }
+        PidAllocator { current: 0 }
+    }
+
+    fn fetch_add(&mut self) -> usize {
+        let new_pid = self.current;
+        self.current += 1;
+        new_pid
     }
 
     /// 分配一个进程标识符
     pub fn alloc(&mut self) -> PidHandle {
-        if let Some(pid) = self.recycled.pop() {
-            PidHandle(pid)
-        } else {
-            self.current += 1;
-            PidHandle(self.current - 1)
-        }
+        PidHandle(self.fetch_add())
     }
 
     /// 释放一个进程标识符
-    pub fn dealloc(&mut self, pid: usize) {
-        assert!(pid < self.current);
-        assert!(
-            !self.recycled.iter().any(|ppid| *ppid == pid),
-            "pid {} has been deallocated!",
-            pid
-        );
-        self.recycled.push(pid);
-    }
+    pub fn dealloc(&mut self, _pid: usize) {}
 }
 
 impl Drop for PidHandle {
