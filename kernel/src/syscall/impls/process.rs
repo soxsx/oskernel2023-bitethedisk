@@ -4,7 +4,7 @@ use crate::board::CLOCK_FREQ;
 use core::usize;
 
 use crate::fs::open_flags::CreateMode;
-use crate::fs::{open, OpenFlags};
+use crate::fs::{make_pipe, open, OpenFlags};
 use crate::mm::{
     copyin, copyout, memory_set, translated_bytes_buffer, translated_mut, translated_ref,
     translated_str, UserBuffer, VirtPageNum,
@@ -641,12 +641,37 @@ pub const SOCK_STREAM: isize = 2;
 // type：指定要创建的套接字的类型，可以取值为 SOCK_STREAM 或 SOCK_DGRAM。
 // protocol：指定要使用的协议，通常为 0。
 // sv：指向一个长度为 2 的数组的指针，用于保存创建的套接字文件描述符。
-pub fn sys_socketpair(domain: isize, type_: isize, protocol: isize, sv: *mut [isize; 2]) -> Result {
-    // let token = current_user_token();
-    // let user_sv = translated_mut(token, sv);
-    // let (fd1, fd2) = socket2(); // TODO Socket
-    // user_sv[0] = fd1;
-    // user_sv[1] = fd2;
+pub fn sys_socketpair(
+    domain: isize,
+    _type: isize,
+    _protocol: isize,
+    sv: *mut [isize; 2],
+) -> Result {
+    let token = current_user_token();
+    let task = current_task().unwrap();
+    let user_sv = translated_mut(token, sv);
+
+    let (sv0, sv1) = make_pipe();
+
+    // fd_table mut borrow
+    let mut fd_table = task.fd_table.write();
+    let fd_limit = task.rlimit_nofile.read().rlim_cur;
+    let fd0 = TaskControlBlock::alloc_fd(&mut fd_table, fd_limit);
+    if fd0 >= fd_limit {
+        return_errno!(Errno::EMFILE);
+    }
+    fd_table[fd0] = Some(sv0);
+
+    let fd1 = TaskControlBlock::alloc_fd(&mut fd_table, fd_limit);
+    if fd1 >= fd_limit {
+        return_errno!(Errno::EMFILE);
+    }
+    fd_table[fd1] = Some(sv1);
+
+    drop(fd_table);
+
+    user_sv[0] = fd0 as isize;
+    user_sv[1] = fd1 as isize;
     Ok(0)
 }
 

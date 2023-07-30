@@ -237,3 +237,34 @@ pub fn sys_getitimer(which: i32, curr_value: *mut itimerval) -> Result {
     }
     Ok(0)
 }
+
+// TODO timerid 指定的计时器
+pub fn sys_timer_settime(
+    _time_id: usize,
+    _flags: isize,
+    new_value: *const itimerval,
+    old_value: *mut itimerval,
+) -> Result {
+    let task = current_task().unwrap();
+    if new_value as usize != 0 {
+        let nv = translated_ref(task.token(), new_value);
+        let zero = TimeVal::zero();
+        let mut inner = task.inner_mut();
+        if nv.it_interval == zero && nv.it_value == zero {
+            inner.interval_timer = None;
+        }
+        inner.interval_timer = Some(IntervalTimer::new(*nv));
+    }
+    if old_value as usize != 0 {
+        let inner = task.inner_ref();
+        if let Some(itimer) = &inner.interval_timer {
+            let ov = translated_mut(task.token(), old_value);
+            *ov = itimer.timer_value;
+        }
+    }
+    Ok(0)
+}
+
+pub fn sys_timer_getoverrun(_timerid: usize) -> Result {
+    Ok(0)
+}

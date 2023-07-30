@@ -123,6 +123,9 @@ pub const SYS_SENDTO: usize = 206;
 pub const SYS_RECVFROM: usize = 207;
 pub const SYS_SETSOCKOPT: usize = 208;
 
+pub const SYS_TIMER_SETTIME: usize = 110;
+pub const SYS_TIMER_GETOVERRUN: usize = 109;
+
 pub fn syscall_name(id: usize) -> &'static str {
     match id {
         SYS_GETCWD => "SYS_GETCWD",
@@ -217,7 +220,7 @@ pub fn syscall_name(id: usize) -> &'static str {
 
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
-    // println!("[{}]", syscall_name(syscall_id));
+    // println!("[{}]({})", syscall_name(syscall_id), syscall_id);
     let ret = match syscall_id {
         SYS_CLONE => sys_do_fork(args[0], args[1], args[2], args[3], args[4]),
 
@@ -412,7 +415,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[5] as u32,
         ),
         SYS_TILL => sys_tkill(args[0], args[1]),
-        SYS_SOCKET => Ok(0),
+        // SYS_SOCKET => Ok(0),
         SYS_BIND => Ok(0),
         SYS_LISTEN => Ok(0),
         SYS_ACCEPT => Ok(0),
@@ -432,8 +435,19 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[3] as *mut TimeSpec,
         ),
 
+        SYS_TIMER_SETTIME => sys_timer_settime(
+            args[0] as usize,
+            args[1] as isize,
+            args[2] as *const itimerval,
+            args[3] as *mut itimerval,
+        ),
+
+        // SYS_TIMER_GETOVERRUN => sys_timer_getoverrun(args[0] as usize),
+        SYS_TIMER_GETOVERRUN => Ok(0),
+
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
+    use crate::task::current_task;
     // println!(
     //     "[DEBUG] syscall end pid:{:?}",
     //     current_task().unwrap().pid.0,
