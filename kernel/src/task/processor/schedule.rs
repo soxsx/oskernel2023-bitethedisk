@@ -8,13 +8,13 @@ use alloc::sync::Arc;
 
 use crate::task::{
     check_hanging,
-    manager::{check_interupt, fetch_task},
+    manager::{check_futex_interupt_or_expire, fetch_task},
     switch::__switch,
     task::TaskStatus,
     unblock_task, TaskContext, TaskControlBlock,
 };
 
-use super::{acquire_processor, Processor, recycle_child_threads_res};
+use super::{acquire_processor, recycle_child_threads_res, Processor};
 
 /// 进入 idle 控制流，它运行在这个 CPU 核的启动栈上，
 /// 功能是循环调用 fetch_task 直到顺利从任务管理器中取出一个任务，随后便准备通过任务切换的方式来执行
@@ -26,7 +26,7 @@ pub fn run_tasks() {
 
         if let Some(hanging_task) = check_hanging() {
             run_task(hanging_task, processor);
-        } else if let Some(interupt_task) = check_interupt() {
+        } else if let Some(interupt_task) = check_futex_interupt_or_expire() {
             unblock_task(interupt_task);
         } else if let Some(task) = fetch_task() {
             run_task(task, processor);

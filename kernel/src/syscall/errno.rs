@@ -150,4 +150,8 @@ pub enum Errno {
     /// Math result not representable
     #[error("[ERANGE] Math result not representable")]
     ERANGE = 34,
+
+    /// Connection timed out
+    #[error("[ETIMEDOUT] Connection timed out")]
+    ETIMEDOUT = 110,
 }

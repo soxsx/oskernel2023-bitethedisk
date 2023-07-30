@@ -3,7 +3,7 @@ use alloc::sync::Arc;
 use spin::RwLock;
 
 use crate::task::TaskControlBlock;
-use crate::timer::get_time_us;
+use crate::timer::get_time_ns;
 
 pub struct FutexWaiter {
     pub task: Arc<TaskControlBlock>,
@@ -23,7 +23,7 @@ impl FutexWaiter {
     }
 
     pub fn check_expire(&self) -> bool {
-        get_time_us() >= self.expire_time
+        get_time_ns() >= self.expire_time
     }
 }
 
@@ -49,5 +49,17 @@ impl FutexQueue {
     pub fn waiters_decrease(&self) {
         let mut waiters = self.waiters.write();
         *waiters -= 1;
+    }
+    pub fn pop_expire_waiter(&mut self) -> Option<Arc<TaskControlBlock>> {
+        let mut chain_lock = self.chain.write();
+        let mut expire_task = None;
+        for index in 0..chain_lock.len() {
+            if (chain_lock[index].check_expire()) {
+                expire_task = Some(chain_lock.remove(index).unwrap().task);
+                self.waiters_decrease();
+                break;
+            }
+        }
+        expire_task
     }
 }

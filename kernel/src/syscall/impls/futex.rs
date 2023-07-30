@@ -9,13 +9,14 @@ use spin::{Lazy, RwLock};
 
 use crate::mm::translated_ref;
 
+use crate::return_errno;
 use crate::syscall::errno;
 use crate::syscall::futex::{FutexQueue, FutexWaiter};
 use crate::task::{
     block_current_and_run_next, current_task, current_user_token, suspend_current_and_run_next,
     unblock_task, TaskControlBlock,
 };
-use crate::timer::{get_time_us, USEC_PER_SEC};
+use crate::timer::{get_time_ns, get_time_us};
 
 use super::Result;
 
@@ -68,7 +69,7 @@ pub fn sys_futex(
             // val2 is a timespec
             let time = if val2 as usize != 0 {
                 let ts = translated_ref(token, val2 as *const TimeSpec);
-                ts.into_ticks()
+                ts.into_ns()
             } else {
                 usize::MAX // inf
             };
@@ -126,7 +127,8 @@ pub fn futex_wait(uaddr: usize, val: u32, timeout: usize) -> Result {
 
     // futex_wait_queue_me
     let task = current_task().unwrap();
-    fq_lock.push_back(FutexWaiter::new(task.clone(), get_time_us(), timeout));
+    let timeout_time = get_time_ns().saturating_add(timeout);
+    fq_lock.push_back(FutexWaiter::new(task.clone(), get_time_ns(), timeout));
     drop(fq_lock);
     drop(fq_writer);
     drop(task);
@@ -134,11 +136,14 @@ pub fn futex_wait(uaddr: usize, val: u32, timeout: usize) -> Result {
 
     block_current_and_run_next();
 
+    if (get_time_ns() >= timeout_time) {
+        return_errno!(Errno::ETIMEDOUT);
+    }
     let task = current_task().unwrap();
     let inner = task.inner_ref();
     // woke by signal
     if !inner.pending_signals.difference(inner.sigmask).is_empty() {
-        return Err(Errno::EINTR);
+        return_errno!(Errno::EINTR);
     }
 
     Ok(0)

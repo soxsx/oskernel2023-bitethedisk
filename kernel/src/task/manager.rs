@@ -1,3 +1,4 @@
+use crate::syscall::impls::FUTEX_QUEUE;
 use crate::timer::{get_time_ms, get_time_ns};
 use alloc::vec::Vec;
 use sync_cell::SyncRefCell;
@@ -117,7 +118,7 @@ impl TaskManager {
             Some(self.hq.pop().unwrap().inner)
         }
     }
-    pub fn check_interupt(&mut self) -> Option<Arc<TaskControlBlock>> {
+    pub fn check_futex_interupt_or_expire(&mut self) -> Option<Arc<TaskControlBlock>> {
         for tcb in self.waiting_queue.iter() {
             let lock = tcb.inner_ref();
             // {
@@ -130,6 +131,12 @@ impl TaskManager {
             // }
             if !lock.pending_signals.difference(lock.sigmask).is_empty() {
                 return Some(tcb.clone());
+            }
+        }
+        let mut global_futex_que = FUTEX_QUEUE.write();
+        for (_, futex_queue) in global_futex_que.iter_mut() {
+            if let Some(task) = futex_queue.pop_expire_waiter() {
+                return Some(task.clone());
             }
         }
         None
@@ -157,8 +164,8 @@ pub fn check_hanging() -> Option<Arc<TaskControlBlock>> {
     TASK_MANAGER.borrow_mut().check_hanging()
 }
 
-pub fn check_interupt() -> Option<Arc<TaskControlBlock>> {
-    TASK_MANAGER.borrow_mut().check_interupt()
+pub fn check_futex_interupt_or_expire() -> Option<Arc<TaskControlBlock>> {
+    TASK_MANAGER.borrow_mut().check_futex_interupt_or_expire()
 }
 
 pub fn unblock_task(task: Arc<TaskControlBlock>) {

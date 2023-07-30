@@ -18,7 +18,7 @@ use crate::{
         current_add_signal, current_task, current_trap_cx, exec_signal_handlers,
         suspend_current_and_run_next, SigMask,
     },
-    timer::{get_timeval, set_next_trigger, check_interval_timer},
+    timer::{check_interval_timer, get_timeval, set_next_trigger},
 };
 use crate::{
     mm::{translated_mut, VirtAddr},
