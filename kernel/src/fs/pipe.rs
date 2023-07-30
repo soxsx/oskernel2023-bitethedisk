@@ -1,3 +1,5 @@
+use core::cell::RefCell;
+
 use super::file::File;
 use crate::mm::UserBuffer;
 use alloc::{
@@ -269,5 +271,11 @@ impl File for Pipe {
 
     fn fstat(&self, _kstat: &mut super::Kstat) {
         // TODO: 是否要实现
+    }
+
+    fn set_cloexec(&self) {
+        let pipe = unsafe { (self as *const _ as *mut Self).as_mut().unwrap() };
+        pipe.readable = false;
+        pipe.writable = false;
     }
 }
