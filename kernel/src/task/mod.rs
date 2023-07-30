@@ -61,58 +61,50 @@ pub fn suspend_current_and_run_next() -> isize {
 }
 
 pub fn exit_current_and_run_next(exit_code: i32) {
-    // 获取访问权限，修改进程状态
     let task = take_current_task().unwrap();
-    remove_from_pid2task(task.pid());
 
-    if task.is_child_thread() {
-        take_cancelled_chiled_thread(task);
-        let mut _unused = TaskContext::empty();
-        schedule(&mut _unused as *mut _);
-        unreachable!()
-    }
+    let pid = task.pid();
+    let token = task.token();
+    let is_child_thread = task.is_child_thread();
+
+    remove_from_pid2task(pid);
 
     let mut inner = task.inner_mut();
-    // memory_set mut borrow
-    let mut ms_mut = task.memory_set.write();
     let clear_child_tid = inner.clear_child_tid;
     if clear_child_tid != 0 {
-        *translated_mut(ms_mut.token(), clear_child_tid as *mut usize) = 0;
-        futex_wake(clear_child_tid, 1);
+        *translated_mut(token, clear_child_tid as *mut usize) = 0;
+        futex_wake(clear_child_tid, 1).unwrap();
     }
-
-    inner.task_status = TaskStatus::Zombie; // 后续才能被父进程在 waitpid 系统调用的时候回收
-                                            // 记录退出码，后续父进程在 waitpid 的时候可以收集
+    inner.task_status = TaskStatus::Zombie;
     inner.exit_code = exit_code;
-    // do not move to its parent but under initproc
 
-    if task.pid() == 0 {
+    if pid == 0 {
         sync_all();
         panic!("initproc return!");
     }
 
+    assert!(if is_child_thread {
+        inner.children.is_empty()
+    } else {
+        true
+    });
+
     // 将这个进程的子进程转移到 initproc 进程的子进程中
-    let mut initproc_inner = INITPROC.inner_mut();
+    // 若当前进程为子线程则不会执行下面的 for
     for child in inner.children.iter() {
+        let mut initproc_inner = INITPROC.inner_mut();
         child.inner_mut().parent = Some(Arc::downgrade(&INITPROC));
         initproc_inner.children.push(child.clone()); // 引用计数 -1
     }
-    drop(initproc_inner);
-
-    // 引用计数 +1
-    // 对于当前进程占用的资源进行早期回收
-    inner.children.clear();
-    // TODO thread
-    if (task.pid.0 == task.tgid) {
-        ms_mut.recycle_data_pages();
-    }
-    drop(ms_mut);
     drop(inner);
-    drop(task);
 
-    // 使用全0的上下文填充换出上下文，开启新一轮进程调度
-    let mut _unused = TaskContext::empty();
-    schedule(&mut _unused as *mut _);
+    if is_child_thread {
+        take_cancelled_chiled_thread(task);
+        schedule(&mut TaskContext::empty() as *mut _);
+        unreachable!()
+    }
+    drop(task);
+    schedule(&mut TaskContext::empty() as *mut _);
 }
 
 pub fn hanging_current_and_run_next(sleep_time: usize, duration: usize) {
