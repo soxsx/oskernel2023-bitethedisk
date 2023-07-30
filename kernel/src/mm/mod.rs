@@ -1,5 +1,5 @@
 pub mod address; // 地址数据类型
-mod frame_allocator; // 物理页帧管理器
+pub mod frame_allocator; // 物理页帧管理器
 pub mod kernel_vmm;
 pub mod memory_set; // 地址空间模块
 pub mod page_table; // 页表

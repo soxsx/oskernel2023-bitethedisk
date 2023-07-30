@@ -33,7 +33,7 @@ pub struct PageTable {
     root_ppn: PhysPageNum,
     /// 以 FrameTracker 的形式保存了页表所有的节点（包括根节点）所在的物理页帧
     /// 用以延长物理页帧的生命周期
-    frames: Vec<FrameTracker>,
+    pub frames: Vec<FrameTracker>,
 }
 
 impl PageTable {
@@ -68,7 +68,7 @@ impl PageTable {
     }
 
     /// 根据vpn查找对应页表项，如果在查找过程中发现无效页表则新建页表
-    fn find_pte_create(&mut self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
+    pub fn find_pte_create(&mut self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
         let idxs = vpn.indexes();
         // 当前节点的物理页号，最开始指向多级页表的根节点
         let mut ppn = self.root_ppn;

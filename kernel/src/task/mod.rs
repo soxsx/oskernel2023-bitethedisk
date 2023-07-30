@@ -1,5 +1,5 @@
 pub mod context; // 任务上下文模块
-mod initproc;
+pub mod initproc;
 mod kernel_stack;
 mod manager; // 进程管理器
 mod pid; // 进程标识符模块
@@ -32,7 +32,7 @@ use crate::{
 };
 
 use self::{
-    initproc::INITPROC,
+    initproc::{BUSYBOX, INITPROC},
     manager::block_task,
     processor::{acquire_processor, schedule, take_cancelled_chiled_thread},
 };

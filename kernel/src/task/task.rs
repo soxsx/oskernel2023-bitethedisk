@@ -1,5 +1,6 @@
 use core::fmt::Debug;
 
+use super::initproc::{BUSYBOX, ONCE_BB_AUX, ONCE_BB_ENTRY};
 use super::kernel_stack::KernelStack;
 use super::{pid_alloc, PidHandle, SigMask, SigSet};
 use super::{SigAction, TaskContext, MAX_SIGNUM};
@@ -177,15 +178,20 @@ impl TaskControlBlock {
         self.inner.read()
     }
 
-    /// 通过 elf 数据新建一个任务控制块，目前仅用于内核中手动创建唯一一个初始进程 initproc
+    /// 通过 elf 数据新建一个任务控制块
     pub fn new(elf: Arc<dyn File>) -> Self {
         // 解析传入的 ELF 格式数据构造应用的地址空间 memory_set 并获得其他信息
         let LoadedELF {
             memory_set,
             elf_entry: entry_point,
             user_stack_top: user_sp,
-            auxs: _,
+            auxs,
         } = MemorySet::load_elf(elf.clone());
+
+        if elf.name() == "busybox0" {
+            save_busybox_related(entry_point, auxs);
+        }
+
         // 从地址空间 memory_set 中查多级页表找到应用地址空间中的 Trap 上下文实际被放在哪个物理页帧
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT).into())
@@ -684,6 +690,14 @@ impl TaskControlBlock {
             ms_mut.brk = shrinked_addr;
         }
         return ms_mut.brk;
+    }
+}
+
+pub fn save_busybox_related(elf_entry: usize, auxs: Vec<AuxEntry>) {
+    info!("save entry: {}", elf_entry);
+    unsafe {
+        ONCE_BB_ENTRY = elf_entry;
+        ONCE_BB_AUX = auxs;
     }
 }
 

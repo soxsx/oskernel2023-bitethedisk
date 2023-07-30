@@ -11,7 +11,7 @@ use crate::task::{
     manager::{check_futex_interupt_or_expire, fetch_task},
     switch::__switch,
     task::TaskStatus,
-    unblock_task, TaskContext, TaskControlBlock,
+    unblock_task, TaskContext, TaskControlBlock, initproc::BUSYBOX,
 };
 
 use super::{acquire_processor, recycle_child_threads_res, Processor};
@@ -19,6 +19,8 @@ use super::{acquire_processor, recycle_child_threads_res, Processor};
 /// 进入 idle 控制流，它运行在这个 CPU 核的启动栈上，
 /// 功能是循环调用 fetch_task 直到顺利从任务管理器中取出一个任务，随后便准备通过任务切换的方式来执行
 pub fn run_tasks() {
+    let bb = BUSYBOX.read();
+    drop(bb);
     loop {
         let processor = acquire_processor();
 

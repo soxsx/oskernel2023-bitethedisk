@@ -1,5 +1,7 @@
 #![allow(unused)]
 
+use core::sync::atomic::Ordering;
+
 use super::vm_area::{VmArea, VmAreaType};
 use super::{MapPermission, MapType};
 use crate::consts::{
@@ -13,6 +15,7 @@ use crate::mm::{
     alloc_frame, FrameTracker, MmapManager, PageTable, PageTableEntry, PhysAddr, PhysPageNum,
     VirtAddr, VirtPageNum,
 };
+use crate::task::initproc::{BUSYBOX, ONCE_BB_ENTRY};
 use crate::task::task::trap_context_position;
 use alloc::collections::BTreeMap;
 use alloc::{sync::Arc, vec::Vec};
@@ -100,19 +103,19 @@ pub fn new() -> Vec<AuxEntry> {
 pub struct MemorySet {
     pub page_table: PageTable,
 
-    vm_areas: Vec<VmArea>,
+    pub vm_areas: Vec<VmArea>,
 
     pub mmap_manager: MmapManager,
-    heap_areas: VmArea,
+    pub heap_areas: VmArea,
 
-    shm_areas: Vec<VmArea>,
+    pub shm_areas: Vec<VmArea>,
 
-    shm_trackers: BTreeMap<VirtAddr, SharedMemoryTracker>,
+    pub shm_trackers: BTreeMap<VirtAddr, SharedMemoryTracker>,
     pub shm_top: usize,
 
     pub brk_start: usize,
     pub brk: usize,
-    user_stack_areas: VmArea,
+    pub user_stack_areas: VmArea,
     pub user_stack_start: usize,
     pub user_stack_end: usize,
 }
@@ -210,7 +213,7 @@ impl MemorySet {
     /// 在当前地址空间插入一段已被分配空间的连续逻辑段
     ///
     /// 主要用于 COW 创建时子进程空间连续逻辑段的插入，其要求指定物理页号
-    fn push_mapped_area(&mut self, map_area: VmArea) {
+    pub fn push_mapped_area(&mut self, map_area: VmArea) {
         self.vm_areas.push(map_area);
     }
 
@@ -237,7 +240,7 @@ impl MemorySet {
         );
     }
 
-    fn map_trap_context(&mut self) {
+    pub fn map_trap_context(&mut self) {
         self.insert(
             VmArea::new(
                 TRAP_CONTEXT.into(),
@@ -332,6 +335,10 @@ impl MemorySet {
     /// +--------------------+
     /// ```
     pub fn load_elf(elf_file: Arc<dyn File>) -> LoadedELF {
+        const BB: &str = "BUSYBOX";
+        if elf_file.name() == BB {
+            return hijack_busybox_load_elf();
+        }
         let mut memory_set = Self::new_bare();
         let mut auxs = Vec::new();
 
@@ -891,6 +898,20 @@ impl MemorySet {
         } else {
             panic!("No more memory!");
         }
+    }
+}
+
+fn hijack_busybox_load_elf() -> LoadedELF {
+    let bb = BUSYBOX.read();
+    let mut memory_set = bb.memory_set();
+    let user_stack_top = memory_set.user_stack_end;
+    let elf_entry = bb.elf_entry_point();
+    let auxs = bb.aux();
+    LoadedELF {
+        memory_set,
+        user_stack_top,
+        elf_entry,
+        auxs,
     }
 }
 
