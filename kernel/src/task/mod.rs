@@ -107,6 +107,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
             .unwrap();
         parent_inner.children.remove(idx);
         drop(parent_inner);
+        drop(parent);
         drop(inner);
         take_cancelled_chiled_thread(task);
         schedule(&mut TaskContext::empty() as *mut _);
