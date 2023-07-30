@@ -124,7 +124,8 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
     // }
     if argv as usize != 0 {
         loop {
-            let arg_str_ptr = *translated_ref(token, argv);
+            let mut arg_str_ptr = 0;
+            copyin(token, &mut arg_str_ptr, argv);
             if arg_str_ptr == 0 {
                 // 读到下一参数地址为0表示参数结束
                 break;
@@ -137,7 +138,8 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
     let mut envs_vec: Vec<String> = Vec::new();
     if envp as usize != 0 {
         loop {
-            let env_str_ptr = *translated_ref(token, envp);
+            let mut env_str_ptr = 0;
+            copyin(token, &mut env_str_ptr, envp);
             if env_str_ptr == 0 {
                 // 读到下一参数地址为0表示参数结束
                 break;

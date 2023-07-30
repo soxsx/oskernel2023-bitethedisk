@@ -7,7 +7,7 @@ use crate::consts::*;
 use crate::fs::{file::File, Stdin, Stdout};
 use crate::mm::kernel_vmm::acquire_kvmm;
 use crate::mm::memory_set::{AuxEntry, LoadedELF};
-use crate::mm::MmapFlags;
+use crate::mm::{copyin, copyout, MmapFlags};
 use crate::mm::{translated_mut, MemorySet, MmapProts, PhysPageNum, VirtAddr, VirtPageNum};
 use crate::timer::get_timeval;
 use crate::trap::handler::user_trap_handler;
@@ -279,10 +279,10 @@ impl TaskControlBlock {
                 let mut ptr = user_sp;
                 for c in envs[idx].as_bytes() {
                     // 将参数写入到用户栈
-                    *translated_mut(token, ptr as *mut u8) = *c;
+                    copyout(token, unsafe { (ptr as *mut u8).as_mut().unwrap() }, c);
                     ptr += 1;
                 } // 写入字符串结束标记
-                *translated_mut(token, ptr as *mut u8) = 0;
+                copyout(token, unsafe { (ptr as *mut u8).as_mut().unwrap() }, &0);
                 user_sp
             })
             .collect();
@@ -295,56 +295,74 @@ impl TaskControlBlock {
                 let mut ptr = user_sp;
                 for c in args[idx].as_bytes() {
                     // 将参数写入到用户栈
-                    *translated_mut(token, ptr as *mut u8) = *c;
+                    copyout(token, unsafe { (ptr as *mut u8).as_mut().unwrap() }, c);
                     ptr += 1;
                 } // 写入字符串结束标记
-                *translated_mut(token, ptr as *mut u8) = 0;
+                copyout(token, unsafe { (ptr as *mut u8).as_mut().unwrap() }, &0);
                 user_sp
             })
             .collect();
 
         // padding 0 表示结束 AT_NULL aux entry
         user_sp -= core::mem::size_of::<usize>();
-        *translated_mut(token, user_sp as *mut usize) = 0;
+        copyout(
+            token,
+            unsafe { (user_sp as *mut usize).as_mut().unwrap() },
+            &0,
+        );
 
         // 分配 auxs 空间，并写入数据
         for i in 0..auxv.len() {
             user_sp -= core::mem::size_of::<AuxEntry>();
-            *translated_mut(token, user_sp as *mut AuxEntry) = auxv[i];
+            copyout(
+                token,
+                unsafe { (user_sp as *mut AuxEntry).as_mut().unwrap() },
+                &auxv[i],
+            );
         }
         // auxv.push(AuxEntry(AT_EXECFN,args_ptrv[0] ));
 
         // padding 0 表示结束
         user_sp -= core::mem::size_of::<usize>();
-        *translated_mut(token, user_sp as *mut usize) = 0;
+        copyout(token, unsafe { (user_sp as *mut usize).as_mut().unwrap() }, &0);
 
         // envs_ptr
         user_sp -= (envs.len()) * core::mem::size_of::<usize>();
         let envs_ptr_base = user_sp; // 参数字符串指针起始地址
         for i in 0..envs.len() {
-            *translated_mut(
+            copyout(
                 token,
-                (envs_ptr_base + i * core::mem::size_of::<usize>()) as *mut usize,
-            ) = envs_ptrv[i];
+                unsafe {
+                    ((envs_ptr_base + i * core::mem::size_of::<usize>()) as *mut usize)
+                        .as_mut()
+                        .unwrap()
+                },
+                &envs_ptrv[i],
+            );
         }
 
         // padding 0 表示结束
         user_sp -= core::mem::size_of::<usize>();
-        *translated_mut(token, user_sp as *mut usize) = 0;
+        copyout(token, unsafe { (user_sp as *mut usize).as_mut().unwrap() }, &0);
 
         // args_ptr
         user_sp -= (args.len()) * core::mem::size_of::<usize>();
         let args_ptr_base = user_sp; // 参数字符串指针起始地址
         for i in 0..args.len() {
-            *translated_mut(
+            copyout(
                 token,
-                (args_ptr_base + i * core::mem::size_of::<usize>()) as *mut usize,
-            ) = args_ptrv[i];
+                unsafe { ((args_ptr_base + i * core::mem::size_of::<usize>()) as *mut usize).as_mut().unwrap() },
+            &args_ptrv[i]);
         }
 
         // argc
         user_sp -= core::mem::size_of::<usize>();
-        *translated_mut(token, user_sp as *mut usize) = args.len();
+        let len = args.len();
+        copyout(
+            token,
+            unsafe { (user_sp as *mut usize).as_mut().unwrap() },
+            &len,
+        );
 
         (user_sp, args_ptr_base as usize, envs_ptr_base as usize)
     }
