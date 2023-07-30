@@ -20,7 +20,7 @@ impl ChildrenThreadMonitor {
     pub fn take(&mut self, child_thread: Arc<TaskControlBlock>) {
         self.cancelled_child_threads.push(child_thread);
     }
-    pub fn release_all(&mut self){
+    pub fn release_all(&mut self) {
         self.cancelled_child_threads.clear();
     }
 }
@@ -120,6 +120,14 @@ impl TaskManager {
     pub fn check_interupt(&mut self) -> Option<Arc<TaskControlBlock>> {
         for tcb in self.waiting_queue.iter() {
             let lock = tcb.inner_ref();
+            {
+                info!(
+                    "[check_interupt] pid: {:?}, pending_signals: {:?}, sigmask: {:?}",
+                    tcb.pid(),
+                    lock.pending_signals,
+                    lock.sigmask
+                );
+            }
             if !lock.pending_signals.difference(lock.sigmask).is_empty() {
                 return Some(tcb.clone());
             }
