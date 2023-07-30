@@ -20,6 +20,12 @@ pub struct TimeVal {
     pub usec: usize, // 微秒
 }
 
+impl core::fmt::Display for TimeVal {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}s {}us", self.sec, self.usec)
+    }
+}
+
 impl Add for TimeVal {
     type Output = Self;
 
