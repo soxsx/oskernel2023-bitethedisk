@@ -303,7 +303,7 @@ pub fn generate_short_name(long_name: &str) -> String {
     }
     short_name.push('~');
     short_name.push('1');
-    while (short_name.len() < 8) {
+    while short_name.len() < 8 {
         short_name.push(0x20 as char);
     }
     let ext_len = extension.len();
