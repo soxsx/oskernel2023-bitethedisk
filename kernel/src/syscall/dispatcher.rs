@@ -392,7 +392,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[0] as isize,
             args[1] as isize,
             args[2] as isize,
-            args[3] as *mut [isize; 2],
+            args[3] as *mut [i32; 2],
         ),
         SYS_SIGACTION => sys_sigaction(
             args[0] as isize,

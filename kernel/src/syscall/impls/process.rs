@@ -641,12 +641,7 @@ pub const SOCK_STREAM: isize = 2;
 // type：指定要创建的套接字的类型，可以取值为 SOCK_STREAM 或 SOCK_DGRAM。
 // protocol：指定要使用的协议，通常为 0。
 // sv：指向一个长度为 2 的数组的指针，用于保存创建的套接字文件描述符。
-pub fn sys_socketpair(
-    domain: isize,
-    _type: isize,
-    _protocol: isize,
-    sv: *mut [isize; 2],
-) -> Result {
+pub fn sys_socketpair(domain: isize, _type: isize, _protocol: isize, sv: *mut [i32; 2]) -> Result {
     let token = current_user_token();
     let task = current_task().unwrap();
     let user_sv = translated_mut(token, sv);
@@ -670,8 +665,8 @@ pub fn sys_socketpair(
 
     drop(fd_table);
 
-    user_sv[0] = fd0 as isize;
-    user_sv[1] = fd1 as isize;
+    user_sv[0] = fd0 as i32;
+    user_sv[1] = fd1 as i32;
     Ok(0)
 }
 

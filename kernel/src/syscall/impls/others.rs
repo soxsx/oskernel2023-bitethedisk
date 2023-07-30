@@ -7,7 +7,7 @@ use crate::mm::translated_mut;
 use crate::return_errno;
 use crate::task::task::IntervalTimer;
 use crate::task::{current_task, hanging_current_and_run_next};
-use crate::timer::get_time_ns;
+use crate::timer::{get_time, get_time_ns};
 use crate::{
     mm::{translated_bytes_buffer, translated_ref, UserBuffer},
     task::{current_user_token, suspend_current_and_run_next},
@@ -149,7 +149,21 @@ pub fn sys_clock_nanosleep(
     req: *const TimeSpec,
     _remain: *mut TimeSpec,
 ) -> Result {
-    sys_nanosleep(req as *const u8)
+    if (flags == 1) {
+        // TIMER_ABSTIME
+        let current_time = get_time_ns();
+        let token = current_user_token();
+        let res = translated_ref(token, req as *const TimeSpec);
+        let abs_time = res.into_ns();
+        // assert!(abs_time >= current_time);
+        if abs_time > current_time {
+            let interval = abs_time - current_time;
+            hanging_current_and_run_next(current_time, interval);
+        }
+        Ok(0)
+    } else {
+        sys_nanosleep(req as *const u8)
+    }
 }
 
 pub fn sys_getrandom(buf: *const u8, buf_size: usize, flags: usize) -> Result {
