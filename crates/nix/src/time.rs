@@ -141,6 +141,19 @@ impl TimeSpec {
         let size = core::mem::size_of::<Self>();
         unsafe { core::slice::from_raw_parts(self as *const _ as usize as *const u8, size) }
     }
+
+    pub fn into_ns(&self) -> usize {
+        self.tv_sec as usize * NSEC_PER_SEC + self.tv_nsec as usize
+    }
+
+    pub fn from_ticks(tiks: usize) -> Self {
+        let tv_sec = tiks / TICKS_PER_SEC;
+        let tv_nsec = (tiks % TICKS_PER_SEC) * NSEC_PER_SEC / TICKS_PER_SEC;
+        Self {
+            tv_sec: tv_sec as u64,
+            tv_nsec: tv_nsec as u64,
+        }
+    }
 }
 
 /// https://github.com/torvalds/linux/blob/ffabf7c731765da3dbfaffa4ed58b51ae9c2e650/include/uapi/linux/time.h#L42-L44
