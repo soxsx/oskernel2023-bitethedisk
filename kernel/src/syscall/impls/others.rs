@@ -1,10 +1,13 @@
 use nix::info::Utsname;
-use nix::{itimerval, tms, IntervalTimerType, TimeVal, ITIMER_PROF, ITIMER_REAL, ITIMER_VIRTUAL};
+use nix::{
+    itimerval, tms, IntervalTimerType, TimeSpec, TimeVal, ITIMER_PROF, ITIMER_REAL, ITIMER_VIRTUAL,
+};
 
 use crate::mm::translated_mut;
 use crate::return_errno;
 use crate::task::task::IntervalTimer;
 use crate::task::{current_task, hanging_current_and_run_next};
+use crate::timer::get_time_ns;
 use crate::{
     mm::{translated_bytes_buffer, translated_ref, UserBuffer},
     task::{current_user_token, suspend_current_and_run_next},
@@ -128,13 +131,26 @@ pub fn sys_gettimeofday(buf: *const u8) -> Result {
 /// const struct timespec *req, struct timespec *rem;
 /// int ret = syscall(SYS_nanosleep, req, rem);
 /// ```
+// TODO未按要求实现
 pub fn sys_nanosleep(buf: *const u8) -> Result {
-    let tic = get_time_ms();
+    // let tic = get_time_ms();
+    let tic = get_time_ns();
     let token = current_user_token();
-    let len_timeval = translated_ref(token, buf as *const TimeVal);
-    let len = len_timeval.sec * 1000 + len_timeval.usec / 1000;
+    let res = translated_ref(token, buf as *const TimeSpec);
+    let len = res.into_ns();
     hanging_current_and_run_next(tic, len);
     Ok(0)
+}
+// int clock_nanosleep(clockid_t clockid, int flags,
+//      const struct timespec *request,
+//      struct timespec *_Nullable remain);
+pub fn sys_clock_nanosleep(
+    clock_id: usize,
+    flags: isize,
+    req: *const TimeSpec,
+    _remain: *mut TimeSpec,
+) -> Result {
+    sys_nanosleep(req as *const u8)
 }
 
 pub fn sys_getrandom(buf: *const u8, buf_size: usize, flags: usize) -> Result {

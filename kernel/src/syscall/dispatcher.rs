@@ -91,12 +91,16 @@ const SYS_PRLIMIT64: usize = 261;
 const SYS_RENAMEAT2: usize = 276;
 const SYS_GETRANDOM: usize = 278;
 const SYS_MEMBARRIER: usize = 283;
+
+const SYS_SCHED_SETAFFINITY: usize = 122;
 const SYS_SCHED_GETAFFINITY: usize = 123;
 const SYS_SCHEED_GETSCHEDULER: usize = 120;
 const SYS_SCHED_GETPARAM: usize = 121;
 const SYS_SCHED_SETSCHEDULER: usize = 119;
 const SYS_CLOCK_GETRES: usize = 114;
 const SYS_SOCKETPAIR: usize = 199;
+
+const SYS_CLOCK_NANOSLEEP: usize = 115;
 
 // const SYS_TKILL: usize = 130;
 const SYS_SIGACTION: usize = 134;
@@ -203,6 +207,9 @@ pub fn syscall_name(id: usize) -> &'static str {
         SYS_GETRANDOM => "SYS_GETRANDOM",
         SYS_FUTEX => "SYS_FUTEX",
         SYS_TKILL => "SYS_TKILL",
+
+        SYS_SCHED_SETAFFINITY => "SYS_SCHED_SETAFFINITY",
+        SYS_CLOCK_NANOSLEEP => "SYS_CLOCK_NANOSLEEP",
 
         _ => "unknown",
     }
@@ -414,6 +421,16 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
         SYS_SENDTO => Ok(0),
         SYS_RECVFROM => Ok(0),
         SYS_SETSOCKOPT => Ok(0),
+
+        SYS_SCHED_SETAFFINITY => {
+            sys_sched_setaffinity(args[0] as usize, args[1] as usize, args[2] as *const u8)
+        }
+        SYS_CLOCK_NANOSLEEP => sys_clock_nanosleep(
+            args[0] as usize,
+            args[1] as isize,
+            args[2] as *const TimeSpec,
+            args[3] as *mut TimeSpec,
+        ),
 
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };

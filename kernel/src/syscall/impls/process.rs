@@ -111,6 +111,10 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
     let token = current_user_token();
     // 读取到用户空间的应用程序名称（路径）
     let mut path = translated_str(token, path);
+
+    // {
+    //     info!("exec path:{}", path);
+    // }
     // println!("path:{:?},argv:{:?},envp:{:?}",path,argv,envp);
     let mut args_vec: Vec<String> = Vec::new();
     if path.ends_with(".sh") {
@@ -508,6 +512,15 @@ pub fn sys_sched_getaffinity(pid: usize, cpusetsize: usize, mask: *mut u8) -> Re
     let mut cpuset = CpuMask::new();
     cpuset.set(0);
     userbuf.write(cpuset.as_bytes());
+    Ok(0)
+}
+
+pub fn sys_sched_setaffinity(pid: usize, cpusetsize: usize, mask: *const u8) -> Result {
+    let token = current_user_token();
+    let mut userbuf = UserBuffer::wrap(translated_bytes_buffer(token, mask, cpusetsize));
+
+    let mut cpuset = CpuMask::new();
+    userbuf.read(cpuset.as_bytes_mut());
     Ok(0)
 }
 
