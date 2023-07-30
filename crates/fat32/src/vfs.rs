@@ -543,16 +543,16 @@ impl VirFile {
         let first_cluster = self.first_cluster() as u32;
         let old_size = self.file_size();
         let cluster_size = self.fs.read().cluster_size();
-	if(new_size==0){
-	    self.clear_content();
-	    return;
-	}
+        if (new_size == 0) {
+            self.clear_content();
+            return;
+        }
         // 对于 目录文件 old_size = 0
         if new_size >= old_size {
             self.incerase_size(new_size);
         } else {
             let left = (new_size + cluster_size - 1) / cluster_size;
-	    // TODO check right
+            // TODO check right
             let right = (old_size + cluster_size - 1) / cluster_size;
             // let right = old_size / cluster_size + 1;
             let mut release_clsuter_vec = Vec::<u32>::new();

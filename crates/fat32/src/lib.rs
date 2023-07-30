@@ -298,11 +298,14 @@ pub fn generate_short_name(long_name: &str) -> String {
     let mut short_name = String::new();
     // 取长文件名的前6个字符加上"~1"形成短文件名, 扩展名不变,
     // 目前不支持重名, 即"~2""~3"; 支持重名与在目录下查找文件的方法绑定
-    for i in 0..6 {
+    for i in 0..6.min(name.len()) {
         short_name.push((name[i] as char).to_ascii_uppercase())
     }
     short_name.push('~');
     short_name.push('1');
+    while (short_name.len() < 8) {
+        short_name.push(0x20 as char);
+    }
     let ext_len = extension.len();
     for i in 0..3 {
         // fill extension
