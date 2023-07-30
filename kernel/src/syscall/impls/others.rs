@@ -149,6 +149,7 @@ pub fn sys_clock_nanosleep(
     req: *const TimeSpec,
     _remain: *mut TimeSpec,
 ) -> Result {
+    warn!("clock_nanosleep flags: {}", flags);
     sys_nanosleep(req as *const u8)
 }
 

@@ -1,6 +1,8 @@
 //! 进程相关系统调用
 
 use crate::board::CLOCK_FREQ;
+use crate::fs::fdset::PollFd;
+use core::task::Poll;
 use core::usize;
 
 use crate::fs::open_flags::CreateMode;
@@ -312,7 +314,27 @@ pub fn sys_geteuid() -> Result {
     Ok(0)
 }
 
-pub fn sys_ppoll() -> Result {
+pub fn sys_ppoll(
+    fds: usize,
+    nfds: usize,
+    tmo_p: *const TimeSpec,
+    sigmask: *const SigMask,
+) -> Result {
+    // let token = current_user_token();
+    // if sigmask as usize != 0 {
+    //     let mut mask = translated_ref(token, sigmask as *const SigMask).clone();
+    //     mask.sub(Signal::SIGKILL as u32); // sub 函数保证即使不存在 SIGKILL 也无影响
+    //     mask.sub(Signal::SIGSTOP as u32);
+    //     mask.sub(Signal::SIGILL as u32);
+    //     mask.sub(Signal::SIGSEGV as u32);
+    //     current_task().unwrap().inner_mut().sigmask |= mask;
+    // }
+    // let mut poll_fd = Vec::<PollFd>::with_capacity(nfds);
+    // for i in 0..nfds {
+    //     let fd = translated_ref(token, unsafe { (fds as *mut PollFd).add(i) }).clone();
+    //     poll_fd.push(fd);
+    // }
+
     Ok(1)
 }
 
@@ -641,12 +663,7 @@ pub const SOCK_STREAM: isize = 2;
 // type：指定要创建的套接字的类型，可以取值为 SOCK_STREAM 或 SOCK_DGRAM。
 // protocol：指定要使用的协议，通常为 0。
 // sv：指向一个长度为 2 的数组的指针，用于保存创建的套接字文件描述符。
-pub fn sys_socketpair(
-    domain: isize,
-    _type: isize,
-    _protocol: isize,
-    sv: *mut [isize; 2],
-) -> Result {
+pub fn sys_socketpair(domain: isize, _type: isize, _protocol: isize, sv: *mut [i32; 2]) -> Result {
     let token = current_user_token();
     let task = current_task().unwrap();
     let user_sv = translated_mut(token, sv);
@@ -670,8 +687,8 @@ pub fn sys_socketpair(
 
     drop(fd_table);
 
-    user_sv[0] = fd0 as isize;
-    user_sv[1] = fd1 as isize;
+    user_sv[0] = fd0 as i32;
+    user_sv[1] = fd1 as i32;
     Ok(0)
 }
 
