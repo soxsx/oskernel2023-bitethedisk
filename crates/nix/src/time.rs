@@ -1,6 +1,7 @@
 use core::ops::{Add, Sub};
 
-pub const TICKS_PER_SEC: usize = 100;
+pub const QEMU_CLOCK_FREQ: usize = 12500000;
+
 pub const MSEC_PER_SEC: usize = 1000;
 pub const USEC_PER_SEC: usize = 1000_000;
 pub const NSEC_PER_SEC: usize = 1000_000_000;
@@ -86,13 +87,13 @@ impl TimeVal {
     }
 
     pub fn from_ticks(tiks: usize) -> Self {
-        let sec = tiks / TICKS_PER_SEC;
-        let usec = (tiks % TICKS_PER_SEC) * USEC_PER_SEC / TICKS_PER_SEC;
+        let sec = tiks / QEMU_CLOCK_FREQ;
+        let usec = (tiks % QEMU_CLOCK_FREQ) * USEC_PER_SEC / QEMU_CLOCK_FREQ;
         Self { sec, usec }
     }
 
     pub fn into_ticks(&self) -> usize {
-        self.sec * TICKS_PER_SEC + self.usec / USEC_PER_SEC * TICKS_PER_SEC
+        self.sec * QEMU_CLOCK_FREQ + self.usec / USEC_PER_SEC * QEMU_CLOCK_FREQ
     }
 }
 
@@ -121,12 +122,13 @@ impl tms {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TimeSpec {
     pub tv_sec: u64,  // 秒
     pub tv_nsec: u64, // 纳秒
 }
 impl TimeSpec {
-    pub fn new() -> Self {
+    pub fn empty() -> Self {
         Self {
             tv_sec: 0,
             tv_nsec: 0,
@@ -134,7 +136,8 @@ impl TimeSpec {
     }
 
     pub fn into_ticks(&self) -> usize {
-        self.tv_sec as usize * TICKS_PER_SEC + self.tv_nsec as usize / NSEC_PER_SEC * TICKS_PER_SEC
+        self.tv_sec as usize * QEMU_CLOCK_FREQ
+            + self.tv_nsec as usize / NSEC_PER_SEC * QEMU_CLOCK_FREQ
     }
 
     pub fn as_bytes(&self) -> &[u8] {
@@ -147,8 +150,8 @@ impl TimeSpec {
     }
 
     pub fn from_ticks(tiks: usize) -> Self {
-        let tv_sec = tiks / TICKS_PER_SEC;
-        let tv_nsec = (tiks % TICKS_PER_SEC) * NSEC_PER_SEC / TICKS_PER_SEC;
+        let tv_sec = tiks / QEMU_CLOCK_FREQ;
+        let tv_nsec = (tiks % QEMU_CLOCK_FREQ) * NSEC_PER_SEC / QEMU_CLOCK_FREQ;
         Self {
             tv_sec: tv_sec as u64,
             tv_nsec: tv_nsec as u64,
