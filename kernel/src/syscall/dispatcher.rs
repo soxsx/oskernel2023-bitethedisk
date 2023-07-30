@@ -99,6 +99,7 @@ const SYS_SCHED_GETPARAM: usize = 121;
 const SYS_SCHED_SETSCHEDULER: usize = 119;
 const SYS_CLOCK_GETRES: usize = 114;
 const SYS_SOCKETPAIR: usize = 199;
+const SYS_MADVISE: usize = 233;
 
 const SYS_CLOCK_NANOSLEEP: usize = 115;
 
@@ -415,15 +416,23 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[5] as u32,
         ),
         SYS_TILL => sys_tkill(args[0], args[1]),
-        // SYS_SOCKET => Ok(0),
+        SYS_SOCKET => Ok(1),
         SYS_BIND => Ok(0),
         SYS_LISTEN => Ok(0),
         SYS_ACCEPT => Ok(0),
         SYS_CONNECT => Ok(0),
         SYS_GETSOCKNAME => Ok(0),
-        SYS_SENDTO => Ok(0),
-        SYS_RECVFROM => Ok(0),
+        SYS_SENDTO => Ok(1),
+        SYS_RECVFROM => sys_recvfrom(
+            args[0],
+            args[1] as *mut u8,
+            args[2],
+            args[3],
+            args[4],
+            args[5],
+        ),
         SYS_SETSOCKOPT => Ok(0),
+        SYS_MADVISE => Ok(0),
 
         SYS_SCHED_SETAFFINITY => {
             sys_sched_setaffinity(args[0] as usize, args[1] as usize, args[2] as *const u8)

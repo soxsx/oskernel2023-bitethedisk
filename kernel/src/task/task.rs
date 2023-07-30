@@ -567,7 +567,8 @@ impl TaskControlBlock {
         let mmap_end = memory_set.mmap_manager.mmap_top;
         let heap_start = VirtAddr::from(memory_set.brk_start);
         let heap_end = VirtAddr::from(memory_set.brk_start + USER_HEAP_SIZE);
-
+        let stack_start = VirtAddr::from(memory_set.user_stack_start);
+        let stack_end = VirtAddr::from(memory_set.user_stack_end);
         // fork
         let vpn: VirtPageNum = va.floor();
         let pte = memory_set.translate(vpn);
@@ -584,8 +585,10 @@ impl TaskControlBlock {
 
         // println!("check_lazy: va: {:#x}", va.0);
 
-        // lazy map / lazy alloc heap
-        if va >= heap_start && va <= heap_end {
+        // lazy map / lazy alloc heap / lazy alloc stack
+        if va >= stack_start && va < stack_end {
+            memory_set.lazy_alloc_stack(va.floor())
+        } else if va >= heap_start && va <= heap_end {
             memory_set.lazy_alloc_heap(va.floor())
         } else if va >= mmap_start && va < mmap_end {
             memory_set.lazy_mmap(vpn);

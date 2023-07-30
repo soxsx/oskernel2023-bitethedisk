@@ -69,9 +69,9 @@ impl Dir for VirFile {
             if path[i] == "" || path[i] == "." {
                 continue;
             }
-	    if !current.is_dir(){
-		return Err(DirError::NotDir);
-	    }
+            if !current.is_dir() {
+                return Err(DirError::NotDir);
+            }
             if let Some(vfile) = current.find_by_name(path[i]) {
                 current = vfile;
             } else {
