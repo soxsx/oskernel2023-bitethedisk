@@ -70,3 +70,63 @@ impl FdSet {
         unsafe { core::slice::from_raw_parts_mut(self as *mut _ as usize as *mut u8, size) }
     }
 }
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct PollFd {
+    /// File descriptor
+    pub fd: u32,
+    /// Requested events
+    pub events: PollEvent,
+    /// Returned events
+    pub revents: PollEvent,
+}
+
+bitflags! {
+    /// Event types that can be polled for.
+    ///
+    /// These bits may be set in `events`(see `ppoll()`) to indicate the interesting event types;
+    ///
+    /// they will appear in `revents` to indicate the status of the file descriptor.
+    #[derive(Debug, Clone, Copy)]
+    pub struct PollEvent:u16 {
+    /// There is data to read.
+    const POLLIN = 0x001;
+    /// There is urgent data to read.
+    const POLLPRI = 0x002;
+    /// Writing now will not block.
+    const POLLOUT = 0x004;
+
+    // These values are defined in XPG4.2.
+    /// Normal data may be read.
+    const POLLRDNORM = 0x040;
+    /// Priority data may be read.
+    const POLLRDBAND = 0x080;
+    /// Writing now will not block.
+    const POLLWRNORM = 0x100;
+    /// Priority data may be written.
+    const POLLWRBAND = 0x200;
+
+
+    /// Linux Extension.
+    const POLLMSG = 0x400;
+    /// Linux Extension.
+    const POLLREMOVE = 0x1000;
+    /// Linux Extension.
+    const POLLRDHUP = 0x2000;
+
+    /* Event types always implicitly polled for.
+    These bits need not be set in `events',
+    but they will appear in `revents' to indicate the status of the file descriptor.*/
+
+    /// Implicitly polled for only.
+    /// Error condition.
+    const POLLERR = 0x008;
+    /// Implicitly polled for only.
+    /// Hung up.
+    const POLLHUP = 0x010;
+    /// Implicitly polled for only.
+    /// Invalid polling request.
+    const POLLNVAL = 0x020;
+    }
+}
