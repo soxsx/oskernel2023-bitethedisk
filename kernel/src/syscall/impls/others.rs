@@ -133,7 +133,6 @@ pub fn sys_gettimeofday(buf: *const u8) -> Result {
 /// ```
 // TODO未按要求实现
 pub fn sys_nanosleep(buf: *const u8) -> Result {
-    // let tic = get_time_ms();
     let tic = get_time_ns();
     let token = current_user_token();
     let res = translated_ref(token, buf as *const TimeSpec);

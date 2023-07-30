@@ -1,4 +1,4 @@
-use crate::timer::get_time_ms;
+use crate::timer::{get_time_ms, get_time_ns};
 use alloc::vec::Vec;
 use sync_cell::SyncRefCell;
 
@@ -36,7 +36,7 @@ pub struct TaskManager {
 }
 
 pub struct HangingTask {
-    /// ms
+    /// ns
     wake_up_time: usize,
     inner: Arc<TaskControlBlock>,
 }
@@ -106,7 +106,7 @@ impl TaskManager {
 
     fn check_sleep(&self, hanging_task: &HangingTask) -> bool {
         let limit = hanging_task.wake_up_time();
-        let current_time = get_time_ms();
+        let current_time = get_time_ns();
         current_time >= limit
     }
 
