@@ -3,12 +3,9 @@ pub struct RLimit {
     pub rlim_cur: usize, /* Soft limit */
     pub rlim_max: usize, /* Hard limit (ceiling for rlim_cur) */
 }
-impl RLimit{
-    pub fn new(rlim_cur:usize,rlim_max:usize)-> Self{
-	Self{
-	    rlim_cur,
-	    rlim_max,
-	}
+impl RLimit {
+    pub fn new(rlim_cur: usize, rlim_max: usize) -> Self {
+        Self { rlim_cur, rlim_max }
     }
 }
 
