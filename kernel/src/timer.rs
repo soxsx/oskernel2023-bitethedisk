@@ -12,7 +12,7 @@ use core::ops::{Add, Sub};
 use nix::TimeVal;
 use riscv::register::time;
 
-pub const TICKS_PER_SEC: usize = 100;
+pub const TIME_SLICE: usize = 100;
 pub const MSEC_PER_SEC: usize = 1000;
 pub const USEC_PER_SEC: usize = 1000_000;
 pub const NSEC_PER_SEC: usize = 1000_000_000;
@@ -51,7 +51,7 @@ pub fn get_timeval() -> TimeVal {
 
 /// 设置下次触发时钟中断的时间
 pub fn set_next_trigger() {
-    set_timer((get_time() + CLOCK_FREQ / TICKS_PER_SEC) as u64);
+    set_timer((get_time() + CLOCK_FREQ / TIME_SLICE) as u64);
 }
 
 pub fn check_interval_timer() {
