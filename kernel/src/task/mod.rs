@@ -96,13 +96,24 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         child.inner_mut().parent = Some(Arc::downgrade(&INITPROC));
         initproc_inner.children.push(child.clone()); // 引用计数 -1
     }
-    drop(inner);
 
     if is_child_thread {
+        let parent = inner.parent.as_ref().unwrap().upgrade().unwrap();
+        let mut parent_inner = parent.inner_mut();
+        let children_iter = parent_inner.children.iter();
+        let (idx, _) = children_iter
+            .enumerate()
+            .find(|(_, t)| t.pid() == pid)
+            .unwrap();
+        parent_inner.children.remove(idx);
+        drop(parent_inner);
+        drop(inner);
         take_cancelled_chiled_thread(task);
         schedule(&mut TaskContext::empty() as *mut _);
         unreachable!()
     }
+
+    drop(inner);
     drop(task);
     schedule(&mut TaskContext::empty() as *mut _);
 }
