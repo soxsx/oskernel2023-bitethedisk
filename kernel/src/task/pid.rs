@@ -33,15 +33,6 @@ impl PidAllocator {
     pub fn alloc(&mut self) -> PidHandle {
         PidHandle(self.fetch_add())
     }
-
-    /// 释放一个进程标识符
-    pub fn dealloc(&mut self, _pid: usize) {}
-}
-
-impl Drop for PidHandle {
-    fn drop(&mut self) {
-        PID_ALLOCATOR.borrow_mut().dealloc(self.0);
-    }
 }
 
 /// 从全局栈式进程标识符分配器 `PID_ALLOCATOR` 分配一个进程标识符
