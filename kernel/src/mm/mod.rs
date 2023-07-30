@@ -104,7 +104,10 @@ pub fn translated_str(token: usize, ptr: *const u8) -> String {
 /// 根据 多级页表token (satp) 和 虚拟地址 获取大小为 T 的空间的不可变切片
 pub fn translated_ref<T>(token: usize, ptr: *const T) -> &'static T {
     let offset = ptr as usize % PAGE_SIZE;
-    assert!(PAGE_SIZE - offset >= size_of::<T>(), "cross-page access from translated_ref");
+    assert!(
+        PAGE_SIZE - offset >= size_of::<T>(),
+        "cross-page access from translated_ref"
+    );
     let page_table = PageTable::from_token(token);
     page_table
         .translate_va(VirtAddr::from(ptr as usize))
@@ -115,7 +118,10 @@ pub fn translated_ref<T>(token: usize, ptr: *const T) -> &'static T {
 /// 根据 多级页表token (satp) 和 虚拟地址 获取大小为 T 的空间的切片
 pub fn translated_mut<T>(token: usize, ptr: *mut T) -> &'static mut T {
     let offset = ptr as usize % PAGE_SIZE;
-    assert!(PAGE_SIZE - offset >= size_of::<T>(), "cross-page access from translated_mut");
+    assert!(
+        PAGE_SIZE - offset >= size_of::<T>(),
+        "cross-page access from translated_mut"
+    );
     let page_table = PageTable::from_token(token);
     let va = ptr as usize;
     page_table

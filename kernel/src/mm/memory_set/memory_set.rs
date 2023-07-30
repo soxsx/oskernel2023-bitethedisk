@@ -112,6 +112,9 @@ pub struct MemorySet {
 
     pub brk_start: usize,
     pub brk: usize,
+    user_stack_areas: VmArea,
+    pub user_stack_start: usize,
+    pub user_stack_end: usize,
 }
 
 impl MemorySet {
@@ -135,6 +138,17 @@ impl MemorySet {
             shm_top: SHM_BASE,
             brk_start: 0,
             brk: 0,
+            user_stack_areas: VmArea::new(
+                0.into(),
+                0.into(),
+                MapType::Framed,
+                VmAreaType::UserStack,
+                MapPermission::R | MapPermission::W | MapPermission::U,
+                None,
+                0,
+            ),
+            user_stack_start: 0,
+            user_stack_end: 0,
         }
     }
 
@@ -505,18 +519,17 @@ impl MemorySet {
         // do not add this line, too wide
         // auxs.push(AuxEntry(AT_NULL, 0));
 
-        // 分配用户栈
-        memory_set.insert(
-            VmArea::new(
-                user_stack_bottom.into(),
-                user_stack_top.into(),
-                MapType::Framed,
-                VmAreaType::UserStack,
-                MapPermission::R | MapPermission::W | MapPermission::U,
-                Some(Arc::clone(&elf_file)),
-                VirtAddr(user_stack_bottom).page_offset(),
-            ),
+        // 分配用户栈，懒加载
+        memory_set.user_stack_start = user_stack_bottom;
+        memory_set.user_stack_end = user_stack_top;
+        memory_set.user_stack_areas = VmArea::new(
+            user_stack_bottom.into(),
+            user_stack_top.into(),
+            MapType::Framed,
+            VmAreaType::UserStack,
+            MapPermission::R | MapPermission::W | MapPermission::U,
             None,
+            0,
         );
 
         // 分配用户堆，懒加载
@@ -619,6 +632,31 @@ impl MemorySet {
                 }
             }
         }
+        new_memory_set.user_stack_areas = VmArea::from_another(&user_space.user_stack_areas);
+        for vpn in user_space.user_stack_areas.vpn_range.into_iter() {
+            // change the map permission of both pagetable
+            // get the former flags and ppn
+
+            // 只对已经map过的进行cow
+            if let Some(pte) = parent_page_table.translate(vpn) {
+                let pte_flags = pte.flags() & !PTEFlags::W;
+                let src_ppn = pte.ppn();
+                // frame_add_ref(src_ppn);
+                // change the flags of the src_pte
+                parent_page_table.set_flags(vpn, pte_flags);
+                parent_page_table.set_cow(vpn);
+                // map the cow page table to src_ppn
+                new_memory_set.page_table.map(vpn, src_ppn, pte_flags);
+                new_memory_set.page_table.set_cow(vpn);
+
+                new_memory_set
+                    .user_stack_areas
+                    .frame_map
+                    .insert(vpn, FrameTracker::from_ppn(src_ppn));
+            }
+        }
+        new_memory_set.user_stack_start = user_space.user_stack_start;
+        new_memory_set.user_stack_end = user_space.user_stack_end;
 
         new_memory_set.heap_areas = VmArea::from_another(&user_space.heap_areas);
         for vpn in user_space.heap_areas.vpn_range.into_iter() {
@@ -708,13 +746,20 @@ impl MemorySet {
             self.mmap_manager.frame_trackers.insert(vpn, frame);
             return 0;
         }
-        let head_vpn = self.heap_areas.vpn_range.get_start();
-        let tail_vpn = self.heap_areas.vpn_range.get_end();
-        if vpn < tail_vpn && vpn >= head_vpn {
+        if vpn >= self.user_stack_areas.vpn_range.get_start()
+            && vpn < self.user_stack_areas.vpn_range.get_end()
+        {
+            self.user_stack_areas.frame_map.insert(vpn, frame);
+            return 0;
+        }
+
+        if vpn >= self.heap_areas.vpn_range.get_start() && vpn < self.heap_areas.vpn_range.get_end()
+        {
             self.heap_areas.frame_map.insert(vpn, frame);
             return 0;
         }
-        0
+        panic!("cow of of range");
+        -1
     }
 
     fn remap_cow(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, former_ppn: PhysPageNum) {
@@ -723,6 +768,12 @@ impl MemorySet {
 
     pub fn lazy_alloc_heap(&mut self, vpn: VirtPageNum) -> isize {
         self.heap_areas.lazy_map_vpn(vpn, &mut self.page_table);
+
+        0
+    }
+    pub fn lazy_alloc_stack(&mut self, vpn: VirtPageNum) -> isize {
+        self.user_stack_areas
+            .lazy_map_vpn(vpn, &mut self.page_table);
 
         0
     }
@@ -765,11 +816,18 @@ impl MemorySet {
             return true;
         }
 
+        // TODO boundary check
         if self.heap_areas.vpn_range.get_start() <= start_va.floor()
             && end_va.ceil() <= self.heap_areas.vpn_range.get_end()
         {
             return true;
         }
+        if self.user_stack_areas.vpn_range.get_start() <= start_va.floor()
+            && end_va.ceil() <= self.user_stack_areas.vpn_range.get_end()
+        {
+            return true;
+        }
+
         return false;
     }
 
