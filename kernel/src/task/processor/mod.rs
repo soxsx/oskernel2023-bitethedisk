@@ -14,7 +14,9 @@ pub use schedule::*;
 
 use crate::{mm::memory_set, trap::TrapContext};
 
-use super::{switch::__switch, task::TaskControlBlock, TaskContext};
+use super::{
+    manager::CHILDREN_THREAD_MONITOR, switch::__switch, task::TaskControlBlock, TaskContext,
+};
 
 /// 从全局变量 `PROCESSOR` 中取出当前正在执行的任务
 pub fn take_current_task() -> Option<Arc<TaskControlBlock>> {
@@ -47,4 +49,13 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     drop(processor);
 
     unsafe { __switch(switched_task_cx_ptr, idle_task_cx_ptr) }
+}
+
+/// 回收已 cancel 的子线程资源
+pub fn recycle_child_threads_res() {
+    CHILDREN_THREAD_MONITOR.lock().release_all();
+}
+
+pub fn take_cancelled_chiled_thread(child_thread: Arc<TaskControlBlock>) {
+    CHILDREN_THREAD_MONITOR.lock().take(child_thread);
 }

@@ -44,6 +44,13 @@ pub struct TaskControlBlock {
     inner: RwLock<TaskControlBlockInner>,
 }
 
+impl TaskControlBlock {
+    #[inline]
+    pub fn is_child_thread(&self) -> bool {
+        self.pid.0 != self.tgid
+    }
+}
+
 impl Debug for TaskControlBlock {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("TaskControlBlock")
@@ -324,7 +331,11 @@ impl TaskControlBlock {
 
         // padding 0 表示结束
         user_sp -= core::mem::size_of::<usize>();
-        copyout(token, unsafe { (user_sp as *mut usize).as_mut().unwrap() }, &0);
+        copyout(
+            token,
+            unsafe { (user_sp as *mut usize).as_mut().unwrap() },
+            &0,
+        );
 
         // envs_ptr
         user_sp -= (envs.len()) * core::mem::size_of::<usize>();
@@ -343,7 +354,11 @@ impl TaskControlBlock {
 
         // padding 0 表示结束
         user_sp -= core::mem::size_of::<usize>();
-        copyout(token, unsafe { (user_sp as *mut usize).as_mut().unwrap() }, &0);
+        copyout(
+            token,
+            unsafe { (user_sp as *mut usize).as_mut().unwrap() },
+            &0,
+        );
 
         // args_ptr
         user_sp -= (args.len()) * core::mem::size_of::<usize>();
@@ -351,8 +366,13 @@ impl TaskControlBlock {
         for i in 0..args.len() {
             copyout(
                 token,
-                unsafe { ((args_ptr_base + i * core::mem::size_of::<usize>()) as *mut usize).as_mut().unwrap() },
-            &args_ptrv[i]);
+                unsafe {
+                    ((args_ptr_base + i * core::mem::size_of::<usize>()) as *mut usize)
+                        .as_mut()
+                        .unwrap()
+                },
+                &args_ptrv[i],
+            );
         }
 
         // argc

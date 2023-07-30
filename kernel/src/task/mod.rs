@@ -34,7 +34,7 @@ use crate::{
 use self::{
     initproc::INITPROC,
     manager::block_task,
-    processor::{acquire_processor, schedule},
+    processor::{acquire_processor, schedule, take_cancelled_chiled_thread},
 };
 
 /// 将当前任务置为就绪态，放回到进程管理器中的就绪队列中，重新选择一个进程运行
@@ -64,6 +64,14 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // 获取访问权限，修改进程状态
     let task = take_current_task().unwrap();
     remove_from_pid2task(task.pid());
+
+    if task.is_child_thread() {
+        take_cancelled_chiled_thread(task);
+        let mut _unused = TaskContext::empty();
+        schedule(&mut _unused as *mut _);
+        unreachable!()
+    }
+
     let mut inner = task.inner_mut();
     // memory_set mut borrow
     let mut ms_mut = task.memory_set.write();

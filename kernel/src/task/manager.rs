@@ -1,10 +1,32 @@
 use crate::timer::get_time_ms;
+use alloc::vec::Vec;
 use sync_cell::SyncRefCell;
 
 use super::TaskControlBlock;
 use alloc::collections::{BTreeMap, BinaryHeap, VecDeque};
 use alloc::sync::Arc;
 use spin::Mutex;
+
+pub struct ChildrenThreadMonitor {
+    cancelled_child_threads: Vec<Arc<TaskControlBlock>>,
+}
+
+impl ChildrenThreadMonitor {
+    pub const fn new() -> Self {
+        ChildrenThreadMonitor {
+            cancelled_child_threads: Vec::new(),
+        }
+    }
+    pub fn take(&mut self, child_thread: Arc<TaskControlBlock>) {
+        self.cancelled_child_threads.push(child_thread);
+    }
+    pub fn release_all(&mut self){
+        self.cancelled_child_threads.clear();
+    }
+}
+
+pub static CHILDREN_THREAD_MONITOR: Mutex<ChildrenThreadMonitor> =
+    Mutex::new(ChildrenThreadMonitor::new());
 
 /// FIFO 任务管理器
 pub struct TaskManager {
