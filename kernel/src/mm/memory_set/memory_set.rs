@@ -3,8 +3,8 @@
 use super::vm_area::{VmArea, VmAreaType};
 use super::{MapPermission, MapType};
 use crate::consts::{
-    CLOCK_FREQ, PAGE_SIZE, SIGNAL_TRAMPOLINE, TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE,
-    USER_STACK_SIZE,
+    CLOCK_FREQ, PAGE_SIZE, SIGNAL_TRAMPOLINE, THREAD_LIMIT, TRAMPOLINE, TRAP_CONTEXT,
+    USER_HEAP_SIZE, USER_STACK_SIZE,
 };
 use crate::fs::file::File;
 use crate::mm::frame_allocator::enquire_refcount;
@@ -252,7 +252,7 @@ impl MemorySet {
         );
     }
     pub fn map_thread_trap_context(&mut self, tid: usize) {
-        assert!(tid > 0 && tid < 9999);
+        assert!(tid > 0 && tid < THREAD_LIMIT);
         let start_va = trap_context_position(tid);
         let end_va = VirtAddr::from(start_va.0 + PAGE_SIZE);
         self.insert(
@@ -479,7 +479,7 @@ impl MemorySet {
             auxs.push(AuxEntry(AT_BASE, 0));
         }
         // TODO thread
-        let user_stack_top = TRAP_CONTEXT - 9999 * PAGE_SIZE;
+        let user_stack_top = TRAP_CONTEXT - THREAD_LIMIT * PAGE_SIZE;
         let user_stack_bottom = user_stack_top - USER_STACK_SIZE;
 
         // auxs.push(AuxEntry(AT_BASE, 0));

@@ -18,4 +18,6 @@ pub const SIGNAL_TRAMPOLINE: usize = TRAMPOLINE - PAGE_SIZE;
 /// Trap 上下文在应用地址空间中的位置
 pub const TRAP_CONTEXT: usize = SIGNAL_TRAMPOLINE - PAGE_SIZE;
 
+pub const THREAD_LIMIT: usize = 4096 * 2;
+
 pub use crate::board::{CLOCK_FREQ, MMIO};
