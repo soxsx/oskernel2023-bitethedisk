@@ -101,6 +101,7 @@ pub fn init() {
     );
 
     open("/dev/tty".into(), OpenFlags::O_CREATE, CreateMode::empty());
+    open("/lat_sig".into(), OpenFlags::O_CREATE, CreateMode::empty());
 
     println!("===+ Files Loaded +===");
     list_apps(AbsolutePath::from_string("/".to_string()));
