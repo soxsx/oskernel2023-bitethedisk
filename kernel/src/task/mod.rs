@@ -97,14 +97,6 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         initproc_inner.children.push(child.clone()); // 引用计数 -1
     }
 
-    let mut memory_set = task.memory_set.write();
-    memory_set.recycle_data_pages();
-    drop(memory_set);
-    let mut fd_table = task.fd_table.write();
-    fd_table.clear();
-    drop(fd_table);
-    inner.interval_timer.take();
-
     if is_child_thread {
         let parent = inner.parent.as_ref().unwrap().upgrade().unwrap();
         let mut parent_inner = parent.inner_mut();

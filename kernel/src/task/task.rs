@@ -185,11 +185,11 @@ impl TaskControlBlock {
             memory_set,
             elf_entry: entry_point,
             user_stack_top: user_sp,
-            auxs,
+            mut auxs,
         } = MemorySet::load_elf(elf.clone());
 
         if elf.name() == "busybox0" {
-            save_busybox_related(entry_point, auxs);
+            save_busybox_related(entry_point, auxs.clone());
         }
 
         // 从地址空间 memory_set 中查多级页表找到应用地址空间中的 Trap 上下文实际被放在哪个物理页帧
@@ -694,7 +694,6 @@ impl TaskControlBlock {
 }
 
 pub fn save_busybox_related(elf_entry: usize, auxs: Vec<AuxEntry>) {
-    info!("save entry: {}", elf_entry);
     unsafe {
         ONCE_BB_ENTRY = elf_entry;
         ONCE_BB_AUX = auxs;
