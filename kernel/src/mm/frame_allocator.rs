@@ -50,7 +50,6 @@ trait FrameAllocator {
     fn usage(&self) -> (usize, usize, usize, usize);
 }
 
-/// 栈式物理页帧管理器
 pub struct StackFrameAllocator {
     /// 管理内存的起始物理页号
     base_num: usize,
@@ -168,6 +167,7 @@ pub fn init() {
         PhysAddr::from(PHYS_END).floor(),
     );
 }
+
 pub fn alloc_frame() -> Option<FrameTracker> {
     let ppn = FRAME_ALLOCATOR.lock().alloc()?;
     Some(FrameTracker::new(ppn))

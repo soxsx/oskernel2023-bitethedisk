@@ -1,5 +1,3 @@
-//! 系统时间相关模块
-
 #![allow(unused)]
 
 use crate::{
@@ -49,7 +47,7 @@ pub fn get_timeval() -> TimeVal {
     TimeVal { sec, usec }
 }
 
-/// 设置下次触发时钟中断的时间
+/// Setup the next time interrupt time.
 pub fn set_next_trigger() {
     set_timer((get_time() + CLOCK_FREQ / TIME_SLICE) as u64);
 }

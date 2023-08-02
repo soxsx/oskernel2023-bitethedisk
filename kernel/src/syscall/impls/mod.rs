@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 pub mod fs;
 pub mod futex;
 pub mod mm;

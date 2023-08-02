@@ -26,25 +26,25 @@ use crate::{
 use alloc::sync::Arc;
 use fat32::sync_all;
 
-/// 将当前任务置为就绪态, 放回到进程管理器中的就绪队列中, 重新选择一个进程运行
+use self::{
+    initproc::INITPROC,
+    manager::block_task,
+    processor::{acquire_processor, schedule, take_cancelled_chiled_thread},
+};
+
 pub fn suspend_current_and_run_next() -> isize {
     exec_signal_handlers();
 
-    // 取出当前正在执行的任务
     let task = take_current_task().unwrap();
     let mut inner = task.inner_mut();
     let task_cx_ptr = &mut inner.task_cx as *mut TaskContext;
 
-    // 修改其进程控制块内的状态为就绪状态
     inner.task_status = TaskStatus::Ready;
     drop(inner);
 
-    // 将进程加入进程管理器中的就绪队列
     add_task(task);
 
-    // 开启一轮新的调度
     schedule(task_cx_ptr);
-
     0
 }
 
@@ -221,8 +221,6 @@ pub fn exec_signal_handlers() {
                 copyout(token, sig_context_ptr, &sig_context);
 
                 trap_cx.x[1] = SIGNAL_TRAMPOLINE; // ra = user_sigreturn
-
-                // println!("prepare to jump to `handler`:{:x?}, original sepc = {:#x?},current sp:{:x?}",handler, trap_cx.sepc, trap_cx.x[2]);
 
                 trap_cx.sepc = handler; // sepc = handler
                 return;

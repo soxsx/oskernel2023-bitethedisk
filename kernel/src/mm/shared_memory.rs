@@ -15,7 +15,6 @@ pub struct SharedMemoryArea {
     shmid_ds: SharedMemoryIdentifierDs,
     buffer: Vec<u8>,
 }
-
 pub struct SharedMemoryTracker {
     pub key: usize,
 }

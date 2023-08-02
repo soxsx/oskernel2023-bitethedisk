@@ -5,8 +5,8 @@
 # <https://github.com/riscv-non-isa/riscv-asm-manual/blob/master/riscv-asm.md#-attribute>
 .attribute arch, "rv64gc"
 
-.equ NCPU, 2            # number of CPU
-.equ KSTACK_SIZ, 0x10000 # size of stack size per hart
+.equ NCPU, 2             # Number of CPU
+.equ KSTACK_SIZ, 0x10000 # Stack size per hart
 
 .section .text.entry
 .globl _entry

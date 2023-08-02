@@ -23,9 +23,19 @@ use alloc::string::ToString;
 use nix::{CreateMode, OpenFlags};
 use path::AbsolutePath;
 use sync_cell::SyncRefCell;
+pub use path::*;
+
+use crate::fs::open_flags::CreateMode;
+
+pub use crate::fs::fat32::{chdir, open, Fat32File};
+pub use dirent::Dirent;
+pub use mount::MNT_TABLE;
+pub use open_flags::OpenFlags;
+pub use pipe::{make_pipe, Pipe};
+pub use stat::*;
+pub use stdio::{Stdin, Stdout};
 
 pub fn init() {
-    // 预创建文件/文件夹
     open(
         "/proc".into(),
         OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE,

@@ -1,5 +1,3 @@
-//! 控制台输出输出
-
 use core::fmt::{self, Write};
 
 use crate::sbi::console_putchar;

@@ -1,4 +1,5 @@
-//! Processor provides a series of abstractions
+pub mod processor;
+pub mod schedule;
 
 use alloc::sync::Arc;
 use core::cell::RefMut;
@@ -10,12 +11,20 @@ use crate::trap::TrapContext;
 pub use processor::*;
 pub use schedule::*;
 
+use crate::trap::TrapContext;
+
+use super::{
+    manager::CHILDREN_THREAD_MONITOR, switch::__switch, task::TaskControlBlock, TaskContext,
+};
+
 pub fn take_current_task() -> Option<Arc<TaskControlBlock>> {
     acquire_processor().take_current()
 }
-pub fn current_task() -> Arc<TaskControlBlock> {
-    acquire_processor().current().clone().unwrap()
+
+pub fn current_task() -> Option<Arc<TaskControlBlock>> {
+    acquire_processor().current().clone()
 }
+
 pub fn current_user_token() -> usize {
     let task = current_task();
     let memory_set = task.memory_set.read();

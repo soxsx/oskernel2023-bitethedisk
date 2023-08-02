@@ -2,7 +2,7 @@
 
 use sync_cell::SyncRefCell;
 
-static PID_ALLOCATOR: SyncRefCell<PidAllocator> = SyncRefCell::new(PidAllocator::new());
+static PID_ALLOCATOR: SyncRefCell<PidPool> = SyncRefCell::new(PidPool::new());
 
 /// Stack-based Process Identifier Allocator
 struct PidAllocator {
@@ -14,7 +14,7 @@ pub struct PidHandle(pub usize);
 
 impl PidAllocator {
     pub const fn new() -> Self {
-        PidAllocator { current: 0 }
+        PidPool { current: 0 }
     }
     fn fetch_add(&mut self) -> usize {
         let new_pid = self.current;
@@ -26,7 +26,7 @@ impl PidAllocator {
     }
 }
 
-/// Allocate a process identifier from the global stack process identifier allocator `PID_ALLOCATOR`
+/// Allocate a process identifier from the global stack process identifier allocator [`PID_ALLOCATOR`]
 pub fn pid_alloc() -> PidHandle {
     PID_ALLOCATOR.borrow_mut().alloc()
 }

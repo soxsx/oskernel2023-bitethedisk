@@ -1,6 +1,10 @@
-use super::{acquire_processor, Processor};
+use core::cell::RefMut;
+
+use alloc::sync::Arc;
+
 use crate::task::{
     check_hanging,
+    initproc::BUSYBOX,
     manager::{check_futex_interupt_or_expire, fetch_task},
     recycle_child_threads_res,
     switch::__switch,

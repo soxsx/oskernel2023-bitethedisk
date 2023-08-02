@@ -31,13 +31,6 @@ impl MmapManager {
     pub fn get_mmap_top(&mut self) -> VirtAddr {
         self.mmap_top
     }
-    // fn update_top(&mut self) {
-    //     if let Some(max_vpn) = self.mmap_map.keys().max() {
-    //         let va: VirtAddr = max_vpn.clone().into();
-    //         println!("max_vpn_to_va:{:x?}, mmap_top:{:x?}", va.0, self.mmap_top.0);
-    //         self.mmap_top = VirtAddr(va.0 + PAGE_SIZE);
-    //     }
-    // }
     pub fn push(
         &mut self,
         start_va: VirtAddr,

@@ -1,10 +1,20 @@
+<<<<<<< HEAD:crates/nix/src/signal.rs
+=======
+#![allow(unused)]
+
+use crate::trap::TrapContext;
+
+>>>>>>> 9bfd967 (Progress(multi-harts): Tidy):kernel/src/task/signals/siginfo.rs
 pub const MAX_SIGNUM: u32 = 64;
 pub const SIG_DFL: usize = 0;
 pub const SIG_IGN: usize = 1;
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 #[allow(non_camel_case_types)]
+<<<<<<< HEAD:crates/nix/src/signal.rs
 #[allow(unused)]
+=======
+>>>>>>> 9bfd967 (Progress(multi-harts): Tidy):kernel/src/task/signals/siginfo.rs
 #[repr(u32)]
 pub enum Signal {
     EMPTY = 0,

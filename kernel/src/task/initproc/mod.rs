@@ -9,7 +9,6 @@ use crate::{fs::open, task::TaskControlBlock};
 global_asm!(include_str!("initproc.S"));
 
 lazy_static! {
-    /// 引导 pcb
     pub static ref INITPROC: Arc<TaskControlBlock> = Arc::new({
         extern "C" {
             fn initproc_entry();

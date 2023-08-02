@@ -213,7 +213,7 @@ impl TaskControlBlock {
             user_sp,
             acquire_kvmm().token(),
             kernel_stack_top,
-            user_trap_handler as usize,
+            trap_handler as usize,
         );
         task_control_block
     }
@@ -404,7 +404,7 @@ impl TaskControlBlock {
             user_sp,
             acquire_kvmm().token(),
             self.kernel_stack.top(),
-            user_trap_handler as usize,
+            trap_handler as usize,
         );
     }
 

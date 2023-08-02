@@ -1,5 +1,3 @@
-use alloc::collections::VecDeque;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
 use errno::Errno;
@@ -12,11 +10,8 @@ use crate::mm::translated_ref;
 use crate::return_errno;
 use crate::syscall::errno;
 use crate::syscall::futex::{FutexQueue, FutexWaiter};
-use crate::task::{
-    block_current_and_run_next, current_task, current_user_token, suspend_current_and_run_next,
-    unblock_task, TaskControlBlock,
-};
-use crate::timer::{get_time_ns, get_time_us};
+use crate::task::{block_current_and_run_next, current_task, current_user_token, unblock_task};
+use crate::timer::get_time_ns;
 
 use super::Result;
 
@@ -37,7 +32,7 @@ pub fn sys_futex(
     val: u32,
     val2: *const u32,
     uaddr2: *const u32,
-    val3: u32,
+    _val3: u32,
 ) -> Result {
     let option = futex_op & FUTEX_CMD_MASK;
     let token = current_user_token();
@@ -105,7 +100,7 @@ pub fn futex_wait(uaddr: usize, val: u32, timeout: usize) -> Result {
 
     block_current_and_run_next();
 
-    if (get_time_ns() >= timeout_time) {
+    if get_time_ns() >= timeout_time {
         return_errno!(Errno::ETIMEDOUT);
     }
     let task = current_task();

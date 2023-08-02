@@ -1,6 +1,4 @@
-//! Linux 错误码, 系统调用的错误都存储于 [`errno`] 中
-//!
-//! [`errno`]: <https://man7.org/linux/man-pages/man3/errno.3.html>
+//! Linux error number: https://man7.org/linux/man-pages/man3/errno.3.html
 
 #![allow(unused)]
 
@@ -8,12 +6,15 @@ use thiserror::Error;
 
 pub type Result = core::result::Result<isize, Errno>;
 
-/// Error number 错误号, 由内核态系统调用直接返回作为调用失败时的结果
 #[derive(Debug, Error)]
 pub enum Errno {
     /// Error cannot be clairified due to current implementation
+    ///
+    /// # Note
+    ///
+    /// Should only used for debugging.
     #[error("Error cannot be clairified due to current implementation")]
-    UNCLEAR = -1,
+    DISCARD = -1,
 
     /// Operation not permitted
     #[error("[EPERM] Operation not permitted")]

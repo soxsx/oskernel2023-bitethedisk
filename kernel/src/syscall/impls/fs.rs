@@ -1,5 +1,3 @@
-//! 文件相关的系统调用
-
 use super::super::errno::*;
 use crate::fs::{chdir, make_pipe, open, File, Stdin, MNT_TABLE};
 use crate::mm::{
@@ -10,8 +8,6 @@ use crate::task::{current_task, current_user_token};
 use crate::task::{suspend_current_and_run_next, TaskControlBlock};
 use crate::timer::{get_time, get_timeval};
 
-use alloc::borrow::ToOwned;
-use alloc::string::ToString;
 use alloc::{sync::Arc, vec::Vec};
 use core::mem::size_of;
 use fat32::sync_all;
@@ -1263,7 +1259,7 @@ pub fn sys_utimensat(
                 file.set_time(time_info);
                 Ok(0)
             } else {
-                return_errno!(Errno::UNCLEAR);
+                return_errno!(Errno::DISCARD);
             }
         } else {
             unimplemented!();
@@ -1362,7 +1358,7 @@ pub fn sys_lseek(fd: usize, off_t: isize, whence: usize) -> Result {
         }
     } else {
         // file not exists
-        return_errno!(Errno::UNCLEAR);
+        return_errno!(Errno::DISCARD);
         // -3
     }
 }
@@ -1397,7 +1393,7 @@ pub fn sys_ftruncate64(fd: usize, length: usize) -> Result {
         file.truncate(length);
         Ok(0)
     } else {
-        return_errno!(Errno::UNCLEAR);
+        return_errno!(Errno::DISCARD);
     }
 }
 

@@ -1,5 +1,3 @@
-//! 进程相关系统调用
-
 use crate::board::CLOCK_FREQ;
 use core::task::Poll;
 use core::usize;
@@ -14,11 +12,10 @@ use crate::task::{
     add_task, current_task, current_user_token, exit_current_and_run_next, pid2task,
     suspend_current_and_run_next, SignalContext,
 };
-use crate::timer::get_timeval;
 use crate::timer::{get_time, NSEC_PER_SEC};
 
 use alloc::{string::String, string::ToString, sync::Arc, vec::Vec};
-use nix::info::{CloneFlags, RUsage, Utsname};
+use nix::info::{CloneFlags, RUsage};
 use nix::resource::{RLimit, Resource};
 use nix::robustlist::RobustList;
 use nix::time::{TimeSpec, TimeVal};
@@ -28,7 +25,6 @@ use nix::{
 };
 
 use super::super::errno::*;
-use super::*;
 
 use crate::task::*;
 
@@ -50,8 +46,8 @@ use crate::task::*;
 /// pid_t ret = syscall(SYS_clone, flags, stack, ptid, tls, ctid)
 /// ```
 pub fn sys_do_fork(flags: usize, stack_ptr: usize, ptid: usize, tls: usize, ctid: usize) -> Result {
-    let current_task = current_task();
-    let signal = flags & 0xff;
+    let current_task = current_task().unwrap();
+    let _signal = flags & 0xff;
     let flags = CloneFlags::from_bits(flags & !0xff).unwrap();
 
     let new_task = current_task.fork(flags);
@@ -512,7 +508,7 @@ pub fn sys_sched_getparam(pid: usize, param: *mut SchedParam) -> Result {
 //     int sched_priority;
 // };
 pub fn sys_sched_setscheduler(pid: usize, policy: isize, param: *const SchedParam) -> Result {
-    let task = pid2task(pid).ok_or(Errno::UNCLEAR)?;
+    let task = pid2task(pid).ok_or(Errno::DISCARD)?;
     let inner = task.inner_ref();
 
     {
@@ -759,7 +755,6 @@ pub fn sys_prlimit64(
         } else {
             Resource::ILLEAGAL
         };
-        // info!("[sys_prlimit] pid: {}, resource: {:?}", pid, resource);
         if !old_limit.is_null() {
             match resource {
                 Resource::NOFILE => {
@@ -768,9 +763,7 @@ pub fn sys_prlimit64(
                     copyout(token, old_limit, &rlimit_nofile);
                     drop(inner)
                 }
-                // TODO
-                // Resource::ILLEAGAL => return_errno!(Errno::EINVAL),
-                // _ => todo!(),
+                // TODO: Resource::ILLEAGAL => return_errno!(Errno::EINVAL),
                 _ => (),
             }
         }
@@ -784,9 +777,7 @@ pub fn sys_prlimit64(
                     *rlimit_nofile = rlimit;
                     drop(inner)
                 }
-                // TODO
-                // Resource::ILLEAGAL => return_errno!(Errno::EINVAL),
-                // _ => todo!(),
+                // TODO: Resource::ILLEAGAL => return_errno!(Errno::EINVAL),
                 _ => (),
             }
         }

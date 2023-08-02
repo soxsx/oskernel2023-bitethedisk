@@ -1,13 +1,13 @@
+<<<<<<< HEAD
 //! 根据 SYS_id 分发具体系统调用
+=======
+use crate::task::{SigAction, SigMask};
+>>>>>>> 9bfd967 (Progress(multi-harts): Tidy)
 
 use super::impls::*;
 use nix::{itimerval, time::TimeSpec};
 use nix::{RLimit, SchedParam, SigAction, SigMask};
 
-// 系统调用号
-// const SYS_RT_SIGPROMASK: usize = 135;
-// const SYS_RT_SIGACTION: usize = 134;
-// const SYS_KILL: usize = 129;
 const SYS_GETITIMER: usize = 102;
 const SYS_GETCWD: usize = 17;
 const SYS_DUP: usize = 23;
@@ -89,7 +89,6 @@ const SYS_PRLIMIT64: usize = 261;
 const SYS_RENAMEAT2: usize = 276;
 const SYS_GETRANDOM: usize = 278;
 const SYS_MEMBARRIER: usize = 283;
-
 const SYS_SCHED_SETAFFINITY: usize = 122;
 const SYS_SCHED_GETAFFINITY: usize = 123;
 const SYS_SCHEED_GETSCHEDULER: usize = 120;
@@ -98,20 +97,11 @@ const SYS_SCHED_SETSCHEDULER: usize = 119;
 const SYS_CLOCK_GETRES: usize = 114;
 const SYS_SOCKETPAIR: usize = 199;
 const SYS_MADVISE: usize = 233;
-
 const SYS_CLOCK_NANOSLEEP: usize = 115;
-
-// const SYS_TKILL: usize = 130;
 const SYS_SIGACTION: usize = 134;
 const SYS_SIGPROCMASK: usize = 135;
-pub const SYS_SIGRETURN: usize = 139;
 
-// const SYS_SOCKET: usize = 198;
-// const SYS_BIND: usize = 200;
-// const SYS_LISTEN: usize = 201;
-// const SYS_ACCEPT: usize = 202;
-// const SYS_CONNECT: usize = 203;
-// const SYS_GETSOCKNAME: usize = 204;
+pub const SYS_SIGRETURN: usize = 139;
 pub const SYS_SOCKET: usize = 198;
 pub const SYS_BIND: usize = 200;
 pub const SYS_LISTEN: usize = 201;
@@ -121,103 +111,11 @@ pub const SYS_GETSOCKNAME: usize = 204;
 pub const SYS_SENDTO: usize = 206;
 pub const SYS_RECVFROM: usize = 207;
 pub const SYS_SETSOCKOPT: usize = 208;
-
 pub const SYS_TIMER_SETTIME: usize = 110;
 pub const SYS_TIMER_GETOVERRUN: usize = 109;
 
-#[allow(unused)]
-pub fn syscall_name(id: usize) -> &'static str {
-    match id {
-        SYS_GETCWD => "SYS_GETCWD",
-        SYS_DUP => "SYS_DUP",
-        SYS_DUP3 => "SYS_DUP3",
-        SYS_FCNTL => "SYS_FCNTL",
-        SYS_IOCTL => "SYS_IOCTL",
-        SYS_MKDIRAT => "SYS_MKDIRAT",
-        SYS_UNLINKAT => "SYS_UNLINKAT",
-        SYS_LINKAT => "SYS_LINKAT",
-        SYS_UMOUNT2 => "SYS_UMOUNT2",
-        SYS_MOUNT => "SYS_MOUNT",
-        SYS_STATFS => "SYS_STATFS",
-        SYS_FTRUNCATE64 => "SYS_FTRUNCATE64",
-        SYS_FACCESSAT => "SYS_FACCESSAT",
-        SYS_CHDIR => "SYS_CHDIR",
-        SYS_OPENAT => "SYS_OPENAT",
-        SYS_CLOSE => "SYS_CLOSE",
-        SYS_PIPE2 => "SYS_PIPE2",
-        SYS_GETDENTS64 => "SYS_GETDENTS64",
-        SYS_LSEEK => "SYS_LSEEK",
-        SYS_READ => "SYS_READ",
-        SYS_WRITE => "SYS_WRITE",
-        SYS_READV => "SYS_READV",
-        SYS_WRITEV => "SYS_WRITEV",
-        SYS_PREAD64 => "SYS_PREAD64",
-        SYS_PWRITE64 => "SYS_PWRITE64",
-        SYS_SENDFILE => "SYS_SENDFILE",
-        SYS_PSELECT6 => "SYS_PSELECT6",
-        SYS_PPOLL => "SYS_PPOLL",
-        SYS_READLINKAT => "SYS_READLINKAT",
-        SYS_NEWFSTATAT => "SYS_NEWFSTATAT",
-        SYS_FSTAT => "SYS_FSTAT",
-        SYS_SYNC => "SYS_SYNC",
-        SYS_FSYNC => "SYS_FSYNC",
-        SYS_UTIMENSAT => "SYS_UTIMENSAT",
-        SYS_EXIT => "SYS_EXIT",
-        SYS_EXIT_GROUP => "SYS_EXIT_GROUP",
-        SYS_SET_TID_ADDRESS => "SYS_SET_TID_ADDRESS",
-        SYS_FUTEX => "SYS_FUTEX",
-        SYS_SET_ROBUST_LIST => "SYS_SET_ROBUST_LIST",
-        SYS_NANOSLEEP => "SYS_NANOSLEEP",
-        SYS_SETITIMER => "SYS_SETITIMER",
-        SYS_CLOCK_GETTIME => "SYS_CLOCK_GETTIME",
-        SYS_SYSLOG => "SYS_SYSLOG",
-        SYS_SCHED_YIELD => "SYS_SCHED_YIELD",
-        SYS_KILL => "SYS_KILL",
-        SYS_TGKILL => "SYS_TGKILL",
-        SYS_SIGACTION => "SYS_SIGACTION",
-        SYS_SIGPROCMASK => "SYS_SIGPROCMASK",
-        SYS_SIGTIMEDWAIT => "SYS_SIGTIMEDWAIT",
-        SYS_SIGRETURN => "SYS_SIGRETURN",
-        SYS_TIMES => "SYS_TIMES",
-        SYS_SETPGID => "SYS_SETPGID",
-        SYS_GETPGID => "SYS_GETPGID",
-        SYS_UNAME => "SYS_UNAME",
-        SYS_GETRUSAGE => "SYS_GETRUSAGE",
-        SYS_UMASK => "SYS_UMASK",
-        SYS_GETTIMEOFDAY => "SYS_GETTIMEOFDAY",
-        SYS_GETPID => "SYS_GETPID",
-        SYS_GETPPID => "SYS_GETPPID",
-        SYS_GETUID => "SYS_GETUID",
-        SYS_GETEUID => "SYS_GETEUID",
-        SYS_GETGID => "SYS_GETGID",
-        SYS_GETEGID => "SYS_GETEGID",
-        SYS_GETTID => "SYS_GETTID",
-        SYS_SYSINFO => "SYS_SYSINFO",
-        SYS_SHMGET => "SYS_SHMGET",
-        SYS_SHMCTL => "SYS_SHMCTL",
-        SYS_SHMAT => "SYS_SHMAT",
-        SYS_SHMDT => "SYS_SHMDT",
-        SYS_BRK => "SYS_BRK",
-        SYS_MUNMAP => "SYS_MUNMAP",
-        SYS_CLONE => "SYS_CLONE",
-        SYS_EXECVE => "SYS_EXECVE",
-        SYS_MMAP => "SYS_MMAP",
-        SYS_MPROTECT => "SYS_MPROTECT",
-        SYS_MSYNC => "SYS_MSYNC",
-        SYS_WAIT4 => "SYS_WAIT4",
-        SYS_PRLIMIT64 => "SYS_PRLIMIT64",
-        SYS_RENAMEAT2 => "SYS_RENAMEAT2",
-        SYS_GETRANDOM => "SYS_GETRANDOM",
-        SYS_SCHED_SETAFFINITY => "SYS_SCHED_SETAFFINITY",
-        SYS_CLOCK_NANOSLEEP => "SYS_CLOCK_NANOSLEEP",
-
-        _ => "unknown",
-    }
-}
-
 /// 系统调用分发函数
 pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
-    // println!("[{}]({})", syscall_name(syscall_id), syscall_id);
     let ret = match syscall_id {
         SYS_CLONE => sys_do_fork(args[0], args[1], args[2], args[3], args[4]),
 
@@ -451,14 +349,9 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
             args[2] as *const itimerval,
             args[3] as *mut itimerval,
         ),
-
-        // SYS_TIMER_GETOVERRUN => sys_timer_getoverrun(args[0] as usize),
         SYS_TIMER_GETOVERRUN => Ok(0),
-
-        _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
+        _ => panic!("syscall {} is unsupported", syscall_id),
     };
-    // use crate::task::current_task;
-    // println!("[DEBUG] syscall end pid:{:?}", current_task().pid(),);
     match ret {
         Ok(data) => data,
         Err(err) => {
@@ -469,5 +362,93 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
                 errno
             }
         }
+    }
+}
+
+pub fn syscall_name(id: usize) -> &'static str {
+    match id {
+        SYS_GETCWD => "SYS_GETCWD",
+        SYS_DUP => "SYS_DUP",
+        SYS_DUP3 => "SYS_DUP3",
+        SYS_FCNTL => "SYS_FCNTL",
+        SYS_IOCTL => "SYS_IOCTL",
+        SYS_MKDIRAT => "SYS_MKDIRAT",
+        SYS_UNLINKAT => "SYS_UNLINKAT",
+        SYS_LINKAT => "SYS_LINKAT",
+        SYS_UMOUNT2 => "SYS_UMOUNT2",
+        SYS_MOUNT => "SYS_MOUNT",
+        SYS_STATFS => "SYS_STATFS",
+        SYS_FTRUNCATE64 => "SYS_FTRUNCATE64",
+        SYS_FACCESSAT => "SYS_FACCESSAT",
+        SYS_CHDIR => "SYS_CHDIR",
+        SYS_OPENAT => "SYS_OPENAT",
+        SYS_CLOSE => "SYS_CLOSE",
+        SYS_PIPE2 => "SYS_PIPE2",
+        SYS_GETDENTS64 => "SYS_GETDENTS64",
+        SYS_LSEEK => "SYS_LSEEK",
+        SYS_READ => "SYS_READ",
+        SYS_WRITE => "SYS_WRITE",
+        SYS_READV => "SYS_READV",
+        SYS_WRITEV => "SYS_WRITEV",
+        SYS_PREAD64 => "SYS_PREAD64",
+        SYS_PWRITE64 => "SYS_PWRITE64",
+        SYS_SENDFILE => "SYS_SENDFILE",
+        SYS_PSELECT6 => "SYS_PSELECT6",
+        SYS_PPOLL => "SYS_PPOLL",
+        SYS_READLINKAT => "SYS_READLINKAT",
+        SYS_NEWFSTATAT => "SYS_NEWFSTATAT",
+        SYS_FSTAT => "SYS_FSTAT",
+        SYS_SYNC => "SYS_SYNC",
+        SYS_FSYNC => "SYS_FSYNC",
+        SYS_UTIMENSAT => "SYS_UTIMENSAT",
+        SYS_EXIT => "SYS_EXIT",
+        SYS_EXIT_GROUP => "SYS_EXIT_GROUP",
+        SYS_SET_TID_ADDRESS => "SYS_SET_TID_ADDRESS",
+        SYS_FUTEX => "SYS_FUTEX",
+        SYS_SET_ROBUST_LIST => "SYS_SET_ROBUST_LIST",
+        SYS_NANOSLEEP => "SYS_NANOSLEEP",
+        SYS_SETITIMER => "SYS_SETITIMER",
+        SYS_CLOCK_GETTIME => "SYS_CLOCK_GETTIME",
+        SYS_SYSLOG => "SYS_SYSLOG",
+        SYS_SCHED_YIELD => "SYS_SCHED_YIELD",
+        SYS_KILL => "SYS_KILL",
+        SYS_TGKILL => "SYS_TGKILL",
+        SYS_SIGACTION => "SYS_SIGACTION",
+        SYS_SIGPROCMASK => "SYS_SIGPROCMASK",
+        SYS_SIGTIMEDWAIT => "SYS_SIGTIMEDWAIT",
+        SYS_SIGRETURN => "SYS_SIGRETURN",
+        SYS_TIMES => "SYS_TIMES",
+        SYS_SETPGID => "SYS_SETPGID",
+        SYS_GETPGID => "SYS_GETPGID",
+        SYS_UNAME => "SYS_UNAME",
+        SYS_GETRUSAGE => "SYS_GETRUSAGE",
+        SYS_UMASK => "SYS_UMASK",
+        SYS_GETTIMEOFDAY => "SYS_GETTIMEOFDAY",
+        SYS_GETPID => "SYS_GETPID",
+        SYS_GETPPID => "SYS_GETPPID",
+        SYS_GETUID => "SYS_GETUID",
+        SYS_GETEUID => "SYS_GETEUID",
+        SYS_GETGID => "SYS_GETGID",
+        SYS_GETEGID => "SYS_GETEGID",
+        SYS_GETTID => "SYS_GETTID",
+        SYS_SYSINFO => "SYS_SYSINFO",
+        SYS_SHMGET => "SYS_SHMGET",
+        SYS_SHMCTL => "SYS_SHMCTL",
+        SYS_SHMAT => "SYS_SHMAT",
+        SYS_SHMDT => "SYS_SHMDT",
+        SYS_BRK => "SYS_BRK",
+        SYS_MUNMAP => "SYS_MUNMAP",
+        SYS_CLONE => "SYS_CLONE",
+        SYS_EXECVE => "SYS_EXECVE",
+        SYS_MMAP => "SYS_MMAP",
+        SYS_MPROTECT => "SYS_MPROTECT",
+        SYS_MSYNC => "SYS_MSYNC",
+        SYS_WAIT4 => "SYS_WAIT4",
+        SYS_PRLIMIT64 => "SYS_PRLIMIT64",
+        SYS_RENAMEAT2 => "SYS_RENAMEAT2",
+        SYS_GETRANDOM => "SYS_GETRANDOM",
+        SYS_SCHED_SETAFFINITY => "SYS_SCHED_SETAFFINITY",
+        SYS_CLOCK_NANOSLEEP => "SYS_CLOCK_NANOSLEEP",
+        _ => "unknown",
     }
 }

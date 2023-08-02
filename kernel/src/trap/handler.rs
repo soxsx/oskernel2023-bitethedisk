@@ -1,16 +1,4 @@
-//! trap 处理模块
-//!
-//! 根据 trap 发生的原因进行分发处理
-
-use nix::SigMask;
-use riscv::register::{
-    mcause,
-    mstatus::{self},
-    mtval,
-    scause::{self, Exception, Interrupt, Trap},
-    stval,
-};
-
+use super::{setup_nested_trap_guard, trap_return};
 use crate::mm::VirtAddr;
 use crate::{
     consts::TRAMPOLINE,
@@ -21,17 +9,18 @@ use crate::{
     },
     timer::{check_interval_timer, get_timeval, set_next_trigger},
 };
+use log::debug;
+use riscv::register::{
+    scause::{self, Exception, Interrupt, Trap},
+    stval,
+};
 
-use super::{set_kernel_trap_entry, trap_return};
-
-/// 用户态 trap 发生时的处理函数
 #[no_mangle]
 pub fn user_trap_handler() -> ! {
     // let pid = current_task().unwrap().pid(); println!("pid:{:?}",pid);
     set_kernel_trap_entry();
     // 用于描述 Trap 的原因
     let scause = scause::read();
-    // 给出 Trap 附加信息
     let stval = stval::read();
     let task = current_task();
     let mut inner = task.inner_mut();
@@ -119,7 +108,6 @@ pub fn user_trap_handler() -> ! {
             current_add_signal(SigMask::SIGILL);
         }
 
-        // 时间片到了
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             suspend_current_and_run_next();
             set_next_trigger();
@@ -141,17 +129,7 @@ pub fn user_trap_handler() -> ! {
     trap_return();
 }
 
-/// 内核态 trap 发生时的处理函数
 #[no_mangle]
 pub fn kernel_trap_handler() -> ! {
-    let mstatus = mstatus::read();
-    let mcause = mcause::read();
-    error!(
-        "mstatus: {:?}, mtval: {}, mcause: {:?}",
-        mstatus,
-        mtval::read(),
-        mcause
-    );
-
-    panic!("a trap {:?} from kernel!", scause::read().cause());
+    panic!("nested trap!")
 }

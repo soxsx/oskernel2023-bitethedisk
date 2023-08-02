@@ -1,5 +1,3 @@
-//! 内存管理系统调用
-
 use core::mem;
 
 use crate::mm::MapPermission;
@@ -117,12 +115,12 @@ pub fn sys_shmget(key: usize, size: usize, shmflg: usize) -> Result {
     let size = (size + PAGE_SIZE - 1) / PAGE_SIZE * PAGE_SIZE;
     assert!(size % PAGE_SIZE == 0);
     let mut new_key = key;
-    if (key == IPC_PRIVATE) {
+    if key == IPC_PRIVATE {
         new_key = create_shm(key, size, shmflg);
     } else {
         unimplemented!();
     }
-    return Ok(new_key as isize);
+    Ok(new_key as isize)
 }
 
 pub fn sys_shmctl(key: usize, cmd: usize, buf: *const u8) -> Result {

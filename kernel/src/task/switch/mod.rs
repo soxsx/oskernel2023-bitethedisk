@@ -1,4 +1,4 @@
-//! Context switch
+//! Context switch.
 
 use super::TaskContext;
 

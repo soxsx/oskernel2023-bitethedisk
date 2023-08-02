@@ -13,7 +13,7 @@ SDCARD = ../workspace/sdcard.img
 SDCARD_BAK = ../workspace/sdcard.img.bak
 NCPU = 2
 
-RUST_LOG := info
+RUST_LOG := debug
 
 ##################################################################
 #                        Run straightly                          #
@@ -25,7 +25,7 @@ sdcard:
 	@cp $(SDCARD_BAK) $(SDCARD)
 
 kernel: initproc
-	@RUST_LOG=warn cargo build --release --offline
+	@cargo build --release --offline
 
 kernel-dbg: initproc
 	@RUST_LOG=$(RUST_LOG) cargo build --release --offline \
@@ -34,7 +34,7 @@ kernel-dbg: initproc
 	# --features inode_drop
 	# --features u740
 
-run: kernel-dbg sdcard
+run: kernel-dev sdcard
 	@$(QEMU) \
 	 	-machine virt \
 		-kernel $(KERNEL_ELF) \
