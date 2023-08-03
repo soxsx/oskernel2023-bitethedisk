@@ -4,7 +4,7 @@ use alloc::{sync::Arc, vec::Vec};
 use super::{MapPermission, MapType, VmArea, VmAreaType};
 use crate::consts::{
     CLOCK_FREQ, LINK_BASE, MMAP_BASE, PAGE_SIZE, SHM_BASE, SIGNAL_TRAMPOLINE, THREAD_LIMIT,
-    TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE, USER_STACK_SIZE,
+    TRAMPOLINE, TRAP_CONTEXT_BASE, USER_HEAP_SIZE, USER_STACK_BASE, USER_STACK_SIZE,
 };
 use crate::fs::{open, AbsolutePath, CreateMode, File, OpenFlags};
 use crate::mm::{
@@ -198,7 +198,7 @@ impl MemorySet {
     pub fn map_trap_context(&mut self) {
         self.insert(
             VmArea::new(
-                TRAP_CONTEXT.into(),
+                TRAP_CONTEXT_BASE.into(),
                 SIGNAL_TRAMPOLINE.into(),
                 MapType::Framed,
                 VmAreaType::TrapContext,
@@ -427,7 +427,10 @@ impl MemorySet {
             auxs.push(AuxEntry(AT_BASE, 0));
         }
 
-        let user_stack_top = TRAP_CONTEXT - THREAD_LIMIT * PAGE_SIZE;
+        // let user_stack_top = TRAP_CONTEXT_BASE - THREAD_LIMIT * PAGE_SIZE;
+        // let user_stack_bottom = user_stack_top - USER_STACK_SIZE;
+
+        let user_stack_top = USER_STACK_BASE;
         let user_stack_bottom = user_stack_top - USER_STACK_SIZE;
 
         let ph_head_addr = head_va.unwrap() + elf.header.pt2.ph_offset() as usize;

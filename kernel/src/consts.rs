@@ -16,16 +16,18 @@ pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1;
 pub const SIGNAL_TRAMPOLINE: usize = TRAMPOLINE - PAGE_SIZE;
 
 /// Trap 上下文在应用地址空间中的位置
-pub const TRAP_CONTEXT: usize = SIGNAL_TRAMPOLINE - PAGE_SIZE;
+pub const TRAP_CONTEXT_BASE: usize = SIGNAL_TRAMPOLINE - PAGE_SIZE;
+
+pub const USER_STACK_BASE: usize = 0xf000_0000;
 
 pub const THREAD_LIMIT: usize = 4096 * 2;
 
 pub use crate::board::{CLOCK_FREQ, MMIO};
 
-pub const MMAP_BASE: usize = 0x60000000;
+pub const MMAP_BASE: usize = 0x6000_0000;
 
 // pub const MMAP_END: usize = 0x68000000; // mmap 区大小为 128 MiB
 
-pub const SHM_BASE: usize = 0x70000000;
+pub const SHM_BASE: usize = 0x7000_0000;
 
-pub const LINK_BASE: usize = 0x20000000;
+pub const LINK_BASE: usize = 0x2000_0000;
