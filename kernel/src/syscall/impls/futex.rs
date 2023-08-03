@@ -95,7 +95,7 @@ pub fn sys_futex(
     ret
 }
 
-/// 测试地址uaddr指向的futex字中的值是否仍然包含期望的值val，如果是，则等待futex词上的FUTEX_WAKE操作
+/// 测试地址uaddr指向的futex字中的值是否仍然包含期望的值val, 如果是, 则等待futex词上的FUTEX_WAKE操作
 pub fn futex_wait(uaddr: usize, val: u32, timeout: usize) -> Result {
     // futex_wait_setup
     let mut fq_writer = FUTEX_QUEUE.write();
@@ -166,7 +166,7 @@ pub fn futex_wake(uaddr: usize, nr_wake: u32) -> Result {
 
     let mut wakeup_queue = Vec::with_capacity(20);
     (0..nr_wake as usize).for_each(|_| {
-        // 加入唤醒队列中，但需要等到释放完锁之后才能唤醒
+        // 加入唤醒队列中, 但需要等到释放完锁之后才能唤醒
         let task = fq_lock.pop_front().unwrap().task;
         wakeup_queue.push(task);
         fq.waiters_decrease();
@@ -183,9 +183,9 @@ pub fn futex_wake(uaddr: usize, nr_wake: u32) -> Result {
     Ok(nr_wake as isize)
 }
 
-/// 最多唤醒等待在 uaddr 上的 futex 的 val 个等待者。
-/// 如果等待者数量超过了 val，则剩余的等待者将从源 futex 的等待队列中删除，并添加到目标 futex 在 uaddr2 上的等待队列中。
-/// val2 参数指定了重新加入到 uaddr2 上的 futex 的等待者的上限数量。
+/// 最多唤醒等待在 uaddr 上的 futex 的 val 个等待者.
+/// 如果等待者数量超过了 val, 则剩余的等待者将从源 futex 的等待队列中删除, 并添加到目标 futex 在 uaddr2 上的等待队列中.
+/// val2 参数指定了重新加入到 uaddr2 上的 futex 的等待者的上限数量.
 pub fn futex_requeue(uaddr: usize, nr_wake: u32, uaddr2: usize, nr_limit: u32) -> Result {
     let mut fq_writer = FUTEX_QUEUE.write();
     if !fq_writer.contains_key(&uaddr) {

@@ -1,8 +1,8 @@
 use alloc::vec::Vec;
 
-/// 应用地址空间中的一段缓冲区（即内存）的抽象
+/// 应用地址空间中的一段缓冲区(即内存)的抽象
 ///
-/// - `buffers`：位于应用地址空间中，内核无法直接通过用户地址空间的虚拟地址来访问，因此需要进行封装
+/// - `buffers`: 位于应用地址空间中, 内核无法直接通过用户地址空间的虚拟地址来访问, 因此需要进行封装
 #[derive(Debug)]
 pub struct UserBuffer {
     pub buffers: Vec<&'static mut [u8]>,
@@ -16,11 +16,9 @@ impl UserBuffer {
             buffers: Vec::new(),
         }
     }
-
     pub fn wrap(buffers: Vec<&'static mut [u8]>) -> Self {
         Self { buffers }
     }
-
     pub fn len(&self) -> usize {
         let mut total: usize = 0;
         for b in self.buffers.iter() {
@@ -29,8 +27,7 @@ impl UserBuffer {
 
         total
     }
-
-    // 将一个Buffer的数据写入UserBuffer，返回写入长度
+    // 将一个Buffer的数据写入UserBuffer, 返回写入长度
     pub fn write(&mut self, buff: &[u8]) -> usize {
         let len = self.len().min(buff.len());
         let mut current = 0;
@@ -44,10 +41,8 @@ impl UserBuffer {
                 }
             }
         }
-
         len
     }
-
     pub fn write_zeros(&mut self) -> usize {
         let len = self.len();
         let mut current = 0;
@@ -61,7 +56,6 @@ impl UserBuffer {
                 }
             }
         }
-
         len
     }
 
@@ -72,7 +66,6 @@ impl UserBuffer {
         }
         let mut head = 0; // offset of slice in UBuffer
         let mut current = 0; // current offset of buff
-
         for sub_buff in self.buffers.iter_mut() {
             let sblen = (*sub_buff).len();
             if head + sblen < offset {
@@ -98,11 +91,10 @@ impl UserBuffer {
             }
             head += sblen;
         }
-
         0
     }
 
-    // 将UserBuffer的数据读入一个Buffer，返回读取长度
+    // 将UserBuffer的数据读入一个Buffer, 返回读取长度
     pub fn read(&self, buff: &mut [u8]) -> usize {
         let len = self.len().min(buff.len());
         let mut current = 0;

@@ -1,17 +1,19 @@
+mod aux_entry;
 mod context;
+mod id;
 mod initproc;
-mod kernel_stack;
+mod kstack;
 mod manager;
-mod pid;
 mod processor;
 mod signals;
 mod switch;
 mod task;
+pub use aux_entry::*;
 pub use context::*;
+pub use id::*;
 pub use initproc::*;
-pub use kernel_stack::*;
+pub use kstack::*;
 pub use manager::*;
-pub use pid::*;
 pub use processor::*;
 pub use signals::*;
 pub use switch::*;
@@ -25,7 +27,7 @@ use crate::{
 use alloc::sync::Arc;
 use fat32::sync_all;
 
-/// 将当前任务置为就绪态，放回到进程管理器中的就绪队列中，重新选择一个进程运行
+/// 将当前任务置为就绪态, 放回到进程管理器中的就绪队列中, 重新选择一个进程运行
 pub fn suspend_current_and_run_next() -> isize {
     exec_signal_handlers();
 
@@ -162,7 +164,7 @@ pub fn exec_signal_handlers() {
         task_inner.pending_signals.sub(signum);
         let sigaction = task.sigactions.read()[signum as usize];
 
-        // 如果信号对应的处理函数存在，则做好跳转到 handler 的准备
+        // 如果信号对应的处理函数存在, 则做好跳转到 handler 的准备
         let handler = sigaction.sa_handler;
         match handler {
             SIG_IGN => {
@@ -195,7 +197,7 @@ pub fn exec_signal_handlers() {
                 // 保存 Trap 上下文与 old_sigmask 到 sig_context 中
                 let sig_context = SignalContext::from_another(trap_cx, old_sigmask);
                 trap_cx.x[10] = signum as usize; // a0 (args0 = signum)
-                                                 // 如果 sa_flags 中包含 SA_SIGINFO，则将 siginfo 和 ucontext 放入栈中
+                                                 // 如果 sa_flags 中包含 SA_SIGINFO, 则将 siginfo 和 ucontext 放入栈中
 
                 let memory_set = task.memory_set.read();
                 let token = memory_set.token();

@@ -1,14 +1,14 @@
 use core::fmt::Debug;
 
 use super::initproc::{STATIC_BUSYBOX_AUX, STATIC_BUSYBOX_ENTRY};
-use super::kernel_stack::KernelStack;
-use super::{pid_alloc, PidHandle, SigMask, SigSet};
+use super::kstack::KernelStack;
+use super::{pid_alloc, AuxEntry, PidHandle, SigMask, SigSet};
 use super::{SigAction, TaskContext, MAX_SIGNUM};
 use crate::consts::*;
 use crate::fs::{File, Stdin, Stdout};
 use crate::mm::acquire_kvmm;
+use crate::mm::LoadedELF;
 use crate::mm::{copyout, MmapFlags};
-use crate::mm::{AuxEntry, LoadedELF};
 use crate::mm::{MemorySet, MmapProts, PhysPageNum, VirtAddr, VirtPageNum};
 use crate::timer::get_timeval;
 use crate::trap::user_trap_handler;
@@ -69,7 +69,7 @@ pub struct TaskControlBlockInner {
 
     pub task_status: TaskStatus,
 
-    /// 指向当前进程的父进程（如果存在的话）
+    /// 指向当前进程的父进程(如果存在的话)
     pub parent: Option<Weak<TaskControlBlock>>,
 
     /// 当前进程的所有子进程的任务控制块向量
@@ -157,7 +157,7 @@ impl TaskControlBlock {
 
     /// 查找空闲文件描述符下标
     ///
-    /// 从文件描述符表中 **由低到高** 查找空位，返回向量下标，没有空位则在最后插入一个空位
+    /// 从文件描述符表中 **由低到高** 查找空位, 返回向量下标, 没有空位则在最后插入一个空位
     pub fn alloc_fd(fd_table: &mut FDTable, fd_limit: usize) -> usize {
         if let Some(fd) = (0..fd_table.len()).find(|fd| fd_table[*fd].is_none()) {
             fd
@@ -185,7 +185,7 @@ impl TaskControlBlock {
             memory_set,
             elf_entry: entry_point,
             user_stack_top: user_sp,
-            mut auxs,
+            auxs,
         } = MemorySet::load_elf(elf.clone());
 
         if elf.name() == "static-busybox" {
@@ -197,14 +197,13 @@ impl TaskControlBlock {
             .translate(VirtAddr::from(TRAP_CONTEXT).into())
             .unwrap()
             .ppn();
-        // 为进程分配 PID 以及内核栈，并记录下内核栈在内核地址空间的位置
+        // 为进程分配 PID 以及内核栈, 并记录下内核栈在内核地址空间的位置
         let pid_handle = pid_alloc();
         let tgid = pid_handle.0;
-        let pgid = pid_handle.0;
         let kernel_stack = KernelStack::new(&pid_handle);
         let kernel_stack_top = kernel_stack.top();
 
-        // 在该进程的内核栈上压入初始化的任务上下文，使得第一次任务切换到它的时候可以跳转到 trap_return 并进入用户态开始执行
+        // 在该进程的内核栈上压入初始化的任务上下文, 使得第一次任务切换到它的时候可以跳转到 trap_return 并进入用户态开始执行
         let task_control_block = Self {
             pid: pid_handle,
             tgid,
@@ -243,8 +242,8 @@ impl TaskControlBlock {
             }),
             sigactions: Arc::new(RwLock::new([SigAction::new(); MAX_SIGNUM as usize])),
         };
-        // 初始化位于该进程应用地址空间中的 Trap 上下文，使得第一次进入用户态的时候时候能正
-        // 确跳转到应用入口点并设置好用户栈，同时也保证在 Trap 的时候用户态能正确进入内核态
+        // 初始化位于该进程应用地址空间中的 Trap 上下文, 使得第一次进入用户态的时候时候能正
+        // 确跳转到应用入口点并设置好用户栈, 同时也保证在 Trap 的时候用户态能正确进入内核态
         let trap_cx = task_control_block.inner_mut().trap_context();
         *trap_cx = TrapContext::app_init_context(
             entry_point,
@@ -266,17 +265,16 @@ impl TaskControlBlock {
         let memory_set = self.memory_set.read();
         let token = memory_set.token();
         drop(memory_set);
+        let mut user_sp = user_sp;
 
         // 计算共需要多少字节的空间
-        let mut total_len = 0;
-        for i in 0..envs.len() {
-            total_len += envs[i].len() + 1; // String 不包含 '\0'
-        }
-        for i in 0..args.len() {
-            total_len += args[i].len() + 1;
-        }
-
-        let mut user_sp = user_sp;
+        // let mut total_len = 0;
+        // for i in 0..envs.len() {
+        //     total_len += envs[i].len() + 1; // String 不包含 '\0'
+        // }
+        // for i in 0..args.len() {
+        //     total_len += args[i].len() + 1;
+        // }
         // 先进行进行对齐
         // let align = core::mem::size_of::<usize>() / core::mem::size_of::<u8>(); // 8
         // let mut user_sp = user_sp - (align - total_len % align) * core::mem::size_of::<u8>();
@@ -324,7 +322,7 @@ impl TaskControlBlock {
             &0,
         );
 
-        // 分配 auxs 空间，并写入数据
+        // 分配 auxs 空间, 并写入数据
         for i in 0..auxv.len() {
             user_sp -= core::mem::size_of::<AuxEntry>();
             copyout(
@@ -393,7 +391,7 @@ impl TaskControlBlock {
         (user_sp, args_ptr_base as usize, envs_ptr_base as usize)
     }
 
-    /// 用来实现 exec 系统调用，即当前进程加载并执行另一个 ELF 格式可执行文件
+    /// 用来实现 exec 系统调用, 即当前进程加载并执行另一个 ELF 格式可执行文件
     pub fn exec(&self, elf_file: Arc<dyn File>, args: Vec<String>, envs: Vec<String>) {
         // for hackbench
         if elf_file.name().contains("hackbench") || elf_file.name().contains("HACKBENCH") {
@@ -433,7 +431,7 @@ impl TaskControlBlock {
         drop(inner); // 避免接下来的操作导致死锁
 
         let (user_sp, _args_ptr, _envs_ptr) = self.init_ustack(user_sp, args, envs, &mut auxs);
-        // 修改新的地址空间中的 Trap 上下文，将解析得到的应用入口点、用户栈位置以及一些内核的信息进行初始化
+        // 修改新的地址空间中的 Trap 上下文, 将解析得到的应用入口点, 用户栈位置以及一些内核的信息进行初始化
         *trap_cx = TrapContext::app_init_context(
             entry_point,
             user_sp,
@@ -443,7 +441,7 @@ impl TaskControlBlock {
         );
     }
 
-    /// 用来实现 fork 系统调用，即当前进程 fork 出来一个与之几乎相同的子进程
+    /// 用来实现 fork 系统调用, 即当前进程 fork 出来一个与之几乎相同的子进程
     pub fn fork(self: &Arc<TaskControlBlock>, flags: CloneFlags) -> Arc<TaskControlBlock> {
         // 分配一个 PID
         let pid_handle = pid_alloc();
@@ -452,7 +450,6 @@ impl TaskControlBlock {
         } else {
             pid_handle.0
         };
-        let pgid = self.pid.0;
         let private_tid = pid_handle.0 - tgid;
         // 根据 PID 创建一个应用内核栈
         let kernel_stack = KernelStack::new(&pid_handle);
@@ -472,7 +469,6 @@ impl TaskControlBlock {
             memory_set.write().map_thread_trap_context(private_tid);
         }
 
-        let vpn: VirtPageNum = trap_context_position(private_tid).into();
         let trap_cx_ppn = memory_set
             .read()
             .translate(trap_context_position(private_tid).into())
@@ -505,7 +501,7 @@ impl TaskControlBlock {
         } else {
             // parent sigactions
             let psa_ref = self.sigactions.read();
-            let mut sa = Arc::new(RwLock::new([SigAction::new(); MAX_SIGNUM as usize]));
+            let sa = Arc::new(RwLock::new([SigAction::new(); MAX_SIGNUM as usize]));
             let mut sa_mut = sa.write();
             for i in 1..MAX_SIGNUM as usize {
                 sa_mut[i] = psa_ref[i].clone();
@@ -559,19 +555,19 @@ impl TaskControlBlock {
         task_control_block
     }
 
-    /// 尝试用时加载缺页，目前只支持mmap缺页
+    /// 尝试用时加载缺页, 目前只支持mmap缺页
     ///
-    /// - 参数：
-    ///     - `va`：缺页中的虚拟地址
-    ///     - `is_load`：加载(1)/写入(0)
-    /// - 返回值：
-    ///     - `0`：成功加载缺页
-    ///     - `-1`：加载缺页失败
+    /// - 参数:
+    ///     - `va`: 缺页中的虚拟地址
+    ///     - `is_load`: 加载(1)/写入(0)
+    /// - 返回值:
+    ///     - `0`: 成功加载缺页
+    ///     - `-1`: 加载缺页失败
     ///
-    /// 分别用于：
-    ///     - 用户态：handler page fault
-    ///     - 内核态： translate_bytes_buffer
-    pub fn check_lazy(&self, va: VirtAddr, is_load: bool) -> isize {
+    /// 分别用于:
+    ///     - 用户态: handler page fault
+    ///     - 内核态:  translate_bytes_buffer
+    pub fn check_lazy(&self, va: VirtAddr) -> isize {
         let mut memory_set = self.memory_set.write();
 
         let mmap_start = memory_set.mmap_manager.mmap_start;
@@ -656,8 +652,8 @@ impl TaskControlBlock {
 
     pub fn munmap(&self, addr: usize, length: usize) -> isize {
         let start_va = VirtAddr(addr);
-        // 可能会有 mmap 后没有访问直接 munmap 的情况，需要检查是否访问过 mmap 的区域(即
-        // 是否引发了 lazy_mmap)，防止 unmap 页表中不存在的页表项引发 panic
+        // 可能会有 mmap 后没有访问直接 munmap 的情况, 需要检查是否访问过 mmap 的区域(即
+        // 是否引发了 lazy_mmap), 防止 unmap 页表中不存在的页表项引发 panic
         self.memory_set
             .write()
             .mmap_manager

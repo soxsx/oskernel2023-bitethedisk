@@ -1,6 +1,6 @@
 //! SBI
 //!
-//! 由于文档中给出的是 C 代码，所以需要对应到相应的 Rust 类型
+//! 由于文档中给出的是 C 代码, 所以需要对应到相应的 Rust 类型
 //! 对于具体的 C 类型位宽在 riscv-spec Chapter 18 Calling Convention
 //!
 //! long - isize
@@ -182,7 +182,7 @@ pub fn echo_sbi_verbose_info<'a>() {
     );
 }
 
-/// 检测当前实现相应的 extension 是否可用，0 为不可用
+/// 检测当前实现相应的 extension 是否可用, 0 为不可用
 #[allow(unused)]
 pub fn probe_sbi_extension(eid: isize) -> Result<isize, SBIError> {
     const FID: usize = 0x3;
@@ -200,7 +200,7 @@ const HSM_EXTENSION_EID: usize = 0x48534D;
 pub enum HartStatus {
     /// hart 已上电并正常执行
     Started = 0,
-    /// hart 没有运行在 S 或者更低的特权级中，可能运行在 M 态或者被硬件平台
+    /// hart 没有运行在 S 或者更低的特权级中, 可能运行在 M 态或者被硬件平台
     /// power down 关机
     Stopped = 1,
     StartPending = 2,
@@ -238,7 +238,7 @@ pub fn sbi_start_hart(hartid: usize, start_addr: usize, opaque: usize) -> Result
     }
 }
 
-/// 停止在 S 态执行该函数的 hart，并将其交由 SBI 处理
+/// 停止在 S 态执行该函数的 hart, 并将其交由 SBI 处理
 pub fn sbi_stop_hart() -> Result<(), isize> {
     const FID: usize = 0x1;
     let sbiret = sbi_call(HSM_EXTENSION_EID, FID, 0, 0, 0);

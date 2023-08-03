@@ -1,48 +1,18 @@
 use super::address::VirtAddr;
-use super::{translated_bytes_buffer, FrameTracker, UserBuffer, VPNRange, VirtPageNum};
-use crate::consts::PAGE_SIZE;
+use super::{
+    translated_bytes_buffer, FrameTracker, MmapFlags, MmapProts, UserBuffer, VPNRange, VirtPageNum,
+};
+use crate::consts::{MMAP_BASE, PAGE_SIZE};
 use crate::fs::File;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 
-// see [man mmap](https://man7.org/linux/man-pages/man2/mmap.2.html)
-bitflags! {
-#[derive(Clone, Copy, Debug)]
-    pub struct MmapProts: usize {
-
-    // TODO do not use 0
-        const PROT_NONE = 0;  // 不可读不可写不可执行，用于实现防范攻击的guard page等 -> sys_
-        const PROT_READ = 1 << 0;
-        const PROT_WRITE = 1 << 1;
-        const PROT_EXEC  = 1 << 2;
-        const PROT_GROWSDOWN = 0x01000000;
-        const PROT_GROWSUP = 0x02000000;
-    }
-}
-
-bitflags! {
-    /// - MAP_FILE: 文件映射，使用文件内容初始化内存
-    /// - MAP_SHARED: 共享映射，修改对所有进程可见，多进程读写同一个文件需要调用者提供互斥机制
-    /// - MAP_PRIVATE: 私有映射，进程A的修改对进程B不可见的，利用 COW 机制，修改只会存在于内存中，不会同步到外部的磁盘文件上
-    /// - MAP_FIXED: 将mmap空间放在addr指定的内存地址上，若与现有映射页面重叠，则丢弃重叠部分。如果指定的地址不能使用，mmap将失败。
-    /// - MAP_ANONYMOU: 匿名映射，初始化全为0的内存空间
-#[derive(Clone, Copy, Debug)]
-    pub struct MmapFlags: usize {
-        const MAP_SHARED= 0x01;
-        const MAP_PRIVATE = 0x02;
-        const MAP_FIXED = 0x10;
-        const MAP_ANONYMOUS = 0x20; // The mapping is not backed by any file; its contents are initialized to zero.  The fd  argument  is  ig-
-                                    // nored;  however,  some implementations require fd to be -1 if MAP_ANONYMOUS (or MAP_ANON) is specified,
-                                    //      and portable applications should ensure this.
-    }
-}
-
 /// mmap 块管理器
 ///
-/// - `mmap_start` : 地址空间中mmap区块起始虚地址
-/// - `mmap_top` : 地址空间中mmap区块当结束虚地址
-/// - `mmap_set` : mmap块向量
-//  TODO 管理上有缺陷: 内存碎片问题
+/// - `mmap_start`: 地址空间中 mmap 区块起始虚地址
+/// - `mmap_top`: 地址空间中已用的最高的 mmap 区块的虚地址
+/// - `mmap_map`: 虚拟页号 -> mmap页
+/// - `frame_trackers`: 虚拟页号 -> 物理页帧
 #[derive(Clone)]
 pub struct MmapManager {
     pub mmap_start: VirtAddr,
@@ -50,7 +20,6 @@ pub struct MmapManager {
     pub mmap_map: BTreeMap<VirtPageNum, MmapPage>,
     pub frame_trackers: BTreeMap<VirtPageNum, FrameTracker>,
 }
-
 impl MmapManager {
     pub fn new(mmap_start: VirtAddr, mmap_top: VirtAddr) -> Self {
         Self {
@@ -60,21 +29,16 @@ impl MmapManager {
             frame_trackers: BTreeMap::new(),
         }
     }
-
     pub fn get_mmap_top(&mut self) -> VirtAddr {
         self.mmap_top
     }
-
-    // pub fn lazy_map_page(
-    //     &mut self,
-    //     vpn: VirtPageNum,
-    //     token:usize,
-    // ) {
-    // 	if let Some(mmap_page)=self.mmap_map.get(&vpn){
-    // 	    mmap_page.lazy_map_page(token);
-    // 	}
+    // fn update_top(&mut self) {
+    //     if let Some(max_vpn) = self.mmap_map.keys().max() {
+    //         let va: VirtAddr = max_vpn.clone().into();
+    //         println!("max_vpn_to_va:{:x?}, mmap_top:{:x?}", va.0, self.mmap_top.0);
+    //         self.mmap_top = VirtAddr(va.0 + PAGE_SIZE);
+    //     }
     // }
-
     pub fn push(
         &mut self,
         start_va: VirtAddr,
@@ -85,7 +49,6 @@ impl MmapManager {
         file: Option<Arc<dyn File>>,
     ) -> usize {
         let end = VirtAddr(start_va.0 + len);
-
         // use lazy map
         let mut offset = offset;
         for vpn in VPNRange::from_va(start_va, end) {
@@ -95,13 +58,11 @@ impl MmapManager {
             offset += PAGE_SIZE;
         }
         // update mmap_top
-        // if self.mmap_top == start_addr {
         if self.mmap_top <= start_va {
             self.mmap_top = (start_va.0 + len).into();
         }
         start_va.0
     }
-
     pub fn remove(&mut self, start_va: VirtAddr, len: usize) {
         let end_va = VirtAddr(start_va.0 + len);
         for vpn in VPNRange::from_va(start_va, end_va) {
@@ -109,31 +70,23 @@ impl MmapManager {
             self.frame_trackers.remove(&vpn);
         }
     }
-    // pub fn remove_one_page(&mut self, vpn: VirtPageNum){
-    // 	self.mmap_map.remove(&vpn);
-    // }
 }
 
 /// mmap 块
 ///
-/// 用于记录 mmap 空间信息，mmap数据并不存放在此
+/// 用于记录 mmap 空间信息, mmap数据并不存放在此
 #[derive(Clone)]
 pub struct MmapPage {
     /// mmap 空间起始虚拟地址
     pub vpn: VirtPageNum,
-
     /// mmap 空间有效性
     pub valid: bool,
-
     /// mmap 空间权限
     pub prot: MmapProts,
-
     /// 映射方式
     pub flags: MmapFlags,
-
     /// 文件描述符
     pub file: Option<Arc<dyn File>>,
-
     /// 映射文件偏移地址
     pub offset: usize,
 }

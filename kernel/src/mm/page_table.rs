@@ -22,7 +22,6 @@
 
 use super::address::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{alloc_frame, FrameTracker};
-use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
 
@@ -31,7 +30,7 @@ use bitflags::*;
 pub struct PageTable {
     /// 根节点的物理页号,作为页表唯一的区分标志
     root_ppn: PhysPageNum,
-    /// 以 FrameTracker 的形式保存了页表所有的节点（包括根节点）所在的物理页帧
+    /// 以 FrameTracker 的形式保存了页表所有的节点(包括根节点)所在的物理页帧
     /// 用以延长物理页帧的生命周期
     pub frames: Vec<FrameTracker>,
 }
@@ -48,7 +47,7 @@ impl PageTable {
 
     /// 通过 `satp` 获取对应的多级页表
     ///
-    /// `satp` 寄存器在 x64 上的布局：
+    /// `satp` 寄存器在 x64 上的布局:
     /// ```text
     ///    64     60             44                   0
     ///     +------+--------------+-------------------+
@@ -62,22 +61,22 @@ impl PageTable {
         Self {
             // 取satp的前44位作为物理页号
             root_ppn: PhysPageNum::from(satp & ((1usize << 44) - 1)),
-            // 不需要重新生成节点，节点已经在原始多级页表中存在，同时存在在内存中
+            // 不需要重新生成节点, 节点已经在原始多级页表中存在, 同时存在在内存中
             frames: Vec::new(),
         }
     }
 
-    /// 根据vpn查找对应页表项，如果在查找过程中发现无效页表则新建页表
+    /// 根据vpn查找对应页表项, 如果在查找过程中发现无效页表则新建页表
     pub fn find_pte_create(&mut self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
         let idxs = vpn.indexes();
-        // 当前节点的物理页号，最开始指向多级页表的根节点
+        // 当前节点的物理页号, 最开始指向多级页表的根节点
         let mut ppn = self.root_ppn;
         let mut result: Option<&mut PageTableEntry> = None;
         for (i, idx) in idxs.iter().enumerate() {
-            // 通过 get_pte_array 将取出当前节点的页表项数组，并根据当前级页索引找到对应的页表项
+            // 通过 get_pte_array 将取出当前节点的页表项数组, 并根据当前级页索引找到对应的页表项
             let pte = &mut ppn.as_pte_array()[*idx];
             if i == 2 {
-                // 找到第三级页表，这个页表项的可变引用
+                // 找到第三级页表, 这个页表项的可变引用
                 result = Some(pte);
                 break;
             }
@@ -90,13 +89,13 @@ impl PageTable {
                 // 将生成的页表项存入页表
                 self.frames.push(frame);
             }
-            // 切换到下一级页表（物理页帧）
+            // 切换到下一级页表(物理页帧)
             ppn = pte.ppn();
         }
         result
     }
 
-    /// 根据vpn查找对应页表项，如果在查找过程中发现无效页表则直接返回 None 即查找失败
+    /// 根据vpn查找对应页表项, 如果在查找过程中发现无效页表则直接返回 None 即查找失败
     pub fn find_pte(&self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
         let idxs = vpn.indexes();
         let mut ppn = self.root_ppn;
@@ -117,17 +116,17 @@ impl PageTable {
 
     /// 建立一个虚拟页号到物理页号的映射
     ///
-    /// 根据VPN找到第三级页表中的对应项，将 `PPN` 和 `flags` 写入到页表项
+    /// 根据VPN找到第三级页表中的对应项, 将 `PPN` 和 `flags` 写入到页表项
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
         let pte = self.find_pte_create(vpn).unwrap();
-        // 断言，保证新获取到的PTE是无效的（不是已分配的）
+        // 断言, 保证新获取到的PTE是无效的(不是已分配的)
         assert!(!pte.is_valid(), "{:#x?} is mapped before mapping", vpn);
         *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
     }
 
     /// 删除一个虚拟页号到物理页号的映射
     ///
-    /// 只需根据虚拟页号找到页表项，然后修改或者直接清空其内容即可
+    /// 只需根据虚拟页号找到页表项, 然后修改或者直接清空其内容即可
     pub fn unmap(&self, vpn: VirtPageNum) {
         if let Some(pte) = self.find_pte(vpn) {
             assert!(pte.is_valid(), "{:?} is invalid before unmapping", vpn);
@@ -137,7 +136,7 @@ impl PageTable {
 
     /// 根据 vpn 查找页表项
     ///
-    /// 调用 `find_pte` 来实现，如果能够找到页表项，那么它会将页表项拷贝一份并返回，否则就返回一个 `None`
+    /// 调用 `find_pte` 来实现, 如果能够找到页表项, 那么它会将页表项拷贝一份并返回, 否则就返回一个 `None`
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.find_pte(vpn).map(|pte| *pte)
     }
@@ -155,7 +154,7 @@ impl PageTable {
         })
     }
 
-    /// 按照 satp CSR 格式要求 构造一个无符号 64 位无符号整数，使得其分页模式为 SV39 ，且将当前多级页表的根节点所在的物理页号填充进去
+    /// 按照 satp CSR 格式要求 构造一个无符号 64 位无符号整数, 使得其分页模式为 SV39 , 且将当前多级页表的根节点所在的物理页号填充进去
     pub fn token(&self) -> usize {
         8usize << 60 | self.root_ppn.0
     }
@@ -180,14 +179,14 @@ impl PageTable {
     }
 }
 
-// 可以将一个 u8 封装成一个标志位的集合类型，支持一些常见的集合运算
+// 可以将一个 u8 封装成一个标志位的集合类型, 支持一些常见的集合运算
 bitflags! {
     /// PTEFlags 一共 10 bits
     #[derive(Clone, Copy, Debug)]
     pub struct PTEFlags: u16 {
-        /// 如果该位置零，则当前 [`PTE`] 的其他位将失去其应有的意义，具体意义由软件决定
+        /// 如果该位置零, 则当前 [`PTE`] 的其他位将失去其应有的意义, 具体意义由软件决定
         ///
-        /// 换言之，如果 MMU 转换过程中遇到 `!contains(PTEFlags::V)` 的情况，则会引发 Page Fault
+        /// 换言之, 如果 MMU 转换过程中遇到 `!contains(PTEFlags::V)` 的情况, 则会引发 Page Fault
         ///
         /// [`PTE`]: PageTableEntry
         const V = 1 << 0;

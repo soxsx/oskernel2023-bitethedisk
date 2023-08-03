@@ -5,9 +5,11 @@ use spin::RwLock;
 
 use crate::{
     fs::{self, AbsolutePath, CreateMode, OpenFlags},
-    mm::{AuxEntry, MemorySet},
+    mm::MemorySet,
     task::task::TaskControlBlock,
 };
+
+use super::AuxEntry;
 
 global_asm!(include_str!("initproc.S"));
 

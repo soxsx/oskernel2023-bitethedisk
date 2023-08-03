@@ -47,10 +47,10 @@ const RING_BUFFER_SIZE: usize = 4096;
 /// |成员变量|描述|
 /// |--|--|
 /// |`arr`|缓冲区内存块|
-/// |`head`|队列头，读|
-/// |`tail`|队列尾，写|
+/// |`head`|队列头, 读|
+/// |`tail`|队列尾, 写|
 /// |`status`|队列状态|
-/// |`write_end`|保存了它的写端的一个弱引用计数，<br>在需要确认该管道所有的写端是否都已经被关闭时，<br>通过这个字段很容易确认这一点|
+/// |`write_end`|保存了它的写端的一个弱引用计数, <br>在需要确认该管道所有的写端是否都已经被关闭时, <br>通过这个字段很容易确认这一点|
 pub struct PipeRingBuffer {
     arr: [u8; RING_BUFFER_SIZE],
     head: usize,

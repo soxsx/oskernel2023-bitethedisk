@@ -4,16 +4,16 @@ use super::PageTableEntry;
 use crate::consts::PAGE_SIZE;
 use core::fmt::Debug;
 
-/// 页内偏移：12bit
+/// 页内偏移: 12bit
 pub const IN_PAGE_OFFSET: usize = 0xc;
 
-/// 物理地址宽度：56bit
+/// 物理地址宽度: 56bit
 const PA_WIDTH_SV39: usize = 56;
-/// 虚拟地址宽度：39bit
+/// 虚拟地址宽度: 39bit
 const VA_WIDTH_SV39: usize = 39;
-/// 物理页号宽度：44bit
+/// 物理页号宽度: 44bit
 const PPN_WIDTH_SV39: usize = PA_WIDTH_SV39 - IN_PAGE_OFFSET;
-/// 虚拟页号宽度：27bit
+/// 虚拟页号宽度: 27bit
 const VPN_WIDTH_SV39: usize = VA_WIDTH_SV39 - IN_PAGE_OFFSET;
 
 macro_rules! derive_wrap {
@@ -108,15 +108,15 @@ mk_convertion_bridge! {
 }
 
 impl VirtAddr {
-    /// 从虚拟地址计算虚拟页号（下取整）
+    /// 从虚拟地址计算虚拟页号(下取整)
     pub fn floor(&self) -> VirtPageNum {
         VirtPageNum(self.0 / PAGE_SIZE)
     }
-    /// 从虚拟地址计算虚拟页号（下取整）
+    /// 从虚拟地址计算虚拟页号(下取整)
     pub fn ceil(&self) -> VirtPageNum {
         VirtPageNum((self.0 + PAGE_SIZE - 1) / PAGE_SIZE)
     }
-    /// 从虚拟地址获取页内偏移（物理地址的低12位）
+    /// 从虚拟地址获取页内偏移(物理地址的低12位)
     pub fn page_offset(&self) -> usize {
         self.0 & (PAGE_SIZE - 1)
     }
@@ -127,17 +127,17 @@ impl VirtAddr {
 }
 
 impl PhysAddr {
-    /// 从物理地址计算物理页号（下取整）
+    /// 从物理地址计算物理页号(下取整)
     pub fn floor(&self) -> PhysPageNum {
         PhysPageNum(self.0 / PAGE_SIZE)
     }
 
-    /// 从物理地址计算物理页号（上取整）
+    /// 从物理地址计算物理页号(上取整)
     pub fn ceil(&self) -> PhysPageNum {
         PhysPageNum((self.0 + PAGE_SIZE - 1) / PAGE_SIZE)
     }
 
-    /// 从物理地址获取页内偏移（物理地址的低12位）
+    /// 从物理地址获取页内偏移(物理地址的低12位)
     pub fn page_offset(&self) -> usize {
         self.0 & (PAGE_SIZE - 1)
     }
@@ -159,7 +159,7 @@ impl PhysAddr {
 }
 
 impl VirtPageNum {
-    /// 取出虚拟页号的三级页索引，并按照从高到低的顺序返回
+    /// 取出虚拟页号的三级页索引, 并按照从高到低的顺序返回
     pub fn indexes(&self) -> [usize; 3] {
         let mut vpn = self.0;
         let mut idx = [0usize; 3];
@@ -178,7 +178,7 @@ impl PhysPageNum {
         unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut PageTableEntry, 512) }
     }
 
-    /// 返回一个字节数组的可变引用，可以以字节为粒度对物理页帧上的数据进行访问
+    /// 返回一个字节数组的可变引用, 可以以字节为粒度对物理页帧上的数据进行访问
     pub fn as_bytes_array(&self) -> &'static mut [u8] {
         let pa: PhysAddr = (*self).into();
         unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut u8, 4096) }
@@ -191,7 +191,7 @@ impl PhysPageNum {
     }
 }
 
-/// 虚拟页号范围，是个左闭右开的区间
+/// 虚拟页号范围, 是个左闭右开的区间
 #[derive(Copy, Clone, Debug)]
 pub struct VPNRange {
     start: VirtPageNum,

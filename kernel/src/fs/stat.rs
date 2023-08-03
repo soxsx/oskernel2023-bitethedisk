@@ -19,18 +19,18 @@ pub struct Kstat {
     st_nlink: u32,   // 硬链接数
     st_uid: u32,     // 所有者的用户 ID
     st_gid: u32,     // 所有者的组 ID
-    st_rdev: u64,    // 设备 ID（如果是特殊文件）
+    st_rdev: u64,    // 设备 ID(如果是特殊文件)
     __pad: u64,
-    st_size: i64,    // 总大小，以字节为单位
+    st_size: i64,    // 总大小, 以字节为单位
     st_blksize: i32, // 文件系统 I/O 的块大小
     __pad2: i32,
     st_blocks: u64,     // 分配的 512B 块数
     st_atime_sec: i64,  // 上次访问时间
-    st_atime_nsec: i64, // 上次访问时间（纳秒精度）
+    st_atime_nsec: i64, // 上次访问时间(纳秒精度)
     st_mtime_sec: i64,  // 上次修改时间
-    st_mtime_nsec: i64, // 上次修改时间（纳秒精度）
+    st_mtime_nsec: i64, // 上次修改时间(纳秒精度)
     st_ctime_sec: i64,  // 上次状态变化的时间
-    st_ctime_nsec: i64, // 上次状态变化的时间（纳秒精度）
+    st_ctime_nsec: i64, // 上次状态变化的时间(纳秒精度)
     __unused: [u32; 2],
 }
 

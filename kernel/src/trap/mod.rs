@@ -14,21 +14,21 @@ global_asm!(include_str!("trampoline.S"));
 
 /// trap 初始化
 ///
-/// 在内核初始化阶段发生的 trap 为 S 特权器的 trap，设置成相应的内核态 trap 处理函数 [`kernel_trap_handler`]
+/// 在内核初始化阶段发生的 trap 为 S 特权器的 trap, 设置成相应的内核态 trap 处理函数 [`kernel_trap_handler`]
 pub fn init() {
     set_kernel_trap_entry();
 }
 
 /// 设置内核态下的 trap 入口
 ///
-/// 在内核态发生 trap 后，CPU 会跳转执行 [`kernel_trap_handler`] 处的代码
+/// 在内核态发生 trap 后, CPU 会跳转执行 [`kernel_trap_handler`] 处的代码
 fn set_kernel_trap_entry() {
     unsafe { stvec::write(kernel_trap_handler as usize, TrapMode::Direct) }
 }
 
 /// 设置用户态下的 trap 入口
 ///
-/// 在用户态发生 trap 后，CPU 会跳转执行 [`TRAMPOLINE`] 处的代码
+/// 在用户态发生 trap 后, CPU 会跳转执行 [`TRAMPOLINE`] 处的代码
 fn set_user_trap_entry() {
     unsafe { stvec::write(TRAMPOLINE as usize, TrapMode::Direct) }
 }
@@ -64,7 +64,7 @@ pub fn trap_return() -> ! {
     //          inner.trap_cause = None;
     //      }
     //
-    // 之后考虑使能上面的代码，并删除处理时钟中断的 trap 分支中的时间片设置操作
+    // 之后考虑使能上面的代码, 并删除处理时钟中断的 trap 分支中的时间片设置操作
     let trap_addr = trap_context_position(task.pid() - task.tgid).0;
     drop(inner);
     drop(task);

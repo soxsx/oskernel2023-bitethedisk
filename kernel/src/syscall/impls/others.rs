@@ -18,11 +18,11 @@ use super::*;
 
 /// #define SYS_times 153
 ///
-/// 功能：获取进程时间；
+/// 功能: 获取进程时间;
 ///
-/// 输入：tms结构体指针，用于获取保存当前进程的运行时间数据；
+/// 输入: tms结构体指针, 用于获取保存当前进程的运行时间数据;
 ///
-/// 返回值：成功返回已经过去的滴答数，失败返回-1;
+/// 返回值: 成功返回已经过去的滴答数, 失败返回-1;
 ///
 /// ```c
 /// struct tms *tms;
@@ -59,11 +59,11 @@ pub fn sys_times(buf: *const u8) -> Result {
 ///
 /// #define SYS_uname 160
 ///
-/// 功能：打印系统信息；
+/// 功能: 打印系统信息;
 ///
-/// 输入：utsname结构体指针用于获得系统信息数据；
+/// 输入: utsname结构体指针用于获得系统信息数据;
 ///
-/// 返回值：成功返回0，失败返回-1;
+/// 返回值: 成功返回0, 失败返回-1;
 ///
 /// ```c
 /// struct utsname *uts;
@@ -82,8 +82,8 @@ pub fn sys_uname(buf: *const u8) -> Result {
 
 /// 应用主动交出 CPU 所有权进入 Ready 状态并切换到其他应用
 ///
-/// - 返回值：总是返回 0。
-/// - syscall ID：124
+/// - 返回值: 总是返回 0.
+/// - syscall ID: 124
 pub fn sys_sched_yield() -> Result {
     suspend_current_and_run_next();
     Ok(0)
@@ -101,11 +101,11 @@ pub fn sys_sched_yield() -> Result {
 ///
 /// #define SYS_gettimeofday 169
 ///
-/// 功能：获取时间；
+/// 功能: 获取时间;
 ///
-/// 输入： timespec结构体指针用于获得时间值；
+/// 输入:  timespec结构体指针用于获得时间值;
 ///
-/// 返回值：成功返回0，失败返回-1;
+/// 返回值: 成功返回0, 失败返回-1;
 ///
 /// ```c
 /// struct timespec *ts;
@@ -121,11 +121,11 @@ pub fn sys_gettimeofday(buf: *const u8) -> Result {
 
 /// #define SYS_nanosleep 101
 ///
-/// 功能：执行线程睡眠，sleep()库函数基于此系统调用；
+/// 功能: 执行线程睡眠, sleep()库函数基于此系统调用;
 ///
-/// 输入：睡眠的时间间隔；
+/// 输入: 睡眠的时间间隔;
 ///
-/// 返回值：成功返回0，失败返回-1;
+/// 返回值: 成功返回0, 失败返回-1;
 ///
 /// ```c
 /// const struct timespec *req, struct timespec *rem;

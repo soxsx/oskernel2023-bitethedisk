@@ -32,17 +32,17 @@ use crate::task::*;
 
 /// #define SYS_clone 220
 ///
-/// 功能：创建一个子进程；
+/// 功能: 创建一个子进程;
 ///
-/// 输入：
+/// 输入:
 ///
-/// - flags: 创建的标志，如SIGCHLD；
-/// - stack: 指定新进程的栈，可为0；
-/// - ptid: 父线程ID；
-/// - tls: TLS线程本地存储描述符；
-/// - ctid: 子线程ID；
+/// - flags: 创建的标志, 如SIGCHLD;
+/// - stack: 指定新进程的栈, 可为0;
+/// - ptid: 父线程ID;
+/// - tls: TLS线程本地存储描述符;
+/// - ctid: 子线程ID;
 ///
-/// 返回值：成功则返回子进程的线程ID，失败返回-1；
+/// 返回值: 成功则返回子进程的线程ID, 失败返回-1;
 ///
 /// ```c
 /// pid_t ret = syscall(SYS_clone, flags, stack, ptid, tls, ctid)
@@ -81,29 +81,29 @@ pub fn sys_do_fork(flags: usize, stack_ptr: usize, ptid: usize, tls: usize, ctid
     // modify trap context of new_task, because it returns immediately after switching
     let trap_cx = new_task.inner_mut().trap_context();
     // we do not have to move to next instruction since we have done it before
-    // trap_handler 已经将当前进程 Trap 上下文中的 sepc 向后移动了 4 字节，
-    // 使得它回到用户态之后，会从发出系统调用的 ecall 指令的下一条指令开始执行
+    // trap_handler 已经将当前进程 Trap 上下文中的 sepc 向后移动了 4 字节,
+    // 使得它回到用户态之后, 会从发出系统调用的 ecall 指令的下一条指令开始执行
 
-    trap_cx.x[10] = 0; // 对于子进程，返回值是0
+    trap_cx.x[10] = 0; // 对于子进程, 返回值是0
     add_task(new_task); // 将 fork 到的进程加入任务调度器
     unsafe {
         core::arch::asm!("sfence.vma");
         core::arch::asm!("fence.i");
     }
-    Ok(new_pid as isize) // 对于父进程，返回值是子进程的 PID
+    Ok(new_pid as isize) // 对于父进程, 返回值是子进程的 PID
 }
 
 /// #define SYS_execve 221
 ///
-/// 功能：执行一个指定的程序；
+/// 功能: 执行一个指定的程序;
 ///
-/// 输入：
+/// 输入:
 ///
-/// - path: 待执行程序路径名称，
-/// - argv: 程序的参数，
+/// - path: 待执行程序路径名称,
+/// - argv: 程序的参数,
 /// - envp: 环境变量的数组指针
 ///
-/// 返回值：成功不返回，失败返回-1；
+/// 返回值: 成功不返回, 失败返回-1;
 ///
 /// ```c
 /// const char *path, char *const argv[], char *const envp[];
@@ -111,7 +111,7 @@ pub fn sys_do_fork(flags: usize, stack_ptr: usize, ptid: usize, tls: usize, ctid
 /// ```
 pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize) -> Result {
     let token = current_user_token();
-    // 读取到用户空间的应用程序名称（路径）
+    // 读取到用户空间的应用程序名称(路径)
     let mut path = translated_str(token, path);
 
     // {
@@ -135,7 +135,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
             if arg_str_ptr == 0 {
                 // 读到下一参数地址为0表示参数结束
                 break;
-            } // 否则从用户空间取出参数，压入向量
+            } // 否则从用户空间取出参数, 压入向量
             args_vec.push(translated_str(token, arg_str_ptr as *const u8));
             unsafe { argv = argv.add(1) }
         }
@@ -149,7 +149,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
             if env_str_ptr == 0 {
                 // 读到下一参数地址为0表示参数结束
                 break;
-            } // 否则从用户空间取出参数，压入向量
+            } // 否则从用户空间取出参数, 压入向量
               //	    println!("envp:{:?},env_str_ptr:{:x?}",envp,env_str_ptr);
             envs_vec.push(translated_str(token, env_str_ptr as *const u8));
             unsafe {
@@ -175,15 +175,15 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
 
 /// #define SYS_wait4 260
 ///
-/// 功能：等待进程改变状态;
+/// 功能: 等待进程改变状态;
 ///
-/// 输入：
+/// 输入:
 ///
-/// - pid: 指定进程ID，可为-1等待任何子进程；
-/// - status: 接收状态的指针；
-/// - options: 选项：WNOHANG，WUNTRACED，WCONTINUED；
+/// - pid: 指定进程ID, 可为-1等待任何子进程;
+/// - status: 接收状态的指针;
+/// - options: 选项: WNOHANG, WUNTRACED, WCONTINUED;
 ///
-/// 返回值：成功则返回进程ID；如果指定了WNOHANG，且进程还未改变状态，直接返回0；失败则返回-1；
+/// 返回值: 成功则返回进程ID; 如果指定了WNOHANG, 且进程还未改变状态, 直接返回0; 失败则返回-1;
 ///
 /// ```c
 /// pid_t pid, int *status, int options;
@@ -209,7 +209,7 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result {
 
     loop {
         let mut inner = task.inner_mut();
-        // 查找所有符合PID要求的处于僵尸状态的进程，如果有的话还需要同时找出它在当前进程控制块子进程向量中的下标
+        // 查找所有符合PID要求的处于僵尸状态的进程, 如果有的话还需要同时找出它在当前进程控制块子进程向量中的下标
         let pair = inner
             .children
             .iter()
@@ -218,10 +218,10 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result {
         if let Some((idx, _)) = pair {
             // 将子进程从向量中移除并置于当前上下文中
             let child = inner.children.remove(idx);
-            // 确认这是对于该子进程控制块的唯一一次强引用，即它不会出现在某个进程的子进程向量中，
-            // 更不会出现在处理器监控器或者任务管理器中。当它所在的代码块结束，这次引用变量的生命周期结束，
-            // 将导致该子进程进程控制块的引用计数变为 0 ，彻底回收掉它占用的所有资源，
-            // 包括：内核栈和它的 PID 还有它的应用地址空间存放页表的那些物理页帧等等
+            // 确认这是对于该子进程控制块的唯一一次强引用, 即它不会出现在某个进程的子进程向量中,
+            // 更不会出现在处理器监控器或者任务管理器中.当它所在的代码块结束, 这次引用变量的生命周期结束,
+            // 将导致该子进程进程控制块的引用计数变为 0 , 彻底回收掉它占用的所有资源,
+            // 包括: 内核栈和它的 PID 还有它的应用地址空间存放页表的那些物理页帧等等
             assert_eq!(Arc::strong_count(&child), 1);
             // 收集的子进程信息返回
             let found_pid = child.pid();
@@ -237,7 +237,7 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result {
 
             return Ok(found_pid as isize);
         } else {
-            drop(inner); // 因为下个函数会切换上下文，所以需要手动释放锁
+            drop(inner); // 因为下个函数会切换上下文, 所以需要手动释放锁
             suspend_current_and_run_next();
         }
     }
@@ -245,11 +245,11 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result {
 
 /// #define SYS_exit 93
 ///
-/// 功能：触发进程终止，无返回值；
+/// 功能: 触发进程终止, 无返回值;
 ///
-/// 输入：终止状态值；
+/// 输入: 终止状态值;
 ///
-/// 返回值：无返回值；
+/// 返回值: 无返回值;
 ///
 /// ```c
 /// int ec;
@@ -267,11 +267,11 @@ pub fn sys_exit_group(exit_code: i32) -> ! {
 
 /// #define SYS_getppid 173
 ///
-/// 功能：获取父进程ID；
+/// 功能: 获取父进程ID;
 ///
-/// 输入：系统调用ID；
+/// 输入: 系统调用ID;
 ///
-/// 返回值：成功返回父进程ID；
+/// 返回值: 成功返回父进程ID;
 ///
 /// ```c
 /// pid_t ret = syscall(SYS_getppid);
@@ -282,11 +282,11 @@ pub fn sys_getppid() -> Result {
 
 /// #define SYS_getpid 172
 ///
-/// 功能：获取进程ID；
+/// 功能: 获取进程ID;
 ///
-/// 输入：系统调用ID；
+/// 输入: 系统调用ID;
 ///
-/// 返回值：成功返回进程ID；
+/// 返回值: 成功返回进程ID;
 ///
 /// ```c
 /// pid_t ret = syscall(SYS_getpid);
@@ -510,24 +510,24 @@ impl CpuSet {
 }
 
 // TODO 多核 在进程内加入 CpuMask
-// 用于获取一个进程或线程的 CPU 亲和性（CPU affinity）。
-// CPU 亲和性指定了一个进程或线程可以运行在哪些 CPU 上。
-// 通过使用 sched_getaffinity 系统调用，程序员可以查询进程或线程当前绑定的 CPU。
-// mask 参数是一个位图，其中每个位表示一个 CPU。
-// 如果某个位为 1，表示进程或线程可以运行在对应的 CPU 上；
-// 如果某个位为 0，则表示进程或线程不能运行在对应的 CPU 上。
+// 用于获取一个进程或线程的 CPU 亲和性(CPU affinity).
+// CPU 亲和性指定了一个进程或线程可以运行在哪些 CPU 上.
+// 通过使用 sched_getaffinity 系统调用, 程序员可以查询进程或线程当前绑定的 CPU.
+// mask 参数是一个位图, 其中每个位表示一个 CPU.
+// 如果某个位为 1, 表示进程或线程可以运行在对应的 CPU 上;
+// 如果某个位为 0, 则表示进程或线程不能运行在对应的 CPU 上.
 // int sched_getaffinity(pid_t pid, size_t cpusetsize, cpu_set_t *mask);
-// cpu_set_t* cpu_set_t 是一个位图，其中每个位表示一个 CPU。 cpu_set_t 是一个结构体，定义如下：
+// cpu_set_t* cpu_set_t 是一个位图, 其中每个位表示一个 CPU. cpu_set_t 是一个结构体, 定义如下:
 // typedef struct {
 //     unsigned long __bits[1024 / (8 * sizeof(long))];
 // } cpu_set_t;
-// cpusetsize 参数指定了 mask 参数指向的位图的大小，单位是字节。
+// cpusetsize 参数指定了 mask 参数指向的位图的大小, 单位是字节.
 pub fn sys_sched_getaffinity(pid: usize, cpusetsize: usize, mask: *mut u8) -> Result {
     let token = current_user_token();
     let mut userbuf = UserBuffer::wrap(translated_bytes_buffer(token, mask, cpusetsize));
 
-    // 内核中的调度器会维护一个位图，用于记录进程或线程当前的 CPU 亲和性信息。
-    // 当调用 sched_getaffinity 系统调用时，调度器会将位图中对应的位复制到用户空间中的 mask 指针指向的内存区域中。
+    // 内核中的调度器会维护一个位图, 用于记录进程或线程当前的 CPU 亲和性信息.
+    // 当调用 sched_getaffinity 系统调用时, 调度器会将位图中对应的位复制到用户空间中的 mask 指针指向的内存区域中.
     let mut cpuset = CpuMask::new();
     cpuset.set(0);
     userbuf.write(cpuset.as_bytes());
@@ -551,12 +551,12 @@ pub const SCHED_IDLE: isize = 5;
 pub const SCHED_DEADLINE: isize = 6;
 
 // TODO 系统调用策略
-// 该函数接受一个参数 pid，表示要查询的进程的 PID。如果 pid 是 0，则表示查询当前进程的调度策略。
-// 函数返回值是一个整数，表示指定进程的调度策略，可能的取值包括：
-// SCHED_FIFO：先进先出调度策略。
-// SCHED_RR：轮转调度策略。
-// SCHED_OTHER：其他调度策略。
-// 如果查询失败，则返回 -1，并将错误码存入 errno 变量中。
+// 该函数接受一个参数 pid, 表示要查询的进程的 PID.如果 pid 是 0, 则表示查询当前进程的调度策略.
+// 函数返回值是一个整数, 表示指定进程的调度策略, 可能的取值包括:
+// SCHED_FIFO: 先进先出调度策略.
+// SCHED_RR: 轮转调度策略.
+// SCHED_OTHER: 其他调度策略.
+// 如果查询失败, 则返回 -1, 并将错误码存入 errno 变量中.
 pub fn sys_getscheduler(pid: usize) -> Result {
     // let task = pid2task(pid).ok_or(SyscallError::PidNotFound(-1, pid as isize))?;
     // let inner = task.read();
@@ -589,12 +589,12 @@ impl SchedParam {
     }
 }
 
-// sched_priority 成员表示进程的调度优先级，值越高表示优先级越高。
-// 在 Linux 中，调度优先级的取值范围是 1-99，其中 1 表示最低优先级，99 表示最高优先级。
-// 如果调用成功，sched_getparam 返回 0；否则返回 -1，并设置 errno 变量表示错误类型。
-// 可能的错误类型包括 EINVAL（无效的参数）、ESRCH（指定的进程不存在）等。
-// sched_getparam 系统调用只能获取当前进程或当前进程的子进程的调度参数，对于其他进程则需要相应的权限或特权。
-// 如果要获取其他进程的调度参数，可以使用 sys_sched_getaffinity 系统调用获取进程的 CPU 亲和性，然后在相应的 CPU 上运行一个特权进程，以便获取进程的调度参数。
+// sched_priority 成员表示进程的调度优先级, 值越高表示优先级越高.
+// 在 Linux 中, 调度优先级的取值范围是 1-99, 其中 1 表示最低优先级, 99 表示最高优先级.
+// 如果调用成功, sched_getparam 返回 0; 否则返回 -1, 并设置 errno 变量表示错误类型.
+// 可能的错误类型包括 EINVAL(无效的参数), ESRCH(指定的进程不存在)等.
+// sched_getparam 系统调用只能获取当前进程或当前进程的子进程的调度参数, 对于其他进程则需要相应的权限或特权.
+// 如果要获取其他进程的调度参数, 可以使用 sys_sched_getaffinity 系统调用获取进程的 CPU 亲和性, 然后在相应的 CPU 上运行一个特权进程, 以便获取进程的调度参数.
 // struct sched_param {
 //     int sched_priority;
 // };
@@ -611,11 +611,11 @@ pub fn sys_sched_getparam(pid: usize, param: *mut SchedParam) -> Result {
 #[repr(C)]
 pub struct SchedPolicy(isize);
 
-// pid 参数指定要设置调度策略和参数的进程的 PID；
-// policy 参数是一个整数值，表示要设置的调度策略；
-// param 参数是一个指向 sched_param 结构体的指针，用于设置调度参数。
-// 如果调用成功，sched_setscheduler 返回 0；否则返回 -1，并设置 errno 变量表示错误类型。
-// 可能的错误类型包括 EINVAL（无效的参数）、ESRCH（指定的进程不存在）等。
+// pid 参数指定要设置调度策略和参数的进程的 PID;
+// policy 参数是一个整数值, 表示要设置的调度策略;
+// param 参数是一个指向 sched_param 结构体的指针, 用于设置调度参数.
+// 如果调用成功, sched_setscheduler 返回 0; 否则返回 -1, 并设置 errno 变量表示错误类型.
+// 可能的错误类型包括 EINVAL(无效的参数), ESRCH(指定的进程不存在)等.
 // int sched_setscheduler(pid_t pid, int policy, const struct sched_param *param);
 // struct sched_param {
 //     int sched_priority;
@@ -634,10 +634,10 @@ pub fn sys_sched_setscheduler(pid: usize, policy: isize, param: *const SchedPara
     Ok(0)
 }
 
-// 用于获取指定时钟的精度（resolution）
-// 其中，clk_id 参数指定要获取精度的时钟 ID；res 参数是一个指向 timespec 结构体的指针，用于存储获取到的精度。
-// 如果调用成功，clock_getres() 返回值为 0；否则返回一个负数值，表示错误类型。
-// 可能的错误类型包括 EINVAL（无效的参数）、EFAULT（无效的内存地址）等。
+// 用于获取指定时钟的精度(resolution)
+// 其中, clk_id 参数指定要获取精度的时钟 ID; res 参数是一个指向 timespec 结构体的指针, 用于存储获取到的精度.
+// 如果调用成功, clock_getres() 返回值为 0; 否则返回一个负数值, 表示错误类型.
+// 可能的错误类型包括 EINVAL(无效的参数), EFAULT(无效的内存地址)等.
 // int clock_getres(clockid_t clk_id, struct timespec *res);
 // struct timespec {
 //     time_t tv_sec; /* seconds */
@@ -656,10 +656,10 @@ pub const SOCK_DGRAM: isize = 1;
 pub const SOCK_STREAM: isize = 2;
 
 // int socketpair(int domain, int type, int protocol, int sv[2]);
-// domain：指定要创建的套接字的协议族，可以取值为 AF_UNIX 或 AF_LOCAL，表示使用本地 IPC。
-// type：指定要创建的套接字的类型，可以取值为 SOCK_STREAM 或 SOCK_DGRAM。
-// protocol：指定要使用的协议，通常为 0。
-// sv：指向一个长度为 2 的数组的指针，用于保存创建的套接字文件描述符。
+// domain: 指定要创建的套接字的协议族, 可以取值为 AF_UNIX 或 AF_LOCAL, 表示使用本地 IPC.
+// type: 指定要创建的套接字的类型, 可以取值为 SOCK_STREAM 或 SOCK_DGRAM.
+// protocol: 指定要使用的协议, 通常为 0.
+// sv: 指向一个长度为 2 的数组的指针, 用于保存创建的套接字文件描述符.
 pub fn sys_socketpair(domain: isize, _type: isize, _protocol: isize, sv: *mut [i32; 2]) -> Result {
     let token = current_user_token();
     let task = current_task();
@@ -690,9 +690,9 @@ pub fn sys_socketpair(domain: isize, _type: isize, _protocol: isize, sv: *mut [i
 }
 
 /*********** SIGNAL ******************/
-// 用于在信号处理程序中恢复被中断的程序执行流程。
-// 当一个进程收到一个信号时，内核会为该进程保存信号处理程序的上下文（如寄存器的值、栈指针等），并将程序的执行流程转移到信号处理程序中。
-// 在信号处理程序中，如果需要返回到被中断的程序执行流程中，可以使用 sigreturn 系统调用
+// 用于在信号处理程序中恢复被中断的程序执行流程.
+// 当一个进程收到一个信号时, 内核会为该进程保存信号处理程序的上下文(如寄存器的值, 栈指针等), 并将程序的执行流程转移到信号处理程序中.
+// 在信号处理程序中, 如果需要返回到被中断的程序执行流程中, 可以使用 sigreturn 系统调用
 pub fn sys_sigreturn() -> Result {
     let token = current_user_token();
     let task = current_task();
@@ -721,8 +721,8 @@ pub fn sys_sigreturn() -> Result {
 }
 
 // 用于设置和修改信号
-// sig 表示要设置或修改的信号的编号，act 是一个指向 sigaction 结构体的指针，用于指定新的信号处理方式，
-// oact 是一个指向 sigaction 结构体的指针，用于保存原来的信号处理方式
+// sig 表示要设置或修改的信号的编号, act 是一个指向 sigaction 结构体的指针, 用于指定新的信号处理方式,
+// oact 是一个指向 sigaction 结构体的指针, 用于保存原来的信号处理方式
 // ```c
 // asmlinkage long sys_sigaction(int sig, const struct sigaction __user *act, struct sigaction __user *oact);
 // struct sigaction {
@@ -740,7 +740,7 @@ pub fn sys_sigaction(signum: isize, act: *const SigAction, oldact: *mut SigActio
     let mut inner = task.inner_mut();
     let signum = signum as u32;
 
-    // signum 超出范围，返回错误
+    // signum 超出范围, 返回错误
     if signum > MAX_SIGNUM || signum == Signal::SIGKILL as u32 || signum == Signal::SIGSTOP as u32 {
         // println!(
         //     "[Kernel] syscall/impl/process: sys_sigaction(signum: {}, sigaction = {:#x?}, old_sigaction = {:#x?} ) = {}",
@@ -749,7 +749,7 @@ pub fn sys_sigaction(signum: isize, act: *const SigAction, oldact: *mut SigActio
         return Err(Errno::EINVAL);
     }
 
-    // 当 sigaction 存在时， 在 pcb 中注册给定的 signaction
+    // 当 sigaction 存在时,  在 pcb 中注册给定的 signaction
 
     if act as usize != 0 {
         let mut sigaction = task.sigactions.write();
@@ -777,15 +777,15 @@ pub fn sys_sigaction(signum: isize, act: *const SigAction, oldact: *mut SigActio
     Ok(0)
 }
 
-// 用于设置和修改进程的信号屏蔽字。
-// 信号屏蔽字是一个位图，用于指定哪些信号在当前进程中被屏蔽，即在进程处理某些信号时，屏蔽掉一些信号，以避免这些信号的干扰。
+// 用于设置和修改进程的信号屏蔽字.
+// 信号屏蔽字是一个位图, 用于指定哪些信号在当前进程中被屏蔽, 即在进程处理某些信号时, 屏蔽掉一些信号, 以避免这些信号的干扰.
 // ```c
 // int sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
 // ```
-// how 参数指定了如何修改进程的信号屏蔽字，可以取以下三个值之一：
-// - SIG_BLOCK：将 set 中指定的信号添加到进程的信号屏蔽字中。
-// - SIG_UNBLOCK：将 set 中指定的信号从进程的信号屏蔽字中移除。
-// - SIG_SETMASK：将进程的信号屏蔽字设置为 set 中指定的信号。
+// how 参数指定了如何修改进程的信号屏蔽字, 可以取以下三个值之一:
+// - SIG_BLOCK: 将 set 中指定的信号添加到进程的信号屏蔽字中.
+// - SIG_UNBLOCK: 将 set 中指定的信号从进程的信号屏蔽字中移除.
+// - SIG_SETMASK: 将进程的信号屏蔽字设置为 set 中指定的信号.
 pub fn sys_sigprocmask(
     how: usize,
     set: *const usize,

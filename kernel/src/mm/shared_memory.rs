@@ -1,15 +1,11 @@
-use super::address::PhysAddr;
-use crate::fs::CreateMode;
 use crate::task::current_task;
 use crate::timer::get_time;
+use crate::{fs::CreateMode, mm::PhysAddr};
 use alloc::{collections::BTreeMap, vec::Vec};
 
 use spin::Mutex;
 lazy_static! {
-    /// 物理页帧管理器实例
-    /// - 全局变量，管理除内核空间外的内存空间
-    pub static ref SHM_MANAGER: Mutex<SharedMemoryManager> =
-        Mutex::new(SharedMemoryManager::new());
+    pub static ref SHM_MANAGER: Mutex<SharedMemoryManager> = Mutex::new(SharedMemoryManager::new());
 }
 pub struct SharedMemoryManager {
     shm_areas: BTreeMap<usize, SharedMemoryArea>,
@@ -19,14 +15,14 @@ pub struct SharedMemoryArea {
     buffer: Vec<u8>,
 }
 pub struct SharedMemoryIdentifierDs {
-    shm_perm: CreateMode, /* Ownership and permissions */
-    shm_size: usize,      /* Size of segment (bytes) */
-    shm_atime: usize,     /* Last attach time */
-    shm_dtime: usize,     /* Last detach time */
-    shm_ctime: usize,     /* Creation time/time of last modification via shmctl() */
-    shm_cpid: usize,      /* PID of creator */
-    shm_lpid: usize,      /* PID of last shmat(2)/shmdt(2) */
-    shm_nattch: usize,    /* Number of current attaches */
+    _shm_perm: CreateMode, /* Ownership and permissions */
+    shm_size: usize,       /* Size of segment (bytes) */
+    shm_atime: usize,      /* Last attach time */
+    shm_dtime: usize,      /* Last detach time */
+    _shm_ctime: usize,     /* Creation time/time of last modification via shmctl() */
+    _shm_cpid: usize,      /* PID of creator */
+    shm_lpid: usize,       /* PID of last shmat(2)/shmdt(2) */
+    shm_nattch: usize,     /* Number of current attaches */
 }
 pub struct SharedMemoryTracker {
     pub key: usize,
@@ -61,12 +57,12 @@ impl SharedMemoryManager {
         let pid = current_task().pid();
         let perm = CreateMode::from_bits((shmflags & 0o777) as u32).unwrap();
         let shmid_ds = SharedMemoryIdentifierDs {
-            shm_perm: perm,
+            _shm_perm: perm,
             shm_size: size,
             shm_atime: 0,
             shm_dtime: 0,
-            shm_ctime: get_time(),
-            shm_cpid: pid,
+            _shm_ctime: get_time(),
+            _shm_cpid: pid,
             shm_lpid: 0,
             shm_nattch: 0,
         };

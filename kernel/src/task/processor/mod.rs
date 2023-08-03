@@ -1,8 +1,8 @@
 //! processor 提供了一系列的抽象
 //!
-//! CPU 被抽象为 [`cpu::Cpu`] 对象，指代一个实际的具有 id 的物理 CPU
+//! CPU 被抽象为 [`cpu::Cpu`] 对象, 指代一个实际的具有 id 的物理 CPU
 //!
-//! [`Processor`] 是一个物理上的计算单元，和一个具体的 [`cpu::Cpu`] 绑定，
+//! [`Processor`] 是一个物理上的计算单元, 和一个具体的 [`cpu::Cpu`] 绑定,
 //! 它事实上负责进程 [`TaskControlBlock`] 的运行和进程上下文 [`TaskContext`] 的切换
 use alloc::sync::Arc;
 use core::cell::RefMut;
@@ -38,8 +38,8 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     unsafe { __switch(switched_task_cx_ptr, idle_task_cx_ptr) }
 }
 
-/// [`Processor`] 是描述 CPU执行状态 的数据结构。
-/// 在单核环境下，我们仅创建单个 Processor 的全局实例 PROCESSOR
+/// [`Processor`] 是描述 CPU执行状态 的数据结构.
+/// 在单核环境下, 我们仅创建单个 Processor 的全局实例 PROCESSOR
 pub static mut PROCESSOR: SyncRefCell<Processor> = SyncRefCell::new(Processor::new());
 pub fn acquire_processor<'a>() -> RefMut<'a, Processor> {
     unsafe { PROCESSOR.borrow_mut() }

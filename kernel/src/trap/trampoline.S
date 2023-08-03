@@ -33,7 +33,7 @@ user_trapvec:
 		.set n, n+1
 	.endr
 
-	# t0, t1 因为前面已经存到内存了，现在可以随便使用
+	# t0, t1 因为前面已经存到内存了, 现在可以随便使用
 	csrr t0, sstatus
 	csrr t1, sepc
 	sd t0, 32*8(sp)
@@ -73,20 +73,20 @@ user_trapret:
 	# 刷新 MMU 的 TLB
 	sfence.vma
 
-	# 将 TrapContext 的值存入 sscratch，供 user_trapvec 使用
+	# 将 TrapContext 的值存入 sscratch, 供 user_trapvec 使用
 	csrw sscratch, a0
-	# 将 a0 的值转存到 sp，是为了使用宏
+	# 将 a0 的值转存到 sp, 是为了使用宏
 	mv sp, a0
 
-	# 在恢复所有通用寄存器前，通用寄存器中大部分可以随意使用，这里选择
-	# t0, t1 两个寄存器，用来将内存中的 sstatus 和 sepc 恢复到相应寄存器
+	# 在恢复所有通用寄存器前, 通用寄存器中大部分可以随意使用, 这里选择
+	# t0, t1 两个寄存器, 用来将内存中的 sstatus 和 sepc 恢复到相应寄存器
 	ld t0, 32*8(sp)
 	ld t1, 33*8(sp)
 	csrw sstatus, t0
 	csrw sepc, t1
 
 	# 开始恢复除了 x0 和 sp 以外的通用寄存器
-	# 因为 sp 在宏中是作为偏移的基址使用的，所以现在不能从内存中恢复它的值
+	# 因为 sp 在宏中是作为偏移的基址使用的, 所以现在不能从内存中恢复它的值
 	ld ra, 1*8(sp)
 	ld gp, 3*8(sp)
 	.set n, 4
@@ -95,7 +95,7 @@ user_trapret:
 		.set n, n+1
 	.endr
 
-	# 其他通用寄存器(除 x0 外)，已全部恢复，恢复 sp
+	# 其他通用寄存器(除 x0 外), 已全部恢复, 恢复 sp
 	ld sp, 2*8(sp)
 
 	sret

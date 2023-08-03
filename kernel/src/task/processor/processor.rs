@@ -2,7 +2,7 @@ use crate::task::manager::TASK_MANAGER;
 use crate::task::{task::TaskControlBlock, TaskContext};
 use alloc::sync::Arc;
 
-/// 每个核上的处理器，负责运行一个进程
+/// 每个核上的处理器, 负责运行一个进程
 pub struct Processor {
     /// 当前处理器上正在执行的任务
     current: Option<Arc<TaskControlBlock>>,

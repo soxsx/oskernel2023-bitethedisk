@@ -5,7 +5,7 @@ __switch:
         # fn __switch(current_task_cx_ptr: *mut TaskContext,
         #             next_task_cx_ptr:    *const TaskContext);
         #
-        # 根据 riscv ABI，函数的入参依次放在寄存器 a0, a1, a2...a7 中
+        # 根据 riscv ABI, 函数的入参依次放在寄存器 a0, a1, a2...a7 中
         #
         # a0 -> current_task_ctx_ptr: *mut TaskContext
         # a1 -> next_task_ctx_ptr:    *const TaskContext

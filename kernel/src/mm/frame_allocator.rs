@@ -4,13 +4,12 @@ use alloc::{collections::BTreeMap, vec::Vec};
 use core::fmt::{self, Debug, Formatter};
 use spin::Mutex;
 
-/// 物理页帧，代表 RAM 上一段实际的物理页，通过物理页号标识
+/// 物理页帧, 代表 RAM 上一段实际的物理页, 通过物理页号标识
 pub struct FrameTracker {
     pub ppn: PhysPageNum,
 }
-
 impl FrameTracker {
-    /// 通过物理页号创建一个物理页帧的结构体，创建时初始化内存空间
+    /// 通过物理页号创建一个物理页帧的结构体, 创建时初始化内存空间
     pub fn new(ppn: PhysPageNum) -> Self {
         let bytes_arr = ppn.as_bytes_array();
         bytes_arr.into_iter().for_each(|b| *b = 0);
@@ -25,13 +24,11 @@ impl FrameTracker {
         Self { ppn }
     }
 }
-
 impl Debug for FrameTracker {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_fmt(format_args!("FrameTracker:PPN={:#x}", self.ppn.0))
     }
 }
-
 impl Drop for FrameTracker {
     fn drop(&mut self) {
         dealloc_frame(self.ppn);
@@ -45,17 +42,11 @@ impl Clone for FrameTracker {
 
 /// 物理页帧管理器
 trait FrameAllocator {
-    /// 新建一个实例，在使用前需要初始化
     fn new() -> Self;
-    /// 从空闲物理页中分配一个物理页
     fn alloc(&mut self) -> Option<PhysPageNum>;
-    /// 回收物理页
     fn dealloc(&mut self, ppn: PhysPageNum);
-
     fn add_ref(&mut self, ppn: PhysPageNum);
-
     fn enquire_ref(&self, ppn: PhysPageNum) -> usize;
-
     fn usage(&self) -> (usize, usize, usize, usize);
 }
 
@@ -72,7 +63,6 @@ pub struct StackFrameAllocator {
     /// 引用计数器
     refcounter: BTreeMap<usize, u8>,
 }
-
 impl StackFrameAllocator {
     /// 初始化栈式物理页管理器
     /// - `l`:空闲内存起始页号
@@ -94,7 +84,7 @@ impl FrameAllocator for StackFrameAllocator {
         }
     }
     fn alloc(&mut self) -> Option<PhysPageNum> {
-        // 首先检查栈 recycled 内有没有之前回收的物理页号，如果有的话直接弹出栈顶并返回
+        // 首先检查栈 recycled 内有没有之前回收的物理页号, 如果有的话直接弹出栈顶并返回
         if let Some(ppn) = self.recycled.pop() {
             self.refcounter.insert(ppn, 0);
             Some(ppn.into())
@@ -129,14 +119,14 @@ impl FrameAllocator for StackFrameAllocator {
         *ref_times -= 1;
         if *ref_times == 0 {
             self.refcounter.remove(&ppn);
-            // 验证物理页号有效性，PPN大于已分配的最高内存或已释放栈中存在这个物理页号
+            // 验证物理页号有效性, PPN大于已分配的最高内存或已释放栈中存在这个物理页号
             if ppn >= self.current || self.recycled.iter().any(|&v| v == ppn) {
                 panic!(
                     "[StackFrameAllocator::dealloc] Frame ppn={:#x} has not been allocated!",
                     ppn
                 );
             }
-            // 回收，压栈
+            // 回收, 压栈
             self.recycled.push(ppn);
         }
     }
@@ -160,7 +150,7 @@ type FrameAllocatorImpl = StackFrameAllocator;
 
 lazy_static! {
     /// 物理页帧管理器实例
-    /// - 全局变量，管理除内核空间外的内存空间
+    /// - 全局变量, 管理除内核空间外的内存空间
     pub static ref FRAME_ALLOCATOR: Mutex<FrameAllocatorImpl> =
         Mutex::new(FrameAllocatorImpl::new());
 }
@@ -178,22 +168,16 @@ pub fn init() {
         PhysAddr::from(PHYS_END).floor(),
     );
 }
-
-/// 分配物理页帧
 pub fn alloc_frame() -> Option<FrameTracker> {
     let ppn = FRAME_ALLOCATOR.lock().alloc()?;
     Some(FrameTracker::new(ppn))
 }
-
-/// 回收物理页帧
 pub fn dealloc_frame(ppn: PhysPageNum) {
     FRAME_ALLOCATOR.lock().dealloc(ppn);
 }
-
 pub fn frame_add_ref(ppn: PhysPageNum) {
     FRAME_ALLOCATOR.lock().add_ref(ppn)
 }
-
 pub fn enquire_refcount(ppn: PhysPageNum) -> usize {
     FRAME_ALLOCATOR.lock().enquire_ref(ppn)
 }

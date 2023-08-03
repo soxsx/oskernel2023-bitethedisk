@@ -28,24 +28,24 @@ const AT_FDCWD: isize = -100;
 
 /// #define SYS_getcwd 17
 ///
-/// 功能：获取当前工作目录；
+/// 功能: 获取当前工作目录;
 ///
-/// 输入：
+/// 输入:
 ///
-/// - char *buf：一块缓存区，用于保存当前工作目录的字符串。当buf设为NULL，由系统来分配缓存区。
-/// - size：buf 缓存区的大小。
+/// - char *buf: 一块缓存区, 用于保存当前工作目录的字符串.当buf设为NULL, 由系统来分配缓存区.
+/// - size: buf 缓存区的大小.
 ///
-/// 返回值：
+/// 返回值:
 ///
-/// - 成功：返回当前工作目录的字符串的指针。
-/// - 失败：则返回NULL。
+/// - 成功: 返回当前工作目录的字符串的指针.
+/// - 失败: 则返回NULL.
 ///
 /// ```c
 /// char *buf, size_t size;
 /// long ret = syscall(SYS_getcwd, buf, size);
 /// ```
 pub fn sys_getcwd(buf: *mut u8, size: usize) -> Result {
-    // 不要使用  `.is_null`，可能会由于运行时的 const 评估造成错误的结果?
+    // 不要使用  `.is_null`, 可能会由于运行时的 const 评估造成错误的结果?
     if buf as usize == 0 {
         return_errno!(Errno::EFAULT, "buf is NULL");
     }
@@ -67,18 +67,18 @@ pub fn sys_getcwd(buf: *mut u8, size: usize) -> Result {
 
 /// #define SYS_pipe2 59
 ///
-/// 功能：创建管道；
+/// 功能: 创建管道;
 ///
-/// 输入：
+/// 输入:
 ///
-/// - fd\[2\]：用于保存2个文件描述符。
+/// - fd\[2\]: 用于保存2个文件描述符.
 ///     - fd\[0\] 为管道的读出端
-///     - fd\[1\] 为管道的写入端。
+///     - fd\[1\] 为管道的写入端.
 ///
-/// 返回值：
+/// 返回值:
 ///
-/// - 成功执行，返回0。
-/// - 失败，返回-1。
+/// - 成功执行, 返回0.
+/// - 失败, 返回-1.
 ///
 /// ```c
 /// int fd[2];
@@ -120,16 +120,16 @@ pub fn sys_pipe2(pipe: *mut i32, _flag: i32) -> Result {
 
 /// #define SYS_dup 23
 ///
-/// 功能：复制文件描述符；
+/// 功能: 复制文件描述符;
 ///
-/// 输入：
+/// 输入:
 ///
-/// - fd：被复制的文件描述符。
+/// - fd: 被复制的文件描述符.
 ///
-/// 返回值：
+/// 返回值:
 ///
-/// - 成功：返回新的文件描述符。
-/// - 失败：返回-1。
+/// - 成功: 返回新的文件描述符.
+/// - 失败: 返回-1.
 ///
 /// ```c
 /// int fd;
@@ -161,17 +161,17 @@ pub fn sys_dup(old_fd: usize) -> Result {
 
 /// #define SYS_dup3 24
 ///
-/// 功能：复制文件描述符，并指定了新的文件描述符；
+/// 功能: 复制文件描述符, 并指定了新的文件描述符;
 ///
-/// 输入：
+/// 输入:
 ///
-/// - old：被复制的文件描述符。
-/// - new：新的文件描述符。
+/// - old: 被复制的文件描述符.
+/// - new: 新的文件描述符.
 ///
-/// 返回值：
+/// 返回值:
 ///
-/// - 成功：返回新的文件描述符。
-/// - 失败：返回-1。
+/// - 成功: 返回新的文件描述符.
+/// - 失败: 返回-1.
 ///
 /// ```c
 /// int old, int new;
@@ -198,16 +198,16 @@ pub fn sys_dup3(old_fd: usize, new_fd: usize) -> Result {
 
 /// #define SYS_chdir 49
 ///
-/// 功能：切换工作目录；
+/// 功能: 切换工作目录;
 ///
-/// 输入：
+/// 输入:
 ///
-/// - path：需要切换到的目录。
+/// - path: 需要切换到的目录.
 ///
-/// 返回值：
+/// 返回值:
 ///
-/// - 成功：返回0。
-/// - 失败：返回-1。
+/// - 成功: 返回0.
+/// - 失败: 返回-1.
 ///
 /// ```c
 /// const char *path;
@@ -227,26 +227,26 @@ pub fn sys_chdir(path: *const u8) -> Result {
             return_errno!(Errno::ENOENT);
         }
     } else {
-        // TODO: 这里只能判断是否到达，但是不知道不能到达的原因
+        // TODO: 这里只能判断是否到达, 但是不知道不能到达的原因
         return_errno!(Errno::ENOTDIR);
     }
 }
 
 /// #define SYS_openat 56
 ///
-/// 功能：打开或创建一个文件；
+/// 功能: 打开或创建一个文件;
 ///
-/// 输入：
+/// 输入:
 ///
-/// - fd：文件所在目录的文件描述符。
-/// - filename：要打开或创建的文件名。如为绝对路径，则忽略fd。
-///   如为相对路径，且fd是AT_FDCWD，则filename是相对于当前工作目录来说的。
-///   如为相对路径，且fd是一个文件描述符，则filename是相对于fd所指向的目录来说的。
-/// - flags：必须包含如下访问模式的其中一种：O_RDONLY，O_WRONLY，O_RDWR。
-///   还可以包含文件创建标志和文件状态标志。
-/// - mode：文件的所有权描述。详见`man 7 inode `。
+/// - fd: 文件所在目录的文件描述符.
+/// - filename: 要打开或创建的文件名.如为绝对路径, 则忽略fd.
+///   如为相对路径, 且fd是AT_FDCWD, 则filename是相对于当前工作目录来说的.
+///   如为相对路径, 且fd是一个文件描述符, 则filename是相对于fd所指向的目录来说的.
+/// - flags: 必须包含如下访问模式的其中一种: O_RDONLY, O_WRONLY, O_RDWR.
+///   还可以包含文件创建标志和文件状态标志.
+/// - mode: 文件的所有权描述.详见`man 7 inode `.
 ///
-/// 返回值：成功执行，返回新的文件描述符。失败，返回-1。
+/// 返回值: 成功执行, 返回新的文件描述符.失败, 返回-1.
 ///
 /// ```c
 /// int fd, const char *filename, int flags, mode_t mode;
@@ -305,16 +305,16 @@ pub fn sys_openat(fd: i32, filename: *const u8, flags: u32, mode: u32) -> Result
 
 /// #define SYS_close 57
 ///
-/// 功能：关闭一个文件描述符；
+/// 功能: 关闭一个文件描述符;
 ///
-/// 输入：
+/// 输入:
 ///
-/// - fd：要关闭的文件描述符。
+/// - fd: 要关闭的文件描述符.
 ///
-/// 返回值：
+/// 返回值:
 ///
-/// - 成功执行，返回0。
-/// - 失败，返回-1。
+/// - 成功执行, 返回0.
+/// - 失败, 返回-1.
 ///
 /// ```c
 /// int fd;
@@ -329,22 +329,22 @@ pub fn sys_close(fd: usize) -> Result {
     if fd_table[fd].is_none() {
         return_errno!(Errno::EBADF, "try to close fd that is not exists {}", fd);
     }
-    // 把 fd 对应的值取走，变为 None
+    // 把 fd 对应的值取走, 变为 None
     fd_table[fd].take();
     Ok(0)
 }
 
 /// #define SYS_getdents64 61
 ///
-/// 功能：获取目录的条目;
+/// 功能: 获取目录的条目;
 ///
-/// 输入：
+/// 输入:
 ///
-/// - fd：所要读取目录的文件描述符。
-/// - buf：一个缓存区，用于保存所读取目录的信息。
-/// - len：buf的大小。
+/// - fd: 所要读取目录的文件描述符.
+/// - buf: 一个缓存区, 用于保存所读取目录的信息.
+/// - len: buf的大小.
 ///
-/// 缓存区的结构如下：
+/// 缓存区的结构如下:
 ///
 /// ```c
 /// struct dirent {
@@ -356,10 +356,10 @@ pub fn sys_close(fd: usize) -> Result {
 /// };
 /// ```
 ///
-/// 返回值：
+/// 返回值:
 ///
-/// - 成功执行，返回读取的字节数。当到目录结尾，则返回0。
-/// - 失败，则返回-1。
+/// - 成功执行, 返回读取的字节数.当到目录结尾, 则返回0.
+/// - 失败, 则返回-1.
 ///
 /// ```c
 /// int fd, struct dirent *buf, size_t len
@@ -417,18 +417,18 @@ pub fn sys_getdents64(fd: isize, buf: *mut u8, len: usize) -> Result {
 
 /// #define SYS_read 63
 ///
-/// 功能：从一个文件描述符中读取；
+/// 功能: 从一个文件描述符中读取;
 ///
-/// 输入：
+/// 输入:
 ///
-/// - fd：要读取文件的文件描述符。
-/// - buf：一个缓存区，用于存放读取的内容。
-/// - count：要读取的字节数。
+/// - fd: 要读取文件的文件描述符.
+/// - buf: 一个缓存区, 用于存放读取的内容.
+/// - count: 要读取的字节数.
 ///
-/// 返回值：
+/// 返回值:
 ///
-/// - 成功执行，返回读取的字节数。如为0，表示文件结束。
-/// - 错误，则返回-1。
+/// - 成功执行, 返回读取的字节数.如为0, 表示文件结束.
+/// - 错误, 则返回-1.
 ///
 /// ```c
 /// int fd, void *buf, size_t count;
@@ -458,7 +458,7 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> Result {
         drop(fd_table); // 释放以避免死锁
         drop(task); // 需要及时释放减少引用数
 
-        // 对 /dev/zero 的处理，暂时先加在这里
+        // 对 /dev/zero 的处理, 暂时先加在这里
         if file.name() == "zero" || file.name() == "ZERO" {
             let mut userbuffer = UserBuffer::wrap(translated_bytes_buffer(token, buf, len));
             let zero: Vec<u8> = (0..userbuffer.buffers.len()).map(|_| 0).collect();
@@ -504,7 +504,7 @@ pub fn sys_pread64(fd: usize, buf: *const u8, len: usize, offset: usize) -> Resu
         drop(fd_table); // 释放以避免死锁
         drop(task); // 需要及时释放减少引用数
 
-        // 对 /dev/zero 的处理，暂时先加在这里
+        // 对 /dev/zero 的处理, 暂时先加在这里
         if file.name() == "zero" || file.name() == "ZERO" {
             let mut userbuffer = UserBuffer::wrap(translated_bytes_buffer(token, buf, len));
             let zero: Vec<u8> = (0..userbuffer.buffers.len()).map(|_| 0).collect();
@@ -529,15 +529,15 @@ pub fn sys_pread64(fd: usize, buf: *const u8, len: usize, offset: usize) -> Resu
 
 /// #define SYS_write 64
 ///
-/// 功能：从一个文件描述符中写入；
+/// 功能: 从一个文件描述符中写入;
 ///
-/// 输入：
+/// 输入:
 ///
-/// - fd：要写入文件的文件描述符。
-/// - buf：一个缓存区，用于存放要写入的内容。
-/// - count：要写入的字节数。
+/// - fd: 要写入文件的文件描述符.
+/// - buf: 一个缓存区, 用于存放要写入的内容.
+/// - count: 要写入的字节数.
 ///
-/// 返回值：成功执行，返回写入的字节数。错误，则返回-1。
+/// 返回值: 成功执行, 返回写入的字节数.错误, 则返回-1.
 ///
 /// ```c
 /// int fd, const void *buf, size_t count;
@@ -640,17 +640,17 @@ pub fn sys_pwrite64(fd: i32, buf: *const u8, len: usize, offset: usize) -> Resul
 }
 
 /// #define SYS_linkat 37
-/// 功能：创建文件的链接；
+/// 功能: 创建文件的链接;
 ///
-/// 输入：
+/// 输入:
 ///
-/// - olddirfd：原来的文件所在目录的文件描述符。
-/// - oldpath：文件原来的名字。如果oldpath是相对路径，则它是相对于olddirfd目录而言的。如果oldpath是相对路径，且olddirfd的值为AT_FDCWD，则它是相对于当前路径而言的。如果oldpath是绝对路径，则olddirfd被忽略。
-/// - newdirfd：新文件名所在的目录。
-/// - newpath：文件的新名字。newpath的使用规则同oldpath。
-/// - flags：在2.6.18内核之前，应置为0。其它的值详见`man 2 linkat`。
+/// - olddirfd: 原来的文件所在目录的文件描述符.
+/// - oldpath: 文件原来的名字.如果oldpath是相对路径, 则它是相对于olddirfd目录而言的.如果oldpath是相对路径, 且olddirfd的值为AT_FDCWD, 则它是相对于当前路径而言的.如果oldpath是绝对路径, 则olddirfd被忽略.
+/// - newdirfd: 新文件名所在的目录.
+/// - newpath: 文件的新名字.newpath的使用规则同oldpath.
+/// - flags: 在2.6.18内核之前, 应置为0.其它的值详见`man 2 linkat`.
 ///
-/// 返回值：成功执行，返回0。失败，返回-1。
+/// 返回值: 成功执行, 返回0.失败, 返回-1.
 ///
 /// ```c
 /// int olddirfd, char *oldpath, int newdirfd, char *newpath, unsigned int flags
@@ -668,18 +668,18 @@ pub fn sys_linkat(
 
 /// #define SYS_unlinkat 35
 ///
-/// 功能：移除指定文件的链接(可用于删除文件)；
+/// 功能: 移除指定文件的链接(可用于删除文件);
 ///
-/// 输入：
+/// 输入:
 ///
-/// - dirfd：要删除的链接所在的目录。
-/// - path：要删除的链接的名字。如果path是相对路径，则它是相对于dirfd目录而言的。如果path是相对路径，且dirfd的值为AT_FDCWD，则它是相对于当前路径而言的。如果path是绝对路径，则dirfd被忽略。
-/// - flags：可设置为0或AT_REMOVEDIR。
+/// - dirfd: 要删除的链接所在的目录.
+/// - path: 要删除的链接的名字.如果path是相对路径, 则它是相对于dirfd目录而言的.如果path是相对路径, 且dirfd的值为AT_FDCWD, 则它是相对于当前路径而言的.如果path是绝对路径, 则dirfd被忽略.
+/// - flags: 可设置为0或AT_REMOVEDIR.
 ///
-/// 返回值：
+/// 返回值:
 ///
-/// - 成功执行，返回0。
-/// - 失败，返回-1。
+/// - 成功执行, 返回0.
+/// - 失败, 返回-1.
 ///
 /// ```c
 /// int dirfd, char *path, unsigned int flags;
@@ -709,18 +709,18 @@ pub fn sys_unlinkat(fd: isize, path: *const u8, flags: u32) -> Result {
 
 /// #define SYS_mkdirat 34
 ///
-/// 功能：创建目录；
+/// 功能: 创建目录;
 ///
-/// 输入：
+/// 输入:
 ///
-/// - dirfd：要创建的目录所在的目录的文件描述符。
-/// - path：要创建的目录的名称。如果path是相对路径，则它是相对于dirfd目录而言的。如果path是相对路径，且dirfd的值为AT_FDCWD，则它是相对于当前路径而言的。如果path是绝对路径，则dirfd被忽略。
-/// - mode：文件的所有权描述。详见`man 7 inode `。
+/// - dirfd: 要创建的目录所在的目录的文件描述符.
+/// - path: 要创建的目录的名称.如果path是相对路径, 则它是相对于dirfd目录而言的.如果path是相对路径, 且dirfd的值为AT_FDCWD, 则它是相对于当前路径而言的.如果path是绝对路径, 则dirfd被忽略.
+/// - mode: 文件的所有权描述.详见`man 7 inode `.
 ///
-/// 返回值：
+/// 返回值:
 ///
-/// - 成功执行，返回0。
-/// - 失败，返回-1。
+/// - 成功执行, 返回0.
+/// - 失败, 返回-1.
 ///
 /// ```c
 /// int dirfd, const char *path, mode_t mode;
@@ -771,11 +771,11 @@ pub fn sys_mkdirat(dirfd: i32, path: *const u8, _mode: u32) -> Result {
 
 /// #define SYS_umount2 39
 ///
-/// 功能：卸载文件系统；
+/// 功能: 卸载文件系统;
 ///
-/// 输入：指定卸载目录，卸载参数；
+/// 输入: 指定卸载目录, 卸载参数;
 ///
-/// 返回值：成功返回0，失败返回-1；
+/// 返回值: 成功返回0, 失败返回-1;
 ///
 /// ```c
 /// const char *special, int flags;
@@ -795,17 +795,17 @@ pub fn sys_umount2(p_special: *const u8, flags: usize) -> Result {
 
 /// #define SYS_mount 40
 ///
-/// 功能：挂载文件系统；
+/// 功能: 挂载文件系统;
 ///
-/// 输入：
+/// 输入:
 ///
-/// - special: 挂载设备；
-/// - dir: 挂载点；
-/// - fstype: 挂载的文件系统类型；
-/// - flags: 挂载参数；
-/// - data: 传递给文件系统的字符串参数，可为NULL；
+/// - special: 挂载设备;
+/// - dir: 挂载点;
+/// - fstype: 挂载的文件系统类型;
+/// - flags: 挂载参数;
+/// - data: 传递给文件系统的字符串参数, 可为NULL;
 ///
-/// 返回值：成功返回0，失败返回-1；
+/// 返回值: 成功返回0, 失败返回-1;
 ///
 /// ```c
 /// const char *special, const char *dir, const char *fstype, unsigned long flags, const void *data;
@@ -834,12 +834,12 @@ pub fn sys_mount(
 
 /// #define SYS_fstat 80
 ///
-/// 功能：获取文件状态；
+/// 功能: 获取文件状态;
 ///
-/// 输入：
+/// 输入:
 ///
-/// - fd: 文件句柄；
-/// - kst: 接收保存文件状态的指针；
+/// - fd: 文件句柄;
+/// - kst: 接收保存文件状态的指针;
 ///
 /// ```c
 /// struct kstat {
@@ -865,7 +865,7 @@ pub fn sys_mount(
 /// };
 /// ```
 ///
-/// 返回值：成功返回0，失败返回-1；
+/// 返回值: 成功返回0, 失败返回-1;
 ///
 /// ```c
 /// int fd;

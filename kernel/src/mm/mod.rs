@@ -1,19 +1,23 @@
 mod address;
+mod flags;
 mod frame_allocator;
-mod kernel_vmm;
+mod kvmm;
 mod memory_set;
+mod mmap;
 mod page_table;
 mod shared_memory;
 mod user_buffer;
-mod vma;
+mod vm_area;
 pub use address::*;
+pub use flags::*;
 pub use frame_allocator::*;
-pub use kernel_vmm::*;
+pub use kvmm::*;
 pub use memory_set::*;
+pub use mmap::*;
 pub use page_table::*;
 pub use shared_memory::*;
 pub use user_buffer::*;
-pub use vma::*;
+pub use vm_area::*;
 
 use crate::{consts::PAGE_SIZE, task::current_task};
 use alloc::{string::String, vec::Vec};
@@ -50,7 +54,7 @@ pub fn translated_bytes_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<
         let ppn = match page_table.translate(vpn) {
             Some(pte) => pte.ppn(),
             None => {
-                if current_task().check_lazy(start, true) != 0 {
+                if current_task().check_lazy(start) != 0 {
                     panic!("check lazy error");
                 }
                 page_table.translate(vpn).unwrap().ppn()
@@ -71,7 +75,7 @@ pub fn translated_bytes_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<
 
 /// 从内核地址空间之外的某个应用的用户态地址空间中拿到一个字符串
 ///
-/// 针对应用的字符串中字符的用户态虚拟地址，查页表，找到对应的内核虚拟地址，逐字节地构造字符串，直到发现一个 \0 为止
+/// 针对应用的字符串中字符的用户态虚拟地址, 查页表, 找到对应的内核虚拟地址, 逐字节地构造字符串, 直到发现一个 \0 为止
 pub fn translated_str(token: usize, ptr: *const u8) -> String {
     let page_table = PageTable::from_token(token);
     let mut string = String::new();

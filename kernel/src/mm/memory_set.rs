@@ -6,39 +6,21 @@ use crate::consts::{
     CLOCK_FREQ, LINK_BASE, MMAP_BASE, PAGE_SIZE, SHM_BASE, SIGNAL_TRAMPOLINE, THREAD_LIMIT,
     TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE, USER_STACK_SIZE,
 };
-use crate::fs::{open, AbsolutePath, OpenFlags};
-use crate::fs::{CreateMode, File};
+use crate::fs::{open, AbsolutePath, CreateMode, File, OpenFlags};
 use crate::mm::{
     alloc_frame, enquire_refcount, shm_get_address_and_size, shm_get_nattch, FrameTracker,
     MmapManager, PTEFlags, PageTable, PageTableEntry, PhysAddr, PhysPageNum, SharedMemoryTracker,
     VirtAddr, VirtPageNum,
 };
-use crate::task::{trap_context_position, BUSYBOX};
-
-#[derive(Clone, Copy, Debug)]
-pub struct AuxEntry(pub usize, pub usize);
-
-// pub const AT_NULL: usize = 0;
-pub const AT_PHDR: usize = 3;
-pub const AT_PHENT: usize = 4;
-pub const AT_PHNUM: usize = 5;
-pub const AT_PAGESZ: usize = 6;
-pub const AT_BASE: usize = 7;
-pub const AT_FLAGS: usize = 8;
-pub const AT_ENTRY: usize = 9;
-pub const AT_UID: usize = 11;
-pub const AT_EUID: usize = 12;
-pub const AT_GID: usize = 13;
-pub const AT_EGID: usize = 14;
-pub const AT_HWCAP: usize = 16;
-pub const AT_CLKTCK: usize = 17;
-pub const AT_SECURE: usize = 23;
-pub const AT_RANDOM: usize = 25;
-// pub const AT_EXECFN: usize = 31;
+use crate::task::{
+    trap_context_position, AuxEntry, AT_BASE, AT_CLKTCK, AT_EGID, AT_ENTRY, AT_EUID, AT_FLAGS,
+    AT_GID, AT_HWCAP, AT_PAGESZ, AT_PHDR, AT_PHENT, AT_PHNUM, AT_RANDOM, AT_SECURE, AT_UID,
+    BUSYBOX,
+};
 
 /// 虚拟地址空间抽象
 ///
-/// 比如，用户进程的虚拟地址空间抽象:
+/// 比如, 用户进程的虚拟地址空间抽象:
 ///
 /// ```text
 /// +--------------------+
@@ -155,7 +137,7 @@ impl MemorySet {
         );
     }
 
-    /// 通过起始虚拟页号删除对应的逻辑段（包括连续逻辑段和离散逻辑段）
+    /// 通过起始虚拟页号删除对应的逻辑段(包括连续逻辑段和离散逻辑段)
     pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
         if let Some((idx, vm_area)) = self
             .vm_areas
@@ -177,7 +159,7 @@ impl MemorySet {
     pub fn insert(&mut self, mut map_area: VmArea, data: Option<(usize, usize, usize)>) {
         map_area.inflate_pagetable(&mut self.page_table);
         if let Some(data) = data {
-            // 写入初始化数据，如果数据存在
+            // 写入初始化数据, 如果数据存在
             map_area.copy_data(&mut self.page_table, data.0, data.1, data.2);
         }
         self.vm_areas.push(map_area); // 将生成的数据段压入 areas 使其生命周期由areas控制
@@ -185,7 +167,7 @@ impl MemorySet {
 
     /// 在当前地址空间插入一段已被分配空间的连续逻辑段
     ///
-    /// 主要用于 COW 创建时子进程空间连续逻辑段的插入，其要求指定物理页号
+    /// 主要用于 COW 创建时子进程空间连续逻辑段的插入, 其要求指定物理页号
     pub fn push_mapped_area(&mut self, map_area: VmArea) {
         self.vm_areas.push(map_area);
     }
@@ -247,9 +229,9 @@ impl MemorySet {
 
     /// 中 ELF 文件中构建出一个 [`MemorySet`]
     ///
-    /// *因为我们是加载 ELF 文件，所以我们只关心执行视图(Execution View)*
+    /// *因为我们是加载 ELF 文件, 所以我们只关心执行视图(Execution View)*
     ///
-    /// *需要注意的是，无论是什么视图，对于 ELF 文件来说只是划分标准不同而已，布局基本没有差别*
+    /// *需要注意的是, 无论是什么视图, 对于 ELF 文件来说只是划分标准不同而已, 布局基本没有差别*
     ///
     /// ELF 文件在 x64 的布局(Execution View):
     ///
@@ -271,7 +253,7 @@ impl MemorySet {
     ///
     /// ```
     ///
-    /// 当前实现中，ELF 加载后在内存中的布局(进程的地址空间布局):
+    /// 当前实现中, ELF 加载后在内存中的布局(进程的地址空间布局):
     ///
     /// ```text
     /// +--------------------+
@@ -329,7 +311,7 @@ impl MemorySet {
         let ph_offset = elf.header.pt2.ph_offset() as usize;
         let ph_count = elf.header.pt2.ph_count() as usize;
 
-        // 进行第二次读取，这样的elf对象才能正确解析程序段头的信息
+        // 进行第二次读取, 这样的elf对象才能正确解析程序段头的信息
         let elf_head_data = elf_file.read_to_vec(0, ph_offset + ph_count * ph_entry_size);
         let elf = xmas_elf::ElfFile::new(elf_head_data.as_slice()).unwrap();
 
@@ -405,7 +387,7 @@ impl MemorySet {
             let ph_offset = interp_elf.header.pt2.ph_offset() as usize;
             let ph_count = interp_elf.header.pt2.ph_count() as usize;
 
-            // 进行第二次读取，这样的elf对象才能正确解析程序段头的信息
+            // 进行第二次读取, 这样的elf对象才能正确解析程序段头的信息
             let interpreter_head_data =
                 interpreter_file.read_to_vec(0, ph_offset + ph_count * ph_entry_size);
             let interp_elf = xmas_elf::ElfFile::new(interpreter_head_data.as_slice()).unwrap();
@@ -444,15 +426,13 @@ impl MemorySet {
         } else {
             auxs.push(AuxEntry(AT_BASE, 0));
         }
+
         let user_stack_top = TRAP_CONTEXT - THREAD_LIMIT * PAGE_SIZE;
         let user_stack_bottom = user_stack_top - USER_STACK_SIZE;
 
-        // auxs.push(AuxEntry(AT_BASE, 0));
-
         let ph_head_addr = head_va.unwrap() + elf.header.pt2.ph_offset() as usize;
-        // let ph_head_addr = elf.header.pt2.ph_offset() as usize;
 
-        /* get auxv vector */
+        // get auxv vector
         auxs.push(AuxEntry(0x21, 0 as usize)); //no vdso
         auxs.push(AuxEntry(0x28, 0 as usize)); //AT_L1I_CACHESIZE:     0
         auxs.push(AuxEntry(0x29, 0 as usize)); //AT_L1I_CACHEGEOMETRY: 0x0
@@ -467,7 +447,7 @@ impl MemorySet {
         auxs.push(AuxEntry(AT_PHENT, elf.header.pt2.ph_entry_size() as usize)); // ELF64 header 64bytes
         auxs.push(AuxEntry(AT_PHNUM, ph_count as usize));
         // Interp
-        // auxs.push(AuxEntry( AT_BASE, 0));
+        // auxs.push(AuxEntry(AT_BASE, 0));
         auxs.push(AuxEntry(AT_FLAGS, 0 as usize));
         auxs.push(AuxEntry(AT_ENTRY, elf.header.pt2.entry_point() as usize));
         auxs.push(AuxEntry(AT_UID, 0 as usize));
@@ -484,7 +464,7 @@ impl MemorySet {
         // do not add this line, too wide
         // auxs.push(AuxEntry(AT_NULL, 0));
 
-        // 分配用户栈，懒加载
+        // 分配用户栈, 懒加载
         memory_set.user_stack_start = user_stack_bottom;
         memory_set.user_stack_end = user_stack_top;
         memory_set.user_stack_areas = VmArea::new(
@@ -497,7 +477,7 @@ impl MemorySet {
             0,
         );
 
-        // 分配用户堆，懒加载
+        // 分配用户堆, 懒加载
         let user_heap_bottom: usize = usize::from(brk_start_va) + PAGE_SIZE;
         let user_heap_top: usize = user_heap_bottom + USER_HEAP_SIZE;
         // println!("[DEBUG] user heap:0x{:x?},0x{:x?}",user_heap_bottom,user_heap_top);
@@ -678,7 +658,7 @@ impl MemorySet {
 
     #[no_mangle]
     pub fn cow_alloc(&mut self, vpn: VirtPageNum, former_ppn: PhysPageNum) -> isize {
-        // 如果只有一个引用，那么改回 writable, 而不是重新分配 ppn
+        // 如果只有一个引用, 那么改回 writable, 而不是重新分配 ppn
         if enquire_refcount(former_ppn) == 1 {
             self.page_table.reset_cow(vpn);
             // change the flags of the src_pte
@@ -688,7 +668,7 @@ impl MemorySet {
             );
             return 0;
         }
-        // 如果有多个引用，那么分配一个新的物理页，将内容复制过去
+        // 如果有多个引用, 那么分配一个新的物理页, 将内容复制过去
         let frame = alloc_frame().unwrap();
         let ppn = frame.ppn;
         self.remap_cow(vpn, ppn, former_ppn);
@@ -749,9 +729,9 @@ impl MemorySet {
 
     /// 回收应用地址空间
     ///
-    /// 将地址空间中的逻辑段列表 areas 清空（即执行 Vec 向量清空），
-    /// 这将导致应用地址空间被回收（即进程的数据和代码对应的物理页帧都被回收），
-    /// 但用来存放页表的那些物理页帧此时还不会被回收（会由父进程最后回收子进程剩余的占用资源）
+    /// 将地址空间中的逻辑段列表 areas 清空(即执行 Vec 向量清空),
+    /// 这将导致应用地址空间被回收(即进程的数据和代码对应的物理页帧都被回收),
+    /// 但用来存放页表的那些物理页帧此时还不会被回收(会由父进程最后回收子进程剩余的占用资源)
     #[allow(unused)]
     pub fn recycle_data_pages(&mut self) {
         //*self = Self::new_bare();
@@ -760,11 +740,11 @@ impl MemorySet {
 
     /// 在地址空间中插入一个空的离散逻辑段
     ///
-    /// - 已确定：
+    /// - 已确定:
     ///     - 起止虚拟地址
-    ///     - 映射方式：Framed
+    ///     - 映射方式: Framed
     ///     - map_perm
-    /// - 留空：
+    /// - 留空:
     ///     - vpn_table
     ///     - data_frames
 

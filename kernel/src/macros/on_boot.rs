@@ -1,12 +1,12 @@
 //! 参考 `xv6-riscv` 启动阶段的设计
 //!
-//! [`BOOTED`] 全局变量负责记录内核资源是否已经完全初始化，该初始化过程是 0 号 CPU
+//! [`BOOTED`] 全局变量负责记录内核资源是否已经完全初始化, 该初始化过程是 0 号 CPU
 //! 来负责的
 //!
-//! [`synchronize_hart`] 在资源初始化后调用，原子性的将 [`BOOTED`] 字段设置为 `true`，
+//! [`synchronize_hart`] 在资源初始化后调用, 原子性的将 [`BOOTED`] 字段设置为 `true`,
 //! 并加入内存屏障保证对于 [`BOOTED`] 的读都发生在 [`synchronize_hart`] 的写之后
 //!
-//! [`wait_for_booting`] 会持续读 [`BOOTED`]，直到其变成 `true`
+//! [`wait_for_booting`] 会持续读 [`BOOTED`], 直到其变成 `true`
 
 use core::sync::atomic::AtomicBool;
 
@@ -30,7 +30,7 @@ macro_rules! synchronize_hart {
     }};
 }
 
-/// 循环 `读` 内核资源初始化完成标记变量 [`BOOTED`]，直到其变为 `true`
+/// 循环 `读` 内核资源初始化完成标记变量 [`BOOTED`], 直到其变为 `true`
 macro_rules! wait_for_booting {
     () => {{
         unsafe {

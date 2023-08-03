@@ -24,7 +24,7 @@ pub fn get_time() -> usize {
     time::read()
 }
 
-/// 获取CPU上电时间（单位：ms）
+/// 获取CPU上电时间(单位: ms)
 pub fn get_time_ms() -> usize {
     get_time() / (CLOCK_FREQ / MSEC_PER_SEC)
 }

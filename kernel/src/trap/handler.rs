@@ -35,25 +35,25 @@ pub fn user_trap_handler() -> ! {
     let task = current_task();
     let mut inner = task.inner_mut();
 
-    // 考虑以下情况，当一个进程因为耗尽时间片而让出执行流，切换回一个因为在内核态阻塞而让出执行流的
-    // 另外一个进程的时候(内核态让出 `suspend` 可能是因为读取了一个空的管道等原因)，由于我们没有对
-    // scause 等寄存器进行保存，所以当前这个由于时间片耗尽让出而恢复执行的内核态进程所关联的寄存器
-    // 其实是那个因为时间片耗尽而让出的进程的相关寄存器的值。
+    // 考虑以下情况, 当一个进程因为耗尽时间片而让出执行流, 切换回一个因为在内核态阻塞而让出执行流的
+    // 另外一个进程的时候(内核态让出 `suspend` 可能是因为读取了一个空的管道等原因), 由于我们没有对
+    // scause 等寄存器进行保存, 所以当前这个由于时间片耗尽让出而恢复执行的内核态进程所关联的寄存器
+    // 其实是那个因为时间片耗尽而让出的进程的相关寄存器的值.
     //
-    // 类似的，当一个进程通过 `suspend` 让出执行流，若让出给了一个之前因为时间片中断而让出执行流
-    // 的进程，则当前这个因为时间片耗尽而让出的进程的 scause 相关寄存器值也已经不是自己的值
+    // 类似的, 当一个进程通过 `suspend` 让出执行流, 若让出给了一个之前因为时间片中断而让出执行流
+    // 的进程, 则当前这个因为时间片耗尽而让出的进程的 scause 相关寄存器值也已经不是自己的值
     //
     // 所以通过在 `trap_return` 通过当前的 scause 寄存器值来判断当前进程是否应该再次赋予新的
     // 时间片的做法是错误的
     //
-    // 另一种情况，在由于时间片耗尽而让出的 `suspend` 之后直接设置新的时间片，若在内核态执行了一
-    // 系列耗时操作导致时间片提前用尽，则会使用户态程序一直处于时间片耗尽的状态而触发中断，最终会
-    // 导致该用户态进程永远无法退出(在此用户态程序被 wait 的情况下等)，造成系统死锁
+    // 另一种情况, 在由于时间片耗尽而让出的 `suspend` 之后直接设置新的时间片, 若在内核态执行了一
+    // 系列耗时操作导致时间片提前用尽, 则会使用户态程序一直处于时间片耗尽的状态而触发中断, 最终会
+    // 导致该用户态进程永远无法退出(在此用户态程序被 wait 的情况下等), 造成系统死锁
     //
     // 如果通过在 TaskControlBlock 中新加入一个字段 trap_cause 来保存和恢复 scause 则可以解决
-    // 这个问题，但是如果内核在 trap_return 时执行的操作异常耗时(通常是错误的逻辑等)，那么会造成
-    // 系统性能问题，而由于系统的“正确的”运行而造成的性能损耗相对于前边由于时间片问题导致内核锁死
-    // 来说更难排查，所以目前只是在 TaskControlBlock 添加了字段并更新了逻辑，但是并未使能
+    // 这个问题, 但是如果内核在 trap_return 时执行的操作异常耗时(通常是错误的逻辑等), 那么会造成
+    // 系统性能问题, 而由于系统的"正确的"运行而造成的性能损耗相对于前边由于时间片问题导致内核锁死
+    // 来说更难排查, 所以目前只是在 TaskControlBlock 添加了字段并更新了逻辑, 但是并未使能
     //
     //      inner.trap_cause = Some(scause);
     //
@@ -91,21 +91,13 @@ pub fn user_trap_handler() -> ! {
         | Trap::Exception(Exception::LoadFault)
         | Trap::Exception(Exception::LoadPageFault) => {
             // println!("user_trap_handler: memory fault, task: {} at {:x?}, {:x?}",current_task().pid(),VirtAddr::from(stval as usize),current_trap_cx().sepc);
-            let is_load: bool;
-            if scause.cause() == Trap::Exception(Exception::LoadFault)
-                || scause.cause() == Trap::Exception(Exception::LoadPageFault)
-            {
-                is_load = true;
-            } else {
-                is_load = false;
-            }
             let va: VirtAddr = (stval as usize).into();
             if va > TRAMPOLINE.into() {
                 // println!("[kernel trap] VirtAddr out of range!");
                 current_add_signal(SigMask::SIGSEGV);
             }
             let task = current_task();
-            let lazy = task.check_lazy(va, is_load);
+            let lazy = task.check_lazy(va);
             if lazy != 0 {
                 // println!("[Kernel] Check Lazy Fail: {:?}, va: {:#x?}", lazy, va.0);
                 current_add_signal(SigMask::SIGSEGV);

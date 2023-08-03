@@ -4,10 +4,7 @@ use spin::{Mutex, MutexGuard};
 use crate::{
     board::MMIO,
     consts::PHYS_END,
-    mm::{
-        memory_set::{MapType, VmArea, VmAreaType},
-        MapPermission, MemorySet,
-    },
+    mm::{MapPermission, MapType, MemorySet, VmArea, VmAreaType},
 };
 
 extern "C" {
