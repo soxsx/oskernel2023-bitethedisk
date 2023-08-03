@@ -1229,12 +1229,7 @@ pub fn sys_utimensat(
         let times = translated_ref(token, times);
         time0 = times[0];
         time1 = times[1];
-        {
-            info!(
-                "utimensat: {:?}, {:?}, {:x?}, {:x?}",
-                dirfd, pathname, time0, time1
-            );
-        }
+        // { info!("utimensat: {:?}, {:?}, {:x?}, {:x?}",dirfd, pathname, time0, time1); }
         match time0.tv_nsec {
             UTIME_NOW => {
                 time_info.atime = time.tv_sec;

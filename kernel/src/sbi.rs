@@ -10,7 +10,7 @@
 //! SBI impl name: OpenSBI
 //! SBI impl version: 65536
 //! SBI spec version: 3
-#![allow(dead_code)]
+#![allow(unused)]
 use core::arch::asm;
 
 use thiserror::Error;
