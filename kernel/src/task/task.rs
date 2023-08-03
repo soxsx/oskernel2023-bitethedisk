@@ -192,14 +192,15 @@ impl TaskControlBlock {
             save_busybox_related(entry_point, auxs.clone());
         }
 
-        // 从地址空间 memory_set 中查多级页表找到应用地址空间中的 Trap 上下文实际被放在哪个物理页帧
-        let trap_cx_ppn = memory_set
-            .translate(VirtAddr::from(TRAP_CONTEXT).into())
-            .unwrap()
-            .ppn();
         // 为进程分配 PID 以及内核栈, 并记录下内核栈在内核地址空间的位置
         let pid_handle = pid_alloc();
         let tgid = pid_handle.0;
+        // 从地址空间 memory_set 中查多级页表找到应用地址空间中的 Trap 上下文实际被放在哪个物理页帧
+        // main tread: no need to  use fn: trap_context_position
+        let trap_cx_ppn = memory_set
+            .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
+            .unwrap()
+            .ppn();
         let kernel_stack = KernelStack::new(&pid_handle);
         let kernel_stack_top = kernel_stack.top();
 
@@ -405,9 +406,15 @@ impl TaskControlBlock {
             elf_entry: entry_point,
             mut auxs,
         } = MemorySet::load_elf(elf_file);
-        assert!(self.pid.0 == self.tgid, "todo for thread");
+        assert!(self.pid.0 == self.tgid, "exec task must be thread");
+        // let trap_addr = trap_context_position(self.pid() - self.tgid);
+        // let trap_cx_ppn = memory_set
+        //     .translate(VirtAddr::from(trap_addr).into())
+        //     .unwrap()
+        //     .ppn();
+        // main tread: no need to  use fn: trap_context_position
         let trap_cx_ppn = memory_set
-            .translate(VirtAddr::from(TRAP_CONTEXT).into())
+            .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
             .unwrap()
             .ppn();
 
@@ -715,5 +722,5 @@ pub enum TaskStatus {
     Zombie,   // 僵尸态
 }
 pub fn trap_context_position(tid: usize) -> VirtAddr {
-    VirtAddr::from(TRAP_CONTEXT - tid * PAGE_SIZE)
+    VirtAddr::from(TRAP_CONTEXT_BASE - tid * PAGE_SIZE)
 }
