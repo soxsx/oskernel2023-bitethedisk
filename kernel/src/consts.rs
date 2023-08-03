@@ -23,7 +23,8 @@ pub const THREAD_LIMIT: usize = 4096 * 2;
 pub use crate::board::{CLOCK_FREQ, MMIO};
 
 pub const MMAP_BASE: usize = 0x60000000;
-pub const MMAP_END: usize = 0x68000000; // mmap 区大小为 128 MiB
+
+// pub const MMAP_END: usize = 0x68000000; // mmap 区大小为 128 MiB
 
 pub const SHM_BASE: usize = 0x70000000;
 

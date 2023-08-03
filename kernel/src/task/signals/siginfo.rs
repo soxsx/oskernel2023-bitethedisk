@@ -6,6 +6,7 @@ pub const SIG_IGN: usize = 1;
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 #[allow(non_camel_case_types)]
+#[allow(dead_code)]
 #[repr(u32)]
 pub enum Signal {
     EMPTY = 0,
@@ -74,12 +75,6 @@ pub enum Signal {
     SIGRT_29 = 61,
     SIGRT_30 = 62,
     SIGRT_31 = 63,
-}
-
-impl Signal {
-    pub fn empty() -> Self {
-        Signal::EMPTY
-    }
 }
 
 bitflags! {
@@ -180,6 +175,7 @@ impl SigMask {
     pub fn add_other(&mut self, other: SigMask) {
         *self |= other;
     }
+    #[allow(unused)]
     pub fn sub_other(&mut self, other: SigMask) {
         *self -= other;
     }
@@ -258,18 +254,6 @@ impl SigAction {
             _sa_restorer: 0,
         }
     }
-    pub fn is_empty(&self) -> bool {
-        self.sa_handler == SIG_DFL && self.sa_mask.is_empty() && self.sa_flags.is_empty()
-    }
-    pub fn mask_block(&mut self, signum: u32) {
-        self.sa_mask.add(signum);
-    }
-    pub fn mask_unblock(&mut self, signum: u32) {
-        self.sa_mask.sub(signum);
-    }
-    pub fn mask_contains(&self, signum: u32) -> bool {
-        self.sa_mask.if_contains(signum)
-    }
 }
 bitflags! {
     #[derive(Copy, Clone, Debug)]
@@ -286,6 +270,7 @@ bitflags! {
     }
 }
 
+#[allow(unused)]
 pub fn is_signal_valid(signum: u32) -> bool {
     signum < MAX_SIGNUM
 }

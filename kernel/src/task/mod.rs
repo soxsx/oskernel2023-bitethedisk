@@ -144,7 +144,6 @@ pub fn add_initproc() {
 
 pub fn exec_signal_handlers() {
     let task = current_task();
-    let pid = task.pid();
     let mut task_inner = task.inner_mut();
 
     if task_inner.pending_signals == SigSet::empty() {

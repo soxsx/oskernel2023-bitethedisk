@@ -127,6 +127,7 @@ pub const SYS_SETSOCKOPT: usize = 208;
 pub const SYS_TIMER_SETTIME: usize = 110;
 pub const SYS_TIMER_GETOVERRUN: usize = 109;
 
+#[allow(unused)]
 pub fn syscall_name(id: usize) -> &'static str {
     match id {
         SYS_GETCWD => "SYS_GETCWD",

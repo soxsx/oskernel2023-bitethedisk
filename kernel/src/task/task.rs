@@ -590,8 +590,6 @@ impl TaskControlBlock {
             }
         }
 
-        // println!("check_lazy: va: {:#x}", va.0);
-
         // lazy map / lazy alloc heap / lazy alloc stack
         if va >= stack_start && va < stack_end {
             memory_set.lazy_alloc_stack(va.floor())
