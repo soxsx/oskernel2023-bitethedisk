@@ -1,17 +1,17 @@
 use core::fmt::Debug;
 
-use super::initproc::{BUSYBOX, ONCE_BB_AUX, ONCE_BB_ENTRY};
+use super::initproc::{STATIC_BUSYBOX_AUX, STATIC_BUSYBOX_ENTRY};
 use super::kernel_stack::KernelStack;
 use super::{pid_alloc, PidHandle, SigMask, SigSet};
 use super::{SigAction, TaskContext, MAX_SIGNUM};
 use crate::consts::*;
-use crate::fs::{file::File, Stdin, Stdout};
-use crate::mm::kernel_vmm::acquire_kvmm;
-use crate::mm::memory_set::{AuxEntry, LoadedELF};
-use crate::mm::{copyin, copyout, MmapFlags};
-use crate::mm::{translated_mut, MemorySet, MmapProts, PhysPageNum, VirtAddr, VirtPageNum};
+use crate::fs::{File, Stdin, Stdout};
+use crate::mm::acquire_kvmm;
+use crate::mm::{copyout, MmapFlags};
+use crate::mm::{AuxEntry, LoadedELF};
+use crate::mm::{MemorySet, MmapProts, PhysPageNum, VirtAddr, VirtPageNum};
 use crate::timer::get_timeval;
-use crate::trap::handler::user_trap_handler;
+use crate::trap::user_trap_handler;
 use crate::trap::TrapContext;
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
@@ -188,7 +188,7 @@ impl TaskControlBlock {
             mut auxs,
         } = MemorySet::load_elf(elf.clone());
 
-        if elf.name() == "busybox0" {
+        if elf.name() == "static-busybox" {
             save_busybox_related(entry_point, auxs.clone());
         }
 
@@ -700,8 +700,8 @@ impl TaskControlBlock {
 
 pub fn save_busybox_related(elf_entry: usize, auxs: Vec<AuxEntry>) {
     unsafe {
-        ONCE_BB_ENTRY = elf_entry;
-        ONCE_BB_AUX = auxs;
+        STATIC_BUSYBOX_ENTRY = elf_entry;
+        STATIC_BUSYBOX_AUX = auxs;
     }
 }
 

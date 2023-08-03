@@ -1,27 +1,24 @@
-pub mod address; // 地址数据类型
-pub mod frame_allocator; // 物理页帧管理器
-pub mod kernel_vmm;
-pub mod memory_set; // 地址空间模块
-pub mod page_table; // 页表
-pub mod shared_memory;
+mod address;
+mod frame_allocator;
+mod kernel_vmm;
+mod memory_set;
+mod page_table;
+mod shared_memory;
 mod user_buffer;
-mod vma; // 虚拟内存地址映射空间
-
-use core::{cmp::min, mem::size_of};
-
+mod vma;
 pub use address::*;
-use alloc::{string::String, vec::Vec};
-pub use frame_allocator::{alloc_frame, dealloc_frame, FrameTracker};
-pub use memory_set::{MapPermission, MemorySet};
-pub use page_table::{PTEFlags, PageTable, PageTableEntry};
-use riscv::register::satp;
-pub use user_buffer::{UserBuffer, UserBufferIterator};
+pub use frame_allocator::*;
+pub use kernel_vmm::*;
+pub use memory_set::*;
+pub use page_table::*;
+pub use shared_memory::*;
+pub use user_buffer::*;
 pub use vma::*;
-// pub use shared_memory::*;
 
 use crate::{consts::PAGE_SIZE, task::current_task};
-
-use self::{address::Step, kernel_vmm::acquire_kvmm};
+use alloc::{string::String, vec::Vec};
+use core::{cmp::min, mem::size_of};
+use riscv::register::satp;
 
 /// 内存管理子系统的初始化
 pub fn init() {
@@ -45,26 +42,21 @@ pub fn enable_mmu() {
 /// - `len`: 应用地址空间中的一段缓冲区的长度
 pub fn translated_bytes_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&'static mut [u8]> {
     let page_table = PageTable::from_token(token);
-
     let mut start = VirtAddr::from(ptr as usize);
     let end = VirtAddr::from(start.0 + len);
-
     let mut v = Vec::new();
     while start < end {
         let mut vpn = start.floor();
-
         let ppn = match page_table.translate(vpn) {
             Some(pte) => pte.ppn(),
             None => {
-                if current_task().unwrap().check_lazy(start, true) != 0 {
+                if current_task().check_lazy(start, true) != 0 {
                     panic!("check lazy error");
                 }
                 page_table.translate(vpn).unwrap().ppn()
             }
         };
-
         vpn.step();
-
         // 避免跨页
         let in_page_end_va: VirtAddr = min(vpn.into(), end);
         if in_page_end_va.page_offset() == 0 {
@@ -72,10 +64,8 @@ pub fn translated_bytes_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<
         } else {
             v.push(&mut ppn.as_bytes_array()[start.page_offset()..in_page_end_va.page_offset()]);
         }
-
         start = in_page_end_va.into();
     }
-
     v
 }
 
@@ -130,10 +120,8 @@ pub fn translated_mut<T>(token: usize, ptr: *mut T) -> &'static mut T {
         .as_mut()
 }
 
-#[allow(unused)]
 pub fn copyin<T>(token: usize, dst: &mut T, src: *const T) {
-    let mut src_buffer =
-        translated_bytes_buffer(token, src as *const u8, core::mem::size_of::<T>());
+    let src_buffer = translated_bytes_buffer(token, src as *const u8, core::mem::size_of::<T>());
 
     let dst_slice = unsafe {
         core::slice::from_raw_parts_mut(dst as *mut T as *mut u8, core::mem::size_of::<T>())

@@ -2,10 +2,7 @@
 
 use crate::{
     consts::{KERNEL_STACK_SIZE, PAGE_SIZE, SIGNAL_TRAMPOLINE},
-    mm::{
-        kernel_vmm::acquire_kvmm, memory_set::VmAreaType, translated_mut, MapPermission, VirtAddr,
-    },
-    task::{current_trap_cx, current_user_token},
+    mm::{acquire_kvmm, MapPermission, VirtAddr, VmAreaType},
 };
 
 use super::PidHandle;
@@ -18,7 +15,6 @@ pub fn kernel_stack_position(id: usize) -> (usize, usize) {
     (bottom, top)
 }
 
-/// 进程内核栈
 pub struct KernelStack {
     pid: usize,
 }

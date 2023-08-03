@@ -3,7 +3,7 @@ use alloc::{collections::BTreeMap, sync::Arc};
 use crate::{
     consts::PAGE_SIZE,
     error::Error,
-    fs::file::File,
+    fs::File,
     mm::{
         address::Step, alloc_frame, page_table::PTEFlags, FrameTracker, PageTable, PhysPageNum,
         VPNRange, VirtAddr, VirtPageNum,
@@ -75,6 +75,7 @@ impl VmArea {
         self.vpn_range.get_start()
     }
 
+    #[allow(unused)]
     pub fn end_vpn(&self) -> VirtPageNum {
         self.vpn_range.get_end()
     }
@@ -105,6 +106,7 @@ impl VmArea {
 
     /// 将当前逻辑段到物理内存的映射从传入的该逻辑段所属的地址空间的多级页表中删除
     /// 写回文件(如果 map_perm 包含 W)
+    #[allow(unused)]
     pub fn write_back(&self, page_table: &mut PageTable) -> Result<(), Error> {
         if !self.permission.contains(MapPermission::W) {
             return Ok(());

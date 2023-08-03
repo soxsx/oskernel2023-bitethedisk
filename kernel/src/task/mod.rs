@@ -1,45 +1,32 @@
-pub mod context; // 任务上下文模块
-pub mod initproc;
+mod context;
+mod initproc;
 mod kernel_stack;
-mod manager; // 进程管理器
-mod pid; // 进程标识符模块
-pub mod processor; // 处理器管理模块
+mod manager;
+mod pid;
+mod processor;
 mod signals;
-mod switch; // 任务上下文切换模块
-pub mod task;
-
-use core::usize;
-
-use alloc::sync::Arc;
-use fat32::sync_all;
-use manager::remove_from_pid2task;
-pub use task::{TaskControlBlock, TaskStatus};
-
-pub use context::TaskContext;
-pub use manager::{add_task, check_hanging, pid2task, unblock_task};
-pub use pid::{pid_alloc, PidHandle};
-pub use processor::{
-    current_task, current_trap_cx, current_user_token, schedule::*, take_current_task,
-};
+mod switch;
+mod task;
+pub use context::*;
+pub use initproc::*;
+pub use kernel_stack::*;
+pub use manager::*;
+pub use pid::*;
+pub use processor::*;
 pub use signals::*;
-pub use task::FD_LIMIT;
+pub use switch::*;
+pub use task::*;
 
 use crate::{
     consts::SIGNAL_TRAMPOLINE,
-    mm::{copyout, memory_set, translated_mut},
+    mm::{copyout, translated_mut},
     syscall::impls::futex::futex_wake,
-    timer::check_interval_timer,
 };
-
-use self::{
-    initproc::{BUSYBOX, INITPROC},
-    manager::block_task,
-    processor::{acquire_processor, schedule, take_cancelled_chiled_thread},
-};
+use alloc::sync::Arc;
+use fat32::sync_all;
 
 /// 将当前任务置为就绪态，放回到进程管理器中的就绪队列中，重新选择一个进程运行
 pub fn suspend_current_and_run_next() -> isize {
-    // TODO: check_interval_timer();
     exec_signal_handlers();
 
     // 取出当前正在执行的任务
@@ -109,7 +96,8 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         drop(parent_inner);
         drop(parent);
         drop(inner);
-        take_cancelled_chiled_thread(task);
+        assert!(Arc::strong_count(&task) == 1);
+        collect_cancelled_chiled_thread(task);
         schedule(&mut TaskContext::empty() as *mut _);
         unreachable!()
     }
@@ -120,7 +108,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 }
 
 pub fn hanging_current_and_run_next(sleep_time: usize, duration: usize) {
-    let task = current_task().unwrap();
+    let task = current_task();
     let mut inner = task.inner_mut();
     let current_cx_ptr = &mut inner.task_cx as *mut TaskContext;
     inner.task_status = TaskStatus::Hanging;
@@ -131,7 +119,7 @@ pub fn hanging_current_and_run_next(sleep_time: usize, duration: usize) {
 }
 
 pub fn block_current_and_run_next() {
-    let task = current_task().unwrap();
+    let task = current_task();
 
     // ---- access current TCB exclusively
     let mut task_inner = task.inner_mut();
@@ -153,7 +141,7 @@ pub fn add_initproc() {
 }
 
 pub fn exec_signal_handlers() {
-    let task = current_task().unwrap();
+    let task = current_task();
     let pid = task.pid();
     let mut task_inner = task.inner_mut();
 
@@ -183,10 +171,7 @@ pub fn exec_signal_handlers() {
             }
             SIG_DFL => {
                 if signum == Signal::SIGKILL as u32 || signum == Signal::SIGSEGV as u32 {
-                    println!(
-                        "[Kernel] task/mod(exec_signal_handlers) pid:{} signal_num:{}, SIG_DFL kill process",
-                        pid, signum
-                    );
+                    // info!("[Kernel] task/mod(exec_signal_handlers) pid:{} signal_num:{}, SIG_DFL kill process", pid, signum);
                     drop(task_inner);
                     drop(task);
                     exit_current_and_run_next(-(signum as i32));
@@ -230,14 +215,11 @@ pub fn exec_signal_handlers() {
                 trap_cx.x[2] -= core::mem::size_of::<SignalContext>(); // sp -= sizeof(sigcontext)
                 let sig_context_ptr = trap_cx.x[2] as *mut SignalContext;
                 copyout(token, sig_context_ptr, &sig_context);
-                // *translated_mut(token, sig_context_ptr) = sig_context;
 
                 trap_cx.x[1] = SIGNAL_TRAMPOLINE; // ra = user_sigreturn
 
-                // println!(
-                //     "prepare to jump to `handler`:{:x?}, original sepc = {:#x?},current sp:{:x?}",
-                //     handler, trap_cx.sepc, trap_cx.x[2]
-                // );
+                // println!("prepare to jump to `handler`:{:x?}, original sepc = {:#x?},current sp:{:x?}",handler, trap_cx.sepc, trap_cx.x[2]);
+
                 trap_cx.sepc = handler; // sepc = handler
                 return;
             }

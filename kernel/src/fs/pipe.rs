@@ -1,5 +1,3 @@
-use core::cell::RefCell;
-
 use super::file::File;
 use crate::mm::UserBuffer;
 use alloc::{

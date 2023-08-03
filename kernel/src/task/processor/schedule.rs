@@ -1,26 +1,24 @@
 //! 单/多核的调度逻辑
 //!
-//! 包括获取当前 CPU 上的计算单元 [`super::Processor`]，修改进程状态，调度进程
+//! 包括获取当前 CPU 上的计算单元 [`Processor`]，修改进程状态，调度进程
 
-use core::cell::RefMut;
-
-use alloc::sync::Arc;
-
+use super::{acquire_processor, Processor};
 use crate::task::{
     check_hanging,
+    initproc::BUSYBOX,
     manager::{check_futex_interupt_or_expire, fetch_task},
+    recycle_child_threads_res,
     switch::__switch,
     task::TaskStatus,
-    unblock_task, TaskContext, TaskControlBlock, initproc::BUSYBOX,
+    unblock_task, TaskContext, TaskControlBlock,
 };
+use alloc::sync::Arc;
+use core::cell::RefMut;
 
-use super::{acquire_processor, recycle_child_threads_res, Processor};
-
-/// 进入 idle 控制流，它运行在这个 CPU 核的启动栈上，
-/// 功能是循环调用 fetch_task 直到顺利从任务管理器中取出一个任务，随后便准备通过任务切换的方式来执行
+/// 循环调用 fetch_task 直到顺利从任务管理器中取出一个任务, 随后便准备通过任务切换的方式来执行
 pub fn run_tasks() {
-    let bb = BUSYBOX.read();
-    drop(bb);
+    let busybox = BUSYBOX.read();
+    drop(busybox);
     loop {
         let processor = acquire_processor();
 
@@ -36,6 +34,7 @@ pub fn run_tasks() {
     }
 }
 
+/// 进入 idle 控制流, 它运行在这个 CPU 核的启动栈上
 fn run_task(task: Arc<TaskControlBlock>, mut processor: RefMut<'_, Processor>) {
     let idle_task_cx_ptr = processor.idle_task_cx_ptr();
     let mut task_inner = task.inner_mut();

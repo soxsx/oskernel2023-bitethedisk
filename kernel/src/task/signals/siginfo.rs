@@ -1,11 +1,11 @@
 use crate::trap::TrapContext;
 
 pub const MAX_SIGNUM: u32 = 64;
-
 pub const SIG_DFL: usize = 0;
 pub const SIG_IGN: usize = 1;
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
+#[allow(non_camel_case_types)]
 #[repr(u32)]
 pub enum Signal {
     EMPTY = 0,
@@ -116,10 +116,10 @@ bitflags! {
         const SIGIO     = 1 << 28;
         const SIGPWR    = 1 << 29;
         const SIGSYS    = 1 << 30;
+        /* --- other realtime signals --- */
         const   SIGTIMER    = 1 << 31;
         const   SIGCANCEL   = 1 << 32;
         const   SIGSYNCCALL = 1 << 33;
-        /* --- other realtime signals --- */
         const   SIGRT_3     = 1 << 34;
         const   SIGRT_4     = 1 << 35;
         const   SIGRT_5     = 1 << 36;
@@ -164,9 +164,9 @@ impl SigMask {
                 signum
             );
         }
+        // self.set(SigMask::from_bits_truncate(1 << signum), true);
         *self |= SigMask::from_bits_truncate(1 << signum);
     }
-
     pub fn sub(&mut self, signum: u32) {
         let signum = signum - 1;
         if signum >= MAX_SIGNUM {
@@ -177,18 +177,25 @@ impl SigMask {
         }
         *self -= SigMask::from_bits_truncate(1 << signum);
     }
-
     pub fn add_other(&mut self, other: SigMask) {
         *self |= other;
     }
-
     pub fn sub_other(&mut self, other: SigMask) {
         *self -= other;
     }
-
     pub fn if_contains(&self, signum: u32) -> bool {
         let signum = signum - 1;
         self.contains(SigMask::from_bits_truncate(1 << signum))
+    }
+    pub fn fetch(&mut self) -> Option<u32> {
+        let mut signum = 1;
+        while signum < MAX_SIGNUM {
+            if self.if_contains(signum) {
+                return Some(signum);
+            }
+            signum += 1;
+        }
+        None
     }
 }
 
@@ -210,26 +217,8 @@ impl SignalContext {
     }
 }
 
-impl SigMask {
-    pub fn fetch(&mut self) -> Option<u32> {
-        let mut signum = 1;
-        while signum < MAX_SIGNUM {
-            if self.if_contains(signum) {
-                return Some(signum);
-            }
-            signum += 1;
-        }
-        None
-    }
-}
-
 #[repr(usize)]
 #[allow(non_camel_case_types)]
-// ```c
-// #define SIG_BLOCK          0	/* for blocking signals */
-// #define SIG_UNBLOCK        1	/* for unblocking signals */
-// #define SIG_SETMASK        2	/* for setting the signal mask */
-// ```
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub enum MaskFlags {
     SIG_BLOCK = 0,
@@ -269,19 +258,15 @@ impl SigAction {
             _sa_restorer: 0,
         }
     }
-
     pub fn is_empty(&self) -> bool {
         self.sa_handler == SIG_DFL && self.sa_mask.is_empty() && self.sa_flags.is_empty()
     }
-
     pub fn mask_block(&mut self, signum: u32) {
         self.sa_mask.add(signum);
     }
-
     pub fn mask_unblock(&mut self, signum: u32) {
         self.sa_mask.sub(signum);
     }
-
     pub fn mask_contains(&self, signum: u32) -> bool {
         self.sa_mask.if_contains(signum)
     }
@@ -365,9 +350,10 @@ pub struct MContext {
     pub greps: [usize; 32],    // general registers
     pub __reserved: [u8; 528], // size of mcontext_t is 784 bytes
 }
-/* ucontext.h
 
-// arch/risv/include/uapi/asm/ucontext.h
+// Reference
+/*
+/*  arch/risv/include/uapi/asm/ucontext.h */
 struct ucontext {
     unsigned long	  uc_flags;
     struct ucontext	 *uc_link;
@@ -376,11 +362,9 @@ struct ucontext {
     __u8		  __unused[1024 / 8 - sizeof(sigset_t)];
     struct sigcontext uc_mcontext;
 };
-
-// arch/risv/include/uapi/asm/sigcontext.h
+/* arch/risv/include/uapi/asm/sigcontext.h */
 struct sigcontext {
     struct user_regs_struct sc_regs;
     union __riscv_fp_state sc_fpregs;
 };
-
 */

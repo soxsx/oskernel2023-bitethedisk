@@ -1,6 +1,6 @@
-pub mod flags;
-pub mod memory_set;
-pub mod vm_area;
+mod flags;
+mod memory_set;
+mod vm_area;
 
 pub use flags::*;
 pub use memory_set::*;

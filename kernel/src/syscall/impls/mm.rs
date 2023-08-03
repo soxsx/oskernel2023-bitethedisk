@@ -2,16 +2,16 @@
 
 use core::mem;
 
-use crate::mm::shared_memory::{attach_shm, create_shm, detach_shm};
+use crate::mm::MapPermission;
 use crate::mm::PageTable;
-use crate::mm::{memory_set, MapPermission};
-use crate::mm::{page_table::PTEFlags, VirtPageNum};
+use crate::mm::{attach_shm, create_shm, detach_shm};
+use crate::mm::{PTEFlags, VirtPageNum};
 use crate::mm::{VPNRange, VirtAddr};
 use crate::return_errno;
 use crate::{
     consts::PAGE_SIZE,
-    fs::open_flags::CreateMode,
-    mm::{shared_memory::remove_shm, MmapFlags, MmapProts},
+    fs::CreateMode,
+    mm::{remove_shm, MmapFlags, MmapProts},
     task::{current_task, current_user_token},
 };
 
@@ -32,13 +32,13 @@ use super::*;
 /// uintptr_t ret = syscall(SYS_brk, brk);
 /// ```
 pub fn sys_brk(brk: usize) -> Result {
-    let task = current_task().unwrap();
+    let task = current_task();
     if brk == 0 {
         Ok(task.grow_proc(0) as isize)
     } else {
         let former_addr = task.grow_proc(0);
         let grow_size: isize = (brk - former_addr) as isize;
-        Ok(current_task().unwrap().grow_proc(grow_size) as isize)
+        Ok(current_task().grow_proc(grow_size) as isize)
     }
 }
 
@@ -55,7 +55,7 @@ pub fn sys_brk(brk: usize) -> Result {
 /// int ret = syscall(SYS_munmap, start, len);
 /// ```
 pub fn sys_munmap(addr: usize, length: usize) -> Result {
-    let task = current_task().unwrap();
+    let task = current_task();
     Ok(task.munmap(addr, length) as isize)
 }
 
@@ -95,7 +95,7 @@ pub fn sys_mmap(
         padding = 0;
     }
     let length = length + padding;
-    let task = current_task().unwrap();
+    let task = current_task();
     let fd_table = task.fd_table.read();
     let prot = MmapProts::from_bits(prot).expect("unsupported mmap prot");
     let flags = MmapFlags::from_bits(flags).expect("unsupported mmap flags");
@@ -134,7 +134,7 @@ pub fn sys_shmctl(key: usize, cmd: usize, buf: *const u8) -> Result {
 }
 
 pub fn sys_shmat(key: usize, address: usize, shmflg: usize) -> Result {
-    let task = current_task().unwrap();
+    let task = current_task();
     let mut memory_set = task.memory_set.write();
     let address = if address == 0 {
         memory_set.shm_top
@@ -147,7 +147,7 @@ pub fn sys_shmat(key: usize, address: usize, shmflg: usize) -> Result {
 }
 
 pub fn sys_shmdt(address: usize) -> Result {
-    let task = current_task().unwrap();
+    let task = current_task();
     let mut memory_set = task.memory_set.write();
     let nattch = memory_set.detach_shm(address.into());
     drop(memory_set);
@@ -172,7 +172,7 @@ pub fn sys_mprotect(addr: usize, length: usize, prot: usize) -> Result {
         if let Some(pte) = page_table.find_pte(vpn) {
             pte.set_flags(pte_flags);
         } else {
-            let task = current_task().unwrap();
+            let task = current_task();
             let mut memory_set = task.memory_set.write();
             let mmap_start = memory_set.mmap_manager.mmap_start;
             let mmap_top = memory_set.mmap_manager.mmap_top;

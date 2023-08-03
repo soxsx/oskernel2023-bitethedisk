@@ -1,5 +1,6 @@
 //!  VirtIO 总线架构下的块设备
 
+use super::virtio_impl::HalImpl;
 use core::ptr::NonNull;
 use fat32::{BlockDevice, BlockDeviceError, BLOCK_SIZE};
 use spin::Mutex;
@@ -7,8 +8,6 @@ use virtio_drivers::{
     device::blk::VirtIOBlk,
     transport::mmio::{MmioTransport, VirtIOHeader},
 };
-
-use super::virtio_impl::HalImpl;
 
 #[allow(unused)]
 const VIRTIO0: usize = 0x10001000;

@@ -1,7 +1,7 @@
 use super::address::VirtAddr;
 use super::{translated_bytes_buffer, FrameTracker, UserBuffer, VPNRange, VirtPageNum};
 use crate::consts::PAGE_SIZE;
-use crate::fs::file::File;
+use crate::fs::File;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 
@@ -189,6 +189,7 @@ impl MmapPage {
         ))
         .write_zeros();
     }
+    #[allow(unused)]
     pub fn write_back(&mut self, token: usize) {
         let f = self.file.clone().unwrap();
         let old_offset = f.offset();

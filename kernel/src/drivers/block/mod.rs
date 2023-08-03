@@ -2,8 +2,8 @@
 
 mod virtio_blk;
 mod virtio_impl;
-
-pub use virtio_blk::VirtIOBlock;
+pub use virtio_blk::*;
+pub use virtio_impl::*;
 
 use crate::board::BlockDeviceImpl;
 use alloc::sync::Arc;

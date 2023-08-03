@@ -54,7 +54,7 @@ impl FutexQueue {
         let mut chain_lock = self.chain.write();
         let mut expire_task = None;
         for index in 0..chain_lock.len() {
-            if (chain_lock[index].check_expire()) {
+            if chain_lock[index].check_expire() {
                 expire_task = Some(chain_lock.remove(index).unwrap().task);
                 self.waiters_decrease();
                 break;

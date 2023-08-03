@@ -5,7 +5,7 @@ use crate::{
     board::MMIO,
     consts::PHYS_END,
     mm::{
-        memory_set::{vm_area::VmArea, MapType, VmAreaType},
+        memory_set::{MapType, VmArea, VmAreaType},
         MapPermission, MemorySet,
     },
 };

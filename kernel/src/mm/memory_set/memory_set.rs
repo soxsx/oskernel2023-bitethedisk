@@ -1,39 +1,24 @@
-#![allow(unused)]
-
-use core::sync::atomic::Ordering;
-
-use super::vm_area::{VmArea, VmAreaType};
-use super::{MapPermission, MapType};
-use crate::consts::{
-    CLOCK_FREQ, PAGE_SIZE, SIGNAL_TRAMPOLINE, THREAD_LIMIT, TRAMPOLINE, TRAP_CONTEXT,
-    USER_HEAP_SIZE, USER_STACK_SIZE,
-};
-use crate::fs::file::File;
-use crate::mm::frame_allocator::enquire_refcount;
-use crate::mm::page_table::PTEFlags;
-use crate::mm::{
-    alloc_frame, FrameTracker, MmapManager, PageTable, PageTableEntry, PhysAddr, PhysPageNum,
-    VirtAddr, VirtPageNum,
-};
-use crate::task::initproc::{BUSYBOX, ONCE_BB_ENTRY};
-use crate::task::task::trap_context_position;
 use alloc::collections::BTreeMap;
 use alloc::{sync::Arc, vec::Vec};
 
-use crate::fs::open_flags::CreateMode;
-use crate::fs::{open, AbsolutePath, OpenFlags};
-use crate::mm::shared_memory::{
-    shm_get_address_and_size, shm_get_nattch, SharedMemoryArea, SharedMemoryTracker,
+use super::{MapPermission, MapType, VmArea, VmAreaType};
+use crate::consts::{
+    CLOCK_FREQ, LINK_BASE, MMAP_BASE, PAGE_SIZE, SHM_BASE, SIGNAL_TRAMPOLINE, THREAD_LIMIT,
+    TRAMPOLINE, TRAP_CONTEXT, USER_HEAP_SIZE, USER_STACK_SIZE,
 };
-pub const MMAP_BASE: usize = 0x60000000;
-pub const MMAP_END: usize = 0x68000000; // mmap 区大小为 128 MiB
-pub const SHM_BASE: usize = 0x70000000;
-pub const LINK_BASE: usize = 0x20000000;
+use crate::fs::{open, AbsolutePath, OpenFlags};
+use crate::fs::{CreateMode, File};
+use crate::mm::{
+    alloc_frame, enquire_refcount, shm_get_address_and_size, shm_get_nattch, FrameTracker,
+    MmapManager, PTEFlags, PageTable, PageTableEntry, PhysAddr, PhysPageNum, SharedMemoryTracker,
+    VirtAddr, VirtPageNum,
+};
+use crate::task::{trap_context_position, BUSYBOX};
 
 #[derive(Clone, Copy, Debug)]
 pub struct AuxEntry(pub usize, pub usize);
 
-pub const AT_NULL: usize = 0;
+// pub const AT_NULL: usize = 0;
 pub const AT_PHDR: usize = 3;
 pub const AT_PHENT: usize = 4;
 pub const AT_PHNUM: usize = 5;
@@ -49,19 +34,7 @@ pub const AT_HWCAP: usize = 16;
 pub const AT_CLKTCK: usize = 17;
 pub const AT_SECURE: usize = 23;
 pub const AT_RANDOM: usize = 25;
-pub const AT_EXECFN: usize = 31;
-
-pub fn new() -> Vec<AuxEntry> {
-    let mut temp = Vec::new();
-    temp.push(AuxEntry(AT_NULL, 0));
-    temp.push(AuxEntry(AT_PAGESZ, PAGE_SIZE));
-    temp.push(AuxEntry(AT_UID, 0));
-    temp.push(AuxEntry(AT_EUID, 0));
-    temp.push(AuxEntry(AT_GID, 0));
-    temp.push(AuxEntry(AT_EGID, 0));
-    temp.push(AuxEntry(AT_SECURE, 0));
-    temp
-}
+// pub const AT_EXECFN: usize = 31;
 
 /// 虚拟地址空间抽象
 ///
@@ -369,14 +342,7 @@ impl MemorySet {
         // 遍历程序段进行加载
         for i in 0..ph_count as u16 {
             let ph = elf.program_header(i).unwrap();
-            let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
-            let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
-            // println!(
-            //     "[DEBUG] start:0x{:x?},end:0x{:x?},type:{:?}",
-            //     start_va,
-            //     end_va,
-            //     ph.get_type().unwrap()
-            // );
+            // {let start_va: VirtAddr = (ph.virtual_addr() as usize).into();let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();println!("[DEBUG] start:0x{:x?},end:0x{:x?},type:{:?}",start_va,end_va,ph.get_type().unwrap());}
             match ph.get_type().unwrap() {
                 xmas_elf::program::Type::Load => {
                     let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
@@ -423,14 +389,7 @@ impl MemorySet {
                     dynamic_link = true;
                 }
                 _ => {
-                    let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
-                    let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
-                    // println!(
-                    //     "TYPE:{:?} start_va:{:?} end_va{:?}",
-                    //     ph.get_type().unwrap(),
-                    //     start_va,
-                    //     end_va
-                    // );
+                    // let start_va: VirtAddr = (ph.virtual_addr() as usize).into();let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();println!("TYPE:{:?} start_va:{:?} end_va{:?}",ph.get_type().unwrap(),start_va,end_va);
                 }
             }
         }
@@ -485,7 +444,6 @@ impl MemorySet {
         } else {
             auxs.push(AuxEntry(AT_BASE, 0));
         }
-        // TODO thread
         let user_stack_top = TRAP_CONTEXT - THREAD_LIMIT * PAGE_SIZE;
         let user_stack_bottom = user_stack_top - USER_STACK_SIZE;
 
@@ -505,7 +463,7 @@ impl MemorySet {
         auxs.push(AuxEntry(AT_HWCAP, 0 as usize));
         auxs.push(AuxEntry(AT_PAGESZ, PAGE_SIZE as usize));
         auxs.push(AuxEntry(AT_CLKTCK, CLOCK_FREQ as usize));
-        auxs.push(AuxEntry(AT_PHDR, (ph_head_addr as usize)));
+        auxs.push(AuxEntry(AT_PHDR, ph_head_addr as usize));
         auxs.push(AuxEntry(AT_PHENT, elf.header.pt2.ph_entry_size() as usize)); // ELF64 header 64bytes
         auxs.push(AuxEntry(AT_PHNUM, ph_count as usize));
         // Interp
@@ -576,7 +534,7 @@ impl MemorySet {
 
         // This part is for copy on write
         let parent_areas = &user_space.vm_areas;
-        let mut parent_page_table = &mut user_space.page_table;
+        let parent_page_table = &mut user_space.page_table;
         for area in parent_areas.iter() {
             match area.area_type {
                 VmAreaType::TrapContext => {
@@ -620,7 +578,7 @@ impl MemorySet {
         }
         new_memory_set.mmap_manager = user_space.mmap_manager.clone();
         for (vpn, mmap_page) in user_space.mmap_manager.mmap_map.iter() {
-            if (mmap_page.valid) {
+            if mmap_page.valid {
                 let vpn = vpn.clone();
                 if let Some(pte) = parent_page_table.translate(vpn) {
                     // change the map permission of both pagetable
@@ -692,7 +650,7 @@ impl MemorySet {
         new_memory_set.brk = user_space.brk;
 
         for shm_area in user_space.shm_areas.iter() {
-            let mut new_shm_area = VmArea::from_another(shm_area);
+            let new_shm_area = VmArea::from_another(shm_area);
 
             for vpn in shm_area.vpn_range.into_iter() {
                 // change the map permission of both pagetable
@@ -766,7 +724,6 @@ impl MemorySet {
             return 0;
         }
         panic!("cow of of range");
-        -1
     }
 
     fn remap_cow(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, former_ppn: PhysPageNum) {
@@ -795,6 +752,7 @@ impl MemorySet {
     /// 将地址空间中的逻辑段列表 areas 清空（即执行 Vec 向量清空），
     /// 这将导致应用地址空间被回收（即进程的数据和代码对应的物理页帧都被回收），
     /// 但用来存放页表的那些物理页帧此时还不会被回收（会由父进程最后回收子进程剩余的占用资源）
+    #[allow(unused)]
     pub fn recycle_data_pages(&mut self) {
         //*self = Self::new_bare();
         self.vm_areas.clear();
@@ -838,12 +796,13 @@ impl MemorySet {
         return false;
     }
 
+    #[allow(unused)]
     pub fn is_lazy_mapped(&self, addr_vpn: VirtPageNum) -> bool {
         self.page_table.find_pte(addr_vpn).is_some()
     }
     pub fn attach_shm(&mut self, key: usize, start_va: VirtAddr) {
         let (start_pa, size) = shm_get_address_and_size(key);
-        let mut flags = PTEFlags::V | PTEFlags::U | PTEFlags::W | PTEFlags::R;
+        let flags = PTEFlags::V | PTEFlags::U | PTEFlags::W | PTEFlags::R;
         let mut offset = 0;
 
         while offset < size {
@@ -854,7 +813,6 @@ impl MemorySet {
             offset += PAGE_SIZE;
         }
         self.shm_top = self.shm_top.max(start_va.0 + size);
-        let page_table = &self.page_table;
         let shm_tracker = SharedMemoryTracker::new(key);
 
         self.shm_trackers.insert(start_va, shm_tracker);
@@ -903,7 +861,7 @@ impl MemorySet {
 
 fn hijack_busybox_load_elf() -> LoadedELF {
     let bb = BUSYBOX.read();
-    let mut memory_set = bb.memory_set();
+    let memory_set = bb.memory_set();
     let user_stack_top = memory_set.user_stack_end;
     let elf_entry = bb.elf_entry_point();
     let auxs = bb.aux();

@@ -4,8 +4,8 @@ use alloc::{borrow::ToOwned, sync::Arc, vec::Vec};
 use spin::RwLock;
 
 use crate::{
-    fs::{self, open_flags::CreateMode, AbsolutePath, OpenFlags},
-    mm::memory_set::{AuxEntry, MemorySet},
+    fs::{self, AbsolutePath, CreateMode, OpenFlags},
+    mm::{AuxEntry, MemorySet},
     task::task::TaskControlBlock,
 };
 
@@ -28,9 +28,9 @@ lazy_static! {
         let  inode = fs::open(path, OpenFlags::O_CREATE, CreateMode::empty()).expect("initproc create failed!");
         inode.write_all(&initproc.to_owned());
 
-        let tcb = TaskControlBlock::new(inode.clone());
+        let task = TaskControlBlock::new(inode.clone());
         inode.delete(); // 删除 initproc 文件
-        tcb
+        task
     });
 
     pub static ref BUSYBOX: RwLock<Busybox> = RwLock::new({
@@ -43,21 +43,21 @@ lazy_static! {
         let siz = tail - entry;
 
         let busybox = unsafe { core::slice::from_raw_parts(entry as *const u8, siz) };
-        let path = AbsolutePath::from_str("/busybox0");
+        let path = AbsolutePath::from_str("/static-busybox");
 
-        let inode = fs::open(path, OpenFlags::O_CREATE, CreateMode::empty()).expect("busybox0 create failed");
+        let inode = fs::open(path, OpenFlags::O_CREATE, CreateMode::empty()).expect("static-busybox create failed");
         inode.write_all(&busybox.to_owned());
 
-        let bb = Arc::new(TaskControlBlock::new(inode.clone()));
+        let task = Arc::new(TaskControlBlock::new(inode.clone()));
         inode.delete();
         Busybox {
-            inner: bb,
+            inner: task,
         }
     });
 }
 
-pub static mut ONCE_BB_ENTRY: usize = 0;
-pub static mut ONCE_BB_AUX: Vec<AuxEntry> = Vec::new();
+pub static mut STATIC_BUSYBOX_ENTRY: usize = 0;
+pub static mut STATIC_BUSYBOX_AUX: Vec<AuxEntry> = Vec::new();
 
 pub struct Busybox {
     inner: Arc<TaskControlBlock>,
@@ -65,13 +65,13 @@ pub struct Busybox {
 
 impl Busybox {
     pub fn elf_entry_point(&self) -> usize {
-        unsafe { ONCE_BB_ENTRY }
+        unsafe { STATIC_BUSYBOX_ENTRY }
     }
     pub fn aux(&self) -> Vec<AuxEntry> {
-        unsafe { ONCE_BB_AUX.clone() }
+        unsafe { STATIC_BUSYBOX_AUX.clone() }
     }
     pub fn memory_set(&self) -> MemorySet {
-        let mut write = self.inner.memory_set.write();
-        MemorySet::from_copy_on_write(&mut write)
+        let mut memory_set = self.inner.memory_set.write();
+        MemorySet::from_copy_on_write(&mut memory_set)
     }
 }

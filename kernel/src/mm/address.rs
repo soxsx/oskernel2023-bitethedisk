@@ -199,7 +199,8 @@ pub struct VPNRange {
 }
 
 impl VPNRange {
-    pub fn new(start: VirtPageNum, end: VirtPageNum) -> Self {
+    #[allow(unused)]
+    pub fn from_vpn(start: VirtPageNum, end: VirtPageNum) -> Self {
         assert!(start <= end, "start {:?} > end {:?}!", start, end);
         Self { start, end }
     }

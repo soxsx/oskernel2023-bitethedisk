@@ -1,15 +1,14 @@
 mod context;
-pub mod handler;
+mod handler;
+pub use context::*;
+pub use handler::*;
 
-use self::handler::kernel_trap_handler;
-use crate::consts::{TRAMPOLINE, TRAP_CONTEXT};
-use crate::task::task::trap_context_position;
-use crate::task::{current_task, current_trap_cx, current_user_token};
+use crate::consts::TRAMPOLINE;
+use crate::task::trap_context_position;
+use crate::task::{current_task, current_user_token};
 use crate::timer::get_timeval;
 use core::arch::{asm, global_asm};
 use riscv::register::{mtvec::TrapMode, sie, stvec};
-
-pub use context::TrapContext;
 
 global_asm!(include_str!("trampoline.S"));
 
@@ -50,7 +49,7 @@ pub fn trap_return() -> ! {
         fn user_trapret();
     }
 
-    let task = current_task().unwrap();
+    let task = current_task();
     let mut inner = task.inner_mut();
     let diff = get_timeval() - inner.last_enter_smode_time;
     inner.add_stime(diff);

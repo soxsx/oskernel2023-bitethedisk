@@ -1,7 +1,6 @@
 //! 根据 SYS_id 分发具体系统调用
 
-use crate::fs::fdset::PollFd;
-use crate::task::{SigAction, SigMask, SigSet};
+use crate::task::{SigAction, SigMask};
 
 use super::impls::*;
 use nix::RLimit;
@@ -210,9 +209,6 @@ pub fn syscall_name(id: usize) -> &'static str {
         SYS_PRLIMIT64 => "SYS_PRLIMIT64",
         SYS_RENAMEAT2 => "SYS_RENAMEAT2",
         SYS_GETRANDOM => "SYS_GETRANDOM",
-        SYS_FUTEX => "SYS_FUTEX",
-        SYS_TKILL => "SYS_TKILL",
-
         SYS_SCHED_SETAFFINITY => "SYS_SCHED_SETAFFINITY",
         SYS_CLOCK_NANOSLEEP => "SYS_CLOCK_NANOSLEEP",
 
@@ -462,11 +458,8 @@ pub fn syscall(syscall_id: usize, args: [usize; 6]) -> isize {
 
         _ => panic!("unsupported syscall, syscall id: {:?}", syscall_id),
     };
-    use crate::task::current_task;
-    // println!(
-    //     "[DEBUG] syscall end pid:{:?}",
-    //     current_task().unwrap().pid.0,
-    // );
+    // use crate::task::current_task;
+    // println!("[DEBUG] syscall end pid:{:?}", current_task().pid(),);
     match ret {
         Ok(data) => data,
         Err(err) => {

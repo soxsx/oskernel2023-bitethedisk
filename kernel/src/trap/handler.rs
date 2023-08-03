@@ -2,7 +2,6 @@
 //!
 //! 根据 trap 发生的原因进行分发处理
 
-use log::{debug, error};
 use riscv::register::{
     mcause,
     mstatus::{self},
@@ -11,6 +10,7 @@ use riscv::register::{
     stval,
 };
 
+use crate::mm::VirtAddr;
 use crate::{
     consts::TRAMPOLINE,
     syscall::dispatcher::{syscall, SYS_SIGRETURN},
@@ -20,25 +20,19 @@ use crate::{
     },
     timer::{check_interval_timer, get_timeval, set_next_trigger},
 };
-use crate::{
-    mm::{translated_mut, VirtAddr},
-    task::current_user_token,
-};
 
 use super::{set_kernel_trap_entry, trap_return};
 
 /// 用户态 trap 发生时的处理函数
 #[no_mangle]
 pub fn user_trap_handler() -> ! {
-    // let pid = current_task().unwrap().pid();
-    // println!("pid:{:?}",pid);
+    // let pid = current_task().unwrap().pid(); println!("pid:{:?}",pid);
     set_kernel_trap_entry();
     // 用于描述 Trap 的原因
     let scause = scause::read();
     // 给出 Trap 附加信息
     let stval = stval::read();
-
-    let task = current_task().unwrap();
+    let task = current_task();
     let mut inner = task.inner_mut();
 
     // 考虑以下情况，当一个进程因为耗尽时间片而让出执行流，切换回一个因为在内核态阻塞而让出执行流的
@@ -70,7 +64,6 @@ pub fn user_trap_handler() -> ! {
     inner.set_last_enter_smode(get_timeval());
     drop(inner);
     drop(task);
-
     let mut is_sigreturn = false;
 
     match scause.cause() {
@@ -82,12 +75,10 @@ pub fn user_trap_handler() -> ! {
             if syscall_id == SYS_SIGRETURN {
                 is_sigreturn = true;
             }
-
             let result = syscall(
                 cx.a7(),
                 [cx.a0(), cx.a1(), cx.a2(), cx.a3(), cx.a4(), cx.a5()],
             );
-
             // cx is changed during sys_exec, so we have to call it again
             if !is_sigreturn {
                 cx = current_trap_cx();
@@ -99,13 +90,7 @@ pub fn user_trap_handler() -> ! {
         | Trap::Exception(Exception::StorePageFault)
         | Trap::Exception(Exception::LoadFault)
         | Trap::Exception(Exception::LoadPageFault) => {
-            // println!(
-            //     "user_trap_handler: memory fault, task: {} at {:x?}, {:x?}",
-            //     current_task().unwrap().pid(),
-            //     VirtAddr::from(stval as usize),
-            //     current_trap_cx().sepc,
-            // );
-
+            // println!("user_trap_handler: memory fault, task: {} at {:x?}, {:x?}",current_task().pid(),VirtAddr::from(stval as usize),current_trap_cx().sepc);
             let is_load: bool;
             if scause.cause() == Trap::Exception(Exception::LoadFault)
                 || scause.cause() == Trap::Exception(Exception::LoadPageFault)
@@ -114,45 +99,30 @@ pub fn user_trap_handler() -> ! {
             } else {
                 is_load = false;
             }
-
             let va: VirtAddr = (stval as usize).into();
             if va > TRAMPOLINE.into() {
-                println!("[kernel trap] VirtAddr out of range!");
+                // println!("[kernel trap] VirtAddr out of range!");
                 current_add_signal(SigMask::SIGSEGV);
             }
-            let task = current_task().unwrap();
-
-            // println!("######### check_lazy ##############");
-
+            let task = current_task();
             let lazy = task.check_lazy(va, is_load);
             if lazy != 0 {
-                println!("LAZY FAIL {:?}", lazy);
+                // println!("[Kernel] Check Lazy Fail: {:?}, va: {:#x?}", lazy, va.0);
                 current_add_signal(SigMask::SIGSEGV);
             }
-            // println!("TRAP END");
         }
 
         Trap::Exception(Exception::InstructionFault)
         | Trap::Exception(Exception::InstructionPageFault) => {
-            let task = current_task().unwrap();
-            debug!(
-                "{:?} in application {}, bad addr = {:#x}, bad instruction = {:#x}.",
-                scause.cause(),
-                task.pid.0,
-                stval,
-                current_trap_cx().sepc,
-            );
+            let task = current_task();
+            // debug!("{:?} in application {}, bad addr = {:#x}, bad instruction = {:#x}.",scause.cause(),task.pid.0,stval,current_trap_cx().sepc);
             drop(task);
-
             current_add_signal(SigMask::SIGSEGV);
         }
 
         Trap::Exception(Exception::IllegalInstruction) => {
-            println!("stval:{}", stval);
-
-            let sepc = riscv::register::sepc::read();
-            println!("sepc:0x{:x}", sepc);
-
+            // let sepc = riscv::register::sepc::read();
+            // println!("[Kernel] IllegalInstruction at 0x{:x}, stval:0x{:x}", sepc, stval);
             current_add_signal(SigMask::SIGILL);
         }
 

@@ -1,16 +1,10 @@
-use crate::fs::TimeInfo;
-use crate::return_errno;
-use crate::timer::{get_time, get_time_s};
-use crate::{drivers::BLOCK_DEVICE, mm::UserBuffer};
-use crate::{
-    fs::{
-        file::File,
-        open_flags::CreateMode,
-        stat::{S_IFCHR, S_IFDIR, S_IFREG},
-        AbsolutePath, Dirent, Kstat, OpenFlags, TimeSpec,
-    },
-    syscall::impls::Errno,
+use crate::drivers::BLOCK_DEVICE;
+use crate::fs::{
+    AbsolutePath, CreateMode, Dirent, File, Kstat, OpenFlags, TimeInfo, S_IFCHR, S_IFDIR, S_IFREG,
 };
+use crate::mm::UserBuffer;
+use crate::return_errno;
+use crate::syscall::impls::Errno;
 use alloc::{
     string::{String, ToString},
     sync::Arc,
@@ -182,11 +176,6 @@ pub fn list_apps(path: AbsolutePath) {
     }
 
     ls(path, layer);
-}
-
-#[derive(Debug)]
-pub enum OpenError {
-    NoMatchedDir,
 }
 
 // work_path 绝对路径
@@ -536,7 +525,7 @@ impl File for Fat32File {
         let vfile = inner.inode.clone();
         let mut st_mode = 0;
         _ = st_mode;
-        let (st_size, st_blksize, st_blocks, is_dir, time) = vfile.stat();
+        let (st_size, st_blksize, st_blocks, is_dir, _time) = vfile.stat();
 
         if is_dir {
             st_mode = S_IFDIR;
