@@ -1,5 +1,7 @@
 #![allow(unused)]
 
+use spin::Mutex;
+
 pub const S_IFDIR: u32 = 0o0040000;
 pub const S_IFCHR: u32 = 0o0020000;
 pub const S_IFBLK: u32 = 0o0060000;
@@ -178,9 +180,9 @@ impl InodeTime {
     }
 }
 
-use sync_cell::SyncRefCell;
-
-static INO_ALLOCATOR: SyncRefCell<Allocator> = SyncRefCell::new(Allocator::new());
+lazy_static! {
+    static ref INO_ALLOCATOR: Mutex<Allocator> = Mutex::new(Allocator::new());
+}
 
 /// 栈式进程标识符分配器
 struct Allocator {
@@ -210,5 +212,5 @@ impl Allocator {
 
 /// 从全局栈式进程标识符分配器 `PID_ALLOCATOR` 分配一个进程标识符
 pub fn ino_alloc() -> u64 {
-    INO_ALLOCATOR.borrow_mut().alloc()
+    INO_ALLOCATOR.lock().alloc()
 }

@@ -5,12 +5,6 @@ use core::fmt::{self, Formatter};
 use nix::{Dirent, InodeTime, Kstat, OpenFlags};
 use path::AbsolutePath;
 
-use alloc::vec::Vec;
-
-use crate::mm::UserBuffer;
-
-use super::{AbsolutePath, Dirent, Kstat, OpenFlags, TimeInfo};
-
 pub trait File: Send + Sync {
     fn readable(&self) -> bool;
     fn writable(&self) -> bool;

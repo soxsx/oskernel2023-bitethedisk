@@ -14,6 +14,7 @@ pub use mount::*;
 pub use page_cache::*;
 pub use path::*;
 pub use pipe::*;
+use spin::Mutex;
 pub use stdio::*;
 
 mod page;
@@ -22,17 +23,11 @@ pub use page::*;
 use alloc::string::ToString;
 use nix::{CreateMode, OpenFlags};
 use path::AbsolutePath;
-use sync_cell::SyncRefCell;
 pub use path::*;
 
-use crate::fs::open_flags::CreateMode;
-
-pub use crate::fs::fat32::{chdir, open, Fat32File};
-pub use dirent::Dirent;
+pub use crate::fs::fat32::{chdir, open};
 pub use mount::MNT_TABLE;
-pub use open_flags::OpenFlags;
 pub use pipe::{make_pipe, Pipe};
-pub use stat::*;
 pub use stdio::{Stdin, Stdout};
 
 pub fn init() {
@@ -123,7 +118,7 @@ pub fn init() {
     println!("===+==============+===");
 }
 
-static INO_ALLOCATOR: SyncRefCell<Allocator> = SyncRefCell::new(Allocator::new());
+static INO_ALLOCATOR: Mutex<Allocator> = Mutex::new(Allocator::new());
 struct Allocator {
     current: u64,
 }
@@ -141,5 +136,5 @@ impl Allocator {
     }
 }
 pub fn ino_alloc() -> u64 {
-    INO_ALLOCATOR.borrow_mut().alloc()
+    INO_ALLOCATOR.lock().alloc()
 }

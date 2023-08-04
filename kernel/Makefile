@@ -27,7 +27,7 @@ sdcard:
 kernel: initproc
 	@cargo build --release --offline
 
-kernel-dbg: initproc
+kernel-dev: initproc
 	@RUST_LOG=$(RUST_LOG) cargo build --release --offline \
 	--features no_page_cache
 	# --features static_busybox

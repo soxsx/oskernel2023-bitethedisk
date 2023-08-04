@@ -13,7 +13,7 @@ use riscv::register::{mtvec::TrapMode, sie, stvec};
 global_asm!(include_str!("trampoline.S"));
 
 pub fn init() {
-    setup_nested_trap_guard();
+    set_kernel_trap_entry();
 }
 
 /// 设置内核态下的 trap 入口
@@ -30,7 +30,7 @@ fn set_user_trap_entry() {
     unsafe { stvec::write(TRAMPOLINE as usize, TrapMode::Direct) }
 }
 
-/// 使能 S 特权级时钟中断
+/// Enable S-mode timer interrupt.
 pub fn enable_stimer_interrupt() {
     unsafe { sie::set_stimer() }
 }
@@ -46,7 +46,7 @@ pub fn trap_return() -> ! {
         fn user_trapret();
     }
 
-    let task = current_task();
+    let task = current_task().unwrap();
     let mut inner = task.inner_mut();
     let diff = get_timeval() - inner.last_enter_smode_time;
     inner.add_stime(diff);

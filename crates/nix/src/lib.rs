@@ -1,8 +1,11 @@
 //! Linux 相关数据结构
 
 #![no_std]
-#![macro_use]
+
 extern crate alloc;
+
+#[macro_use]
+extern crate bitflags;
 
 pub mod fs;
 pub mod futex;
@@ -16,9 +19,6 @@ pub mod robustlist;
 pub mod signal;
 pub mod task;
 pub mod time;
-
-#[macro_use]
-extern crate bitflags;
 
 pub use fs::*;
 pub use futex::*;

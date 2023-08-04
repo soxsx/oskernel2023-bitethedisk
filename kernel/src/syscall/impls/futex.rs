@@ -3,7 +3,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use errno::Errno;
 use hashbrown::HashMap;
 use nix::{TimeSpec, FUTEX_CLOCK_REALTIME, FUTEX_CMD_MASK, FUTEX_REQUEUE, FUTEX_WAIT, FUTEX_WAKE};
-use spin::{Lazy, RwLock};
+use spin::RwLock;
 
 use crate::mm::translated_ref;
 
@@ -90,7 +90,7 @@ pub fn futex_wait(uaddr: usize, val: u32, timeout: usize) -> Result {
     }
 
     // futex_wait_queue_me
-    let task = current_task();
+    let task = current_task().unwrap();
     let timeout_time = get_time_ns().saturating_add(timeout);
     fq_lock.push_back(FutexWaiter::new(task.clone(), get_time_ns(), timeout));
     drop(fq_lock);
@@ -103,7 +103,7 @@ pub fn futex_wait(uaddr: usize, val: u32, timeout: usize) -> Result {
     if get_time_ns() >= timeout_time {
         return_errno!(Errno::ETIMEDOUT);
     }
-    let task = current_task();
+    let task = current_task().unwrap();
     let inner = task.inner_ref();
     // woke by signal
     if !inner.pending_signals.difference(inner.sigmask).is_empty() {

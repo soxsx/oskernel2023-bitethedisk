@@ -1,8 +1,19 @@
+use core::cell::RefMut;
+
+use alloc::sync::Arc;
+use sync_cell::SyncRefCell;
+
 use crate::task::manager::TASK_MANAGER;
 use crate::task::{task::TaskControlBlock, TaskContext};
-use alloc::sync::Arc;
 
-pub static mut PROCESSOR: SyncRefCell<Processor> = SyncRefCell::new(Processor::new());
+lazy_static! {
+    pub static ref PROCESSORS: [SyncRefCell<Processor>; 4] = [
+        SyncRefCell::new(Processor::new()),
+        SyncRefCell::new(Processor::new()),
+        SyncRefCell::new(Processor::new()),
+        SyncRefCell::new(Processor::new()),
+    ];
+}
 
 pub struct Processor {
     current: Option<Arc<TaskControlBlock>>,
@@ -31,13 +42,11 @@ impl Processor {
     }
     pub fn hang_current(&mut self, sleep_time: usize, duration: usize) {
         TASK_MANAGER
-            .borrow_mut()
+            .lock()
             .hang(sleep_time, duration, self.take_current().unwrap());
     }
 }
 
-impl Default for Processor {
-    fn default() -> Self {
-        Self::new()
-    }
+pub fn acquire_processor() -> RefMut<'static, Processor> {
+    PROCESSORS[hartid!()].borrow_mut()
 }

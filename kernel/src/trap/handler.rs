@@ -1,4 +1,4 @@
-use super::{setup_nested_trap_guard, trap_return};
+use super::{set_kernel_trap_entry, trap_return};
 use crate::mm::VirtAddr;
 use crate::{
     consts::TRAMPOLINE,
@@ -9,7 +9,7 @@ use crate::{
     },
     timer::{check_interval_timer, get_timeval, set_next_trigger},
 };
-use log::debug;
+use nix::SigMask;
 use riscv::register::{
     scause::{self, Exception, Interrupt, Trap},
     stval,
@@ -22,7 +22,7 @@ pub fn user_trap_handler() -> ! {
     // 用于描述 Trap 的原因
     let scause = scause::read();
     let stval = stval::read();
-    let task = current_task();
+    let task = current_task().unwrap();
     let mut inner = task.inner_mut();
 
     // 考虑以下情况, 当一个进程因为耗尽时间片而让出执行流, 切换回一个因为在内核态阻塞而让出执行流的
@@ -86,10 +86,9 @@ pub fn user_trap_handler() -> ! {
                 // println!("[kernel trap] VirtAddr out of range!");
                 current_add_signal(SigMask::SIGSEGV);
             }
-            let task = current_task();
+            let task = current_task().unwrap();
             let lazy = task.check_lazy(va);
             if lazy != 0 {
-                // println!("[Kernel] Check Lazy Fail: {:?}, va: {:#x?}", lazy, va.0);
                 current_add_signal(SigMask::SIGSEGV);
             }
         }
@@ -131,5 +130,5 @@ pub fn user_trap_handler() -> ! {
 
 #[no_mangle]
 pub fn kernel_trap_handler() -> ! {
-    panic!("nested trap!")
+    panic!("hart {} nested trap!", hartid!());
 }

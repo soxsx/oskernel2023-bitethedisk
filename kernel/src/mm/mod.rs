@@ -8,6 +8,7 @@ mod permission;
 mod shared_memory;
 mod user_buffer;
 mod vm_area;
+mod kernel_heap_allocator;
 pub use address::*;
 pub use frame_allocator::*;
 pub use kvmm::*;
@@ -26,8 +27,13 @@ use riscv::register::satp;
 
 /// Initialize kernel's frame allocator and enable MMU.
 pub fn init() {
+    init_kernel_heap_allocator();
     init_frame_allocator();
     enable_mmu();
+}
+
+pub fn init_kernel_heap_allocator() {
+    kernel_heap_allocator::init_heap();
 }
 
 pub fn init_frame_allocator() {
@@ -50,7 +56,7 @@ pub fn translated_bytes_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<
         let ppn = match page_table.translate(vpn) {
             Some(pte) => pte.ppn(),
             None => {
-                if current_task().check_lazy(start) != 0 {
+                if current_task().unwrap().check_lazy(start) != 0 {
                     panic!("check lazy error");
                 }
                 page_table.translate(vpn).unwrap().ppn()
@@ -124,8 +130,7 @@ pub fn translated_mut<T>(token: usize, ptr: *mut T) -> &'static mut T {
 
 /// Copy data from `src` from memory set indicated by the given token into `dst` in kernel's memory set.
 pub fn copyin<T>(token: usize, dst: &mut T, src: *const T) {
-    let src_buffer =
-        translated_bytes_buffer(token, src as *const u8, core::mem::size_of::<T>());
+    let src_buffer = translated_bytes_buffer(token, src as *const u8, core::mem::size_of::<T>());
 
     let dst_slice = unsafe {
         core::slice::from_raw_parts_mut(dst as *mut T as *mut u8, core::mem::size_of::<T>())

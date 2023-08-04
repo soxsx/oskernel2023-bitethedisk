@@ -1,8 +1,5 @@
 use nix::info::Utsname;
-use nix::{
-    itimerval, tms, IntervalTimer, IntervalTimerType, TimeSpec, TimeVal, ITIMER_PROF, ITIMER_REAL,
-    ITIMER_VIRTUAL,
-};
+use nix::{itimerval, tms, IntervalTimer, IntervalTimerType, TimeSpec, TimeVal};
 
 use crate::mm::translated_mut;
 use crate::return_errno;
@@ -177,7 +174,7 @@ pub fn sys_setitimer(which: i32, new_value: *const itimerval, old_value: *mut it
         return_errno!(Errno::EFAULT);
     }
     if let Ok(itimer_type) = IntervalTimerType::try_from(which) {
-        let task = current_task();
+        let task = current_task().unwrap();
         if ovp_usize != 0 {
             let inner = task.inner_ref();
             if let Some(itimer) = &inner.interval_timer {
@@ -221,7 +218,7 @@ pub fn sys_getitimer(which: i32, curr_value: *mut itimerval) -> Result {
         return_errno!(Errno::EFAULT);
     }
     if let Ok(itimer_type) = IntervalTimerType::try_from(which) {
-        let task = current_task();
+        let task = current_task().unwrap();
         match itimer_type {
             IntervalTimerType::Real => {
                 let inner = task.inner_ref();
@@ -257,7 +254,7 @@ pub fn sys_timer_settime(
     new_value: *const itimerval,
     old_value: *mut itimerval,
 ) -> Result {
-    let task = current_task();
+    let task = current_task().unwrap();
     if new_value as usize != 0 {
         let nv = translated_ref(task.token(), new_value);
         let zero = TimeVal::zero();

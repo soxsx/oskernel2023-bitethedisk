@@ -3,19 +3,18 @@ use core::cell::RefMut;
 use alloc::sync::Arc;
 
 use crate::task::{
-    check_hanging,
-    initproc::BUSYBOX,
+    add_task, check_hanging,
     manager::{check_futex_interupt_or_expire, fetch_task},
     recycle_child_threads_res,
     switch::__switch,
     task::TaskStatus,
     unblock_task, TaskContext, TaskControlBlock,
 };
-use alloc::sync::Arc;
-use core::cell::RefMut;
 
 #[cfg(feature = "static_busybox")]
 use crate::task::initproc::BUSYBOX;
+
+use super::{acquire_processor, Processor};
 
 /// Loop calling fetch_task until a task is successfully retrieved from the task manager,
 /// and then prepare to execute it by task switching
@@ -26,7 +25,13 @@ pub fn run_tasks() {
         drop(busybox);
     }
     loop {
-        let processor = acquire_processor();
+        let mut processor = acquire_processor();
+
+        if let Some(last_task) = processor.take_current() {
+            if last_task.inner_mut().task_status == TaskStatus::Ready {
+                add_task(last_task);
+            }
+        }
 
         recycle_child_threads_res();
 

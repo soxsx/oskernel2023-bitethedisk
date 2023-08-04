@@ -53,7 +53,7 @@ pub fn set_next_trigger() {
 }
 
 pub fn check_interval_timer() {
-    let task = current_task();
+    let task = current_task().unwrap();
     let mut inner = task.inner_mut();
     if inner.interval_timer.is_none() {
         return;

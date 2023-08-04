@@ -40,42 +40,67 @@ mod task;
 mod timer;
 mod trap;
 
-use core::{
-    arch::global_asm,
-    slice,
-    sync::atomic::{AtomicBool, Ordering},
-};
-use riscv::register::sstatus::{set_fs, FS};
+use sbi::sbi_start_hart;
+
+use crate::consts::NCPU;
+use core::{arch::global_asm, slice, sync::atomic::AtomicBool};
 
 global_asm!(include_str!("entry.S"));
 
 lazy_static! {
-    static ref MEOWED: AtomicBool = AtomicBool::new(false);
+    static ref BOOTED: AtomicBool = AtomicBool::new(false);
 }
 
 #[no_mangle]
 pub fn meow() -> ! {
-    if MEOWED
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_ok()
-    {
-        println!("boot hart id: {}", hartid!());
-        init_bss();
-        unsafe { set_fs(FS::Dirty) }
-        lang_items::setup();
-        logging::init();
-        mm::init();
-        trap::init();
-        trap::enable_stimer_interrupt();
-        timer::set_next_trigger();
-        fs::init();
-        task::add_initproc();
-        task::run_tasks();
-    } else {
-        loop {}
+    if BOOTED.load(core::sync::atomic::Ordering::Relaxed) {
+        other_harts()
     }
 
-    unreachable!("main.rs/meow: you should not be here!");
+    println!("Boot hart: {}", hartid!());
+
+    init_bss();
+    logging::init();
+    mm::init();
+    trap::init();
+    trap::enable_stimer_interrupt();
+    timer::set_next_trigger();
+    fs::init();
+    task::add_initproc();
+
+    BOOTED.store(true, core::sync::atomic::Ordering::Relaxed);
+    wake_other_harts_hsm();
+
+    task::run_tasks();
+    unreachable!()
+}
+
+fn wake_other_harts_hsm() {
+    extern "C" {
+        fn _entry();
+    }
+    let boot_hartid = hartid!();
+    for i in 1..NCPU {
+        sbi_start_hart((boot_hartid + i) % NCPU, _entry as usize, 0).unwrap();
+    }
+}
+
+#[allow(unused)]
+fn wake_other_harts_ipi() {
+    use sbi::sbi_send_ipi;
+    let boot_hart = hartid!();
+    let target_harts_mask = ((1 << NCPU) - 1) ^ boot_hart;
+    sbi_send_ipi(target_harts_mask, (&target_harts_mask) as *const _ as usize).unwrap();
+}
+
+fn other_harts() -> ! {
+    info!("hart {} has been started", hartid!());
+    mm::enable_mmu();
+    trap::init();
+    trap::enable_stimer_interrupt();
+    timer::set_next_trigger();
+    task::run_tasks();
+    unreachable!()
 }
 
 fn init_bss() {
@@ -89,40 +114,5 @@ fn init_bss() {
         slice::from_mut_ptr_range(sbss..ebss)
             .into_iter()
             .for_each(|byte| (byte as *mut u8).write_volatile(0));
-    }
-}
-
-pub use lang_items::*;
-
-pub mod lang_items {
-
-    use buddy_system_allocator::LockedHeap;
-
-    use crate::consts::KERNEL_HEAP_SIZE;
-
-    pub fn setup() {
-        init_heap();
-    }
-
-    #[global_allocator]
-    static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::empty();
-    #[alloc_error_handler]
-    pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
-        panic!("Heap allocation error, layout = {:#x?}", layout);
-    }
-
-    static mut KERNEL_HEAP: [u8; KERNEL_HEAP_SIZE] = [0; KERNEL_HEAP_SIZE];
-
-    fn init_heap() {
-        unsafe {
-            HEAP_ALLOCATOR
-                .lock()
-                .init(KERNEL_HEAP.as_ptr() as usize, KERNEL_HEAP_SIZE);
-        }
-    }
-    pub fn heap_usage() {
-        let usage_actual = HEAP_ALLOCATOR.lock().stats_alloc_actual();
-        let usage_all = HEAP_ALLOCATOR.lock().stats_total_bytes();
-        println!("[kernel] HEAP USAGE:{:?} {:?}", usage_actual, usage_all);
     }
 }

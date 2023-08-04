@@ -2,7 +2,6 @@ use alloc::{collections::BTreeMap, sync::Arc};
 
 use crate::{
     consts::PAGE_SIZE,
-    error::Error,
     fs::File,
     mm::{
         address::Step, alloc_frame, page_table::PTEFlags, FrameTracker, PageTable, PhysPageNum,
@@ -102,7 +101,7 @@ impl VmArea {
     /// 将当前逻辑段到物理内存的映射从传入的该逻辑段所属的地址空间的多级页表中删除
     /// 写回文件(如果 map_perm 包含 W)
     #[allow(unused)]
-    pub fn write_back(&self, page_table: &mut PageTable) -> Result<(), Error> {
+    pub fn write_back(&self, page_table: &mut PageTable) -> Result<(), ()> {
         if !self.permission.contains(MapPermission::W) {
             return Ok(());
         }

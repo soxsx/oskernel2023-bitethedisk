@@ -33,7 +33,7 @@ impl Log for SimpleLogger {
     }
 }
 
-/// Initializate kernel logger.
+/// Initializate kernel logger, filtering by log level.
 pub fn init() {
     log::set_logger(&LOGGER).unwrap();
     log::set_max_level(match option_env!("RUST_LOG") {

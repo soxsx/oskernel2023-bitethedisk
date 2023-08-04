@@ -1,33 +1,33 @@
-use alloc::{collections::BTreeMap, sync::Arc};
-use spin::Mutex;
-use sync_cell::SyncRefCell;
 mod hanging_task;
 mod task_manager;
+
 use super::TaskControlBlock;
+use alloc::{collections::BTreeMap, sync::Arc};
 pub use hanging_task::*;
+use spin::Mutex;
 pub use task_manager::*;
 
 lazy_static! {
-    pub static ref TASK_MANAGER: SyncRefCell<TaskManager> = SyncRefCell::new(TaskManager::new());
+    pub static ref TASK_MANAGER: Mutex<TaskManager> = Mutex::new(TaskManager::new());
 }
 pub fn add_task(task: Arc<TaskControlBlock>) {
     PID2TCB.lock().insert(task.pid(), Arc::clone(&task));
-    TASK_MANAGER.borrow_mut().add(task);
+    TASK_MANAGER.lock().add(task);
 }
 pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
-    TASK_MANAGER.borrow_mut().fetch()
+    TASK_MANAGER.lock().fetch()
 }
 pub fn check_hanging() -> Option<Arc<TaskControlBlock>> {
-    TASK_MANAGER.borrow_mut().check_hanging()
+    TASK_MANAGER.lock().check_hanging()
 }
 pub fn check_futex_interupt_or_expire() -> Option<Arc<TaskControlBlock>> {
-    TASK_MANAGER.borrow_mut().check_futex_interupt_or_expire()
+    TASK_MANAGER.lock().check_futex_interupt_or_expire()
 }
 pub fn unblock_task(task: Arc<TaskControlBlock>) {
-    TASK_MANAGER.borrow_mut().unblock_task(task);
+    TASK_MANAGER.lock().unblock_task(task);
 }
 pub fn block_task(task: Arc<TaskControlBlock>) {
-    TASK_MANAGER.borrow_mut().block(task);
+    TASK_MANAGER.lock().block(task);
 }
 
 pub static THREAD_CLEANER: Mutex<CancelledThreads> = Mutex::new(CancelledThreads::new());

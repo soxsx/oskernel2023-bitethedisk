@@ -1,27 +1,24 @@
 use crate::board::CLOCK_FREQ;
-use core::task::Poll;
-use core::usize;
-
 use crate::fs::{make_pipe, open};
 use crate::mm::{
     copyin, copyout, translated_bytes_buffer, translated_mut, translated_ref, translated_str,
-    UserBuffer, VirtPageNum,
+    UserBuffer,
 };
 use crate::return_errno;
 use crate::task::{
-    add_task, current_task, current_user_token, exit_current_and_run_next, pid2task,
+    current_task, current_user_token, exit_current_and_run_next, pid2task,
     suspend_current_and_run_next, SignalContext,
 };
 use crate::timer::{get_time, NSEC_PER_SEC};
-
 use alloc::{string::String, string::ToString, sync::Arc, vec::Vec};
-use nix::info::{CloneFlags, RUsage};
+use core::usize;
+use nix::info::RUsage;
 use nix::resource::{RLimit, Resource};
 use nix::robustlist::RobustList;
-use nix::time::{TimeSpec, TimeVal};
+use nix::time::TimeSpec;
 use nix::{
-    CpuMask, CreateMode, MaskFlags, OpenFlags, SchedParam, SigAction, SigInfo, SigMask, Signal,
-    UContext, MAX_SIGNUM, RUSAGE_SELF, SCHED_OTHER,
+    CloneFlags, CpuMask, CreateMode, MaskFlags, OpenFlags, SchedParam, SigAction, SigInfo, SigMask,
+    Signal, UContext, MAX_SIGNUM, RUSAGE_SELF, SCHED_OTHER,
 };
 
 use super::super::errno::*;
@@ -159,7 +156,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
     envs_vec.push("LD_LIBRARY_PATH=/".to_string());
     // TODO right value
     envs_vec.push("ENOUGH=5000".to_string());
-    let task = current_task();
+    let task = current_task().unwrap();
 
     let inner = task.inner_mut();
     let new_path = inner.cwd.clone().cd(path);
@@ -189,7 +186,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
 /// pid_t ret = syscall(SYS_wait4, pid, status, options);
 /// ```
 pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result {
-    let task = current_task();
+    let task = current_task().unwrap();
 
     let inner = task.inner_ref();
 
@@ -276,7 +273,7 @@ pub fn sys_exit_group(exit_code: i32) -> ! {
 /// pid_t ret = syscall(SYS_getppid);
 /// ```
 pub fn sys_getppid() -> Result {
-    Ok(current_task().tgid as isize)
+    Ok(current_task().unwrap().tgid as isize)
 }
 
 /// #define SYS_getpid 172
@@ -291,12 +288,12 @@ pub fn sys_getppid() -> Result {
 /// pid_t ret = syscall(SYS_getpid);
 /// ```
 pub fn sys_getpid() -> Result {
-    Ok(current_task().pid.0 as isize)
+    Ok(current_task().unwrap().pid.0 as isize)
 }
 
 pub fn sys_set_tid_address(tidptr: *mut usize) -> Result {
     let token = current_user_token();
-    let task = current_task();
+    let task = current_task().unwrap();
     task.inner_mut().clear_child_tid = tidptr as usize;
     Ok(task.pid() as isize)
 }
@@ -326,7 +323,7 @@ pub fn sys_ppoll(
     //     mask.sub(Signal::SIGSTOP as u32);
     //     mask.sub(Signal::SIGILL as u32);
     //     mask.sub(Signal::SIGSEGV as u32);
-    //     current_task().inner_mut().sigmask |= mask;
+    //     current_task().unwrap()().inner_mut().sigmask |= mask;
     // }
     // let mut poll_fd = Vec::<PollFd>::with_capacity(nfds);
     // for i in 0..nfds {
@@ -374,7 +371,11 @@ pub fn sys_tkill(tid: usize, signal: usize) -> Result {
     if signal == 0 {
         return Ok(0);
     }
-    let pid = if tid == 0 { current_task().pid.0 } else { tid };
+    let pid = if tid == 0 {
+        current_task().unwrap().pid.0
+    } else {
+        tid
+    };
 
     let signal = 1 << (signal - 1);
     if let Some(task) = pid2task(pid) {
@@ -400,7 +401,7 @@ pub fn sys_getrusage(who: isize, usage: *mut u8) -> Result {
         core::mem::size_of::<RUsage>(),
     ));
     let mut rusage = RUsage::new();
-    let task = current_task();
+    let task = current_task().unwrap();
     let mut inner = task.inner_mut();
     rusage.ru_stime = inner.stime;
     rusage.ru_utime = inner.utime;
@@ -546,7 +547,7 @@ pub fn sys_clock_getres(clockid: usize, res: *mut TimeSpec) -> Result {
 // sv: 指向一个长度为 2 的数组的指针, 用于保存创建的套接字文件描述符.
 pub fn sys_socketpair(domain: isize, _type: isize, _protocol: isize, sv: *mut [i32; 2]) -> Result {
     let token = current_user_token();
-    let task = current_task();
+    let task = current_task().unwrap();
     let user_sv = translated_mut(token, sv);
 
     let (sv0, sv1) = make_pipe();
@@ -581,7 +582,7 @@ pub fn sys_socketpair(domain: isize, _type: isize, _protocol: isize, sv: *mut [i
 // 在信号处理程序中, 如果需要返回到被中断的程序执行流程中, 可以使用 sigreturn 系统调用
 pub fn sys_sigreturn() -> Result {
     let token = current_user_token();
-    let task = current_task();
+    let task = current_task().unwrap();
     let mut task_inner = task.inner_mut();
 
     let trap_cx = task_inner.trap_context();
@@ -622,7 +623,7 @@ pub fn sys_sigreturn() -> Result {
 // ```
 pub fn sys_sigaction(signum: isize, act: *const SigAction, oldact: *mut SigAction) -> Result {
     let token = current_user_token();
-    let task = current_task();
+    let task = current_task().unwrap();
     let mut inner = task.inner_mut();
     let signum = signum as u32;
 
@@ -680,7 +681,7 @@ pub fn sys_sigprocmask(
     sigsetsize: usize,
 ) -> Result {
     let token = current_user_token();
-    let task = current_task();
+    let task = current_task().unwrap();
     let mut task_inner = task.inner_mut();
     let mut old_mask = task_inner.sigmask.clone();
 
@@ -716,7 +717,7 @@ pub fn sys_set_robust_list(head: usize, len: usize) -> Result {
     if len != RobustList::HEAD_SIZE {
         return_errno!(Errno::EINVAL, "robust list head len missmatch:{:?}", len);
     }
-    let task = current_task();
+    let task = current_task().unwrap();
     let mut inner = task.inner_mut();
     inner.robust_list.head = head;
     drop(inner);
@@ -725,10 +726,10 @@ pub fn sys_set_robust_list(head: usize, len: usize) -> Result {
 
 pub fn sys_get_robust_list(pid: usize, head_ptr: *mut usize, len_ptr: *mut usize) -> Result {
     let task = if pid == 0 {
-        current_task()
+        current_task().unwrap()
     } else {
         match pid2task(pid) {
-            Some(taskk) => taskk,
+            Some(tsk) => tsk,
             None => return_errno!(Errno::ESRCH, "no such pid:{:?}", pid),
         }
     };
@@ -748,7 +749,7 @@ pub fn sys_prlimit64(
     old_limit: *mut RLimit,
 ) -> Result {
     if pid == 0 {
-        let task = current_task();
+        let task = current_task().unwrap();
         let token = current_user_token();
         let resource = if resource == 7 {
             Resource::NOFILE

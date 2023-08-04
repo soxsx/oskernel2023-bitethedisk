@@ -28,21 +28,17 @@ use fat32::sync_all;
 
 use self::{
     initproc::INITPROC,
-    manager::block_task,
-    processor::{acquire_processor, schedule, take_cancelled_chiled_thread},
+    processor::{acquire_processor, schedule},
 };
 
 pub fn suspend_current_and_run_next() -> isize {
     exec_signal_handlers();
 
-    let task = take_current_task().unwrap();
+    let task = current_task().unwrap();
     let mut inner = task.inner_mut();
     let task_cx_ptr = &mut inner.task_cx as *mut TaskContext;
-
     inner.task_status = TaskStatus::Ready;
     drop(inner);
-
-    add_task(task);
 
     schedule(task_cx_ptr);
     0
@@ -113,7 +109,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 }
 
 pub fn hanging_current_and_run_next(sleep_time: usize, duration: usize) {
-    let task = current_task();
+    let task = current_task().unwrap();
     let mut inner = task.inner_mut();
     let current_cx_ptr = &mut inner.task_cx as *mut TaskContext;
     inner.task_status = TaskStatus::Hanging;
@@ -124,19 +120,16 @@ pub fn hanging_current_and_run_next(sleep_time: usize, duration: usize) {
 }
 
 pub fn block_current_and_run_next() {
-    let task = current_task();
+    let task = current_task().unwrap();
 
-    // ---- access current TCB exclusively
     let mut task_inner = task.inner_mut();
     let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
-    // Change status to Ready
     task_inner.task_status = TaskStatus::Blocking;
     block_task(task.clone());
 
     drop(task_inner);
     drop(task);
 
-    // jump to scheduling cycle
     schedule(task_cx_ptr);
 }
 
@@ -146,7 +139,7 @@ pub fn add_initproc() {
 }
 
 pub fn exec_signal_handlers() {
-    let task = current_task();
+    let task = current_task().unwrap();
     let mut task_inner = task.inner_mut();
 
     if task_inner.pending_signals == SigSet::empty() {

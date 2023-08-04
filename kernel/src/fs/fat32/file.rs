@@ -424,7 +424,7 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<A
                             INODE_CACHE.insert(path.clone(), inode.clone());
                             Ok(res)
                         }
-                        Err(_err) => Err(Errno::UNCLEAR),
+                        Err(_err) => Err(Errno::DISCARD),
                     },
                     Err(_err) => {
                         return_errno!(Errno::ENOENT, "parent path not exist path:{:?}", path)

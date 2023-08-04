@@ -20,6 +20,8 @@ pub struct TrapContext {
 
     /// trap 处理函数入口点的(虚拟)地址
     trap_handler: usize,
+
+    executor_id: usize,
 }
 
 impl TrapContext {
@@ -39,6 +41,7 @@ impl TrapContext {
             kernel_satp,
             kernel_sp,
             trap_handler,
+            executor_id: hartid!(),
         };
         cx.set_sp(sp);
         cx

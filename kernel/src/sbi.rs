@@ -181,6 +181,19 @@ pub fn probe_sbi_extension(eid: isize) -> Result<isize, SBIError> {
     }
 }
 
+// =====  IPI Extension (EID #0x735049 "sPI: s-mode IPI") =====
+const IPI_EXTENSION_EID: usize = 0x735049;
+pub fn sbi_send_ipi(hart_mask: usize, hart_mask_base: usize) -> Result<isize, SBIError> {
+    const FID: usize = 0;
+    return_sbi_result!(sbi_call(
+        IPI_EXTENSION_EID,
+        FID,
+        hart_mask,
+        hart_mask_base,
+        0
+    ))
+}
+
 // ===== Hart State Management Extension (EID #0x48534D "HSM") =====
 const HSM_EXTENSION_EID: usize = 0x48534D;
 

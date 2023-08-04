@@ -1,9 +1,3 @@
-<<<<<<< HEAD
-//! 根据 SYS_id 分发具体系统调用
-=======
-use crate::task::{SigAction, SigMask};
->>>>>>> 9bfd967 (Progress(multi-harts): Tidy)
-
 use super::impls::*;
 use nix::{itimerval, time::TimeSpec};
 use nix::{RLimit, SchedParam, SigAction, SigMask};
