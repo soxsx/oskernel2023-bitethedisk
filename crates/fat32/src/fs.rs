@@ -240,23 +240,6 @@ impl FileSystem {
         self.set_free_clusters(free_cluster_cnt + num);
     }
 
-    pub fn count_needed_clusters(&self, new_size: usize, start_cluster: u32) -> usize {
-        let cluster_size = self.cluster_size();
-        // For new vir file
-        // TODO
-        if start_cluster == NEW_VIR_FILE_CLUSTER {
-            return (new_size + cluster_size - 1) / cluster_size;
-        }
-
-        let old_cluster_cnt = self.fat.read().cluster_chain_len(start_cluster) as usize;
-        let cluster_cnt = (new_size + cluster_size - 1) / cluster_size;
-        if cluster_cnt > old_cluster_cnt {
-            cluster_cnt - old_cluster_cnt
-        } else {
-            0
-        }
-    }
-
     pub fn root_dir_entry(&self) -> Arc<RwLock<ShortDirEntry>> {
         self.root_dir_entry.clone()
     }

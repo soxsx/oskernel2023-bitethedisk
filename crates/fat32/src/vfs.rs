@@ -42,6 +42,7 @@ pub fn root(fs: Arc<RwLock<FileSystem>>) -> VirFile {
         Arc::clone(&device),
         fs.read().bpb.fat1_offset(),
     )));
+    cluster_chain.write().grow();
 
     VirFile::new(
         String::from("/"),
@@ -110,7 +111,9 @@ impl VirFile {
             .read()
             .read(offset_in_block, |sde: &ShortDirEntry| sde.first_cluster());
 
-        ClusterChain::new(start_cluster, Arc::clone(&self.device), fat_offset)
+        let mut ret = ClusterChain::new(start_cluster, Arc::clone(&self.device), fat_offset);
+        ret.grow();
+        ret
     }
 
     pub fn name(&self) -> &str {
@@ -309,43 +312,49 @@ impl VirFile {
         let pre_cluster_cnt = offset / cluster_size;
         let mut curr_cluster = self.first_cluster() as u32;
         start_trace!("clone");
-        let mut clus_chain = self.cluster_chain.read().clone().next().unwrap();
+        let mut clus_chain = self.cluster_chain.read();
         end_trace!();
-        assert_ne!(clus_chain.start_cluster, NEW_VIR_FILE_CLUSTER);
+        // assert_ne!(clus_chain.start_cluster, NEW_VIR_FILE_CLUSTER);
 
-        for _ in 0..pre_cluster_cnt {
-            if let Some(clus_chain) = clus_chain.next() {
-                // curr_cluster = self
-                //     .fs
-                //     .read()
-                //     .fat
-                //     .read()
-                //     .get_next_cluster(curr_cluster)
-                //     .unwrap();
+        // for _ in 0..pre_cluster_cnt {
+        //     if let Some(clus_chain) = clus_chain.next() {
+        //         // curr_cluster = self
+        //         //     .fs
+        //         //     .read()
+        //         //     .fat
+        //         //     .read()
+        //         //     .get_next_cluster(curr_cluster)
+        //         //     .unwrap();
 
-                // clus_chain = clus_chain.next().unwrap();
-                // assert_eq!(curr_cluster, clus_chain.current_cluster);
-                curr_cluster = clus_chain.current_cluster;
-            } else {
-                // 说明 offset 在最后一个簇的最后的位置
-                let first_cluster = self.first_cluster();
-                let clus_len = self
-                    .fs
-                    .read()
-                    .fat
-                    .read()
-                    .cluster_chain_len(first_cluster as u32);
+        //         // clus_chain = clus_chain.next().unwrap();
+        //         // assert_eq!(curr_cluster, clus_chain.current_cluster);
+        //         curr_cluster = clus_chain.current_cluster;
+        //     } else {
+        //         // 说明 offset 在最后一个簇的最后的位置
+        //         let first_cluster = self.first_cluster();
+        //         let clus_len = self
+        //             .fs
+        //             .read()
+        //             .fat
+        //             .read()
+        //             .cluster_chain_len(first_cluster as u32);
 
-                assert!(offset == clus_len as usize * cluster_size);
-                return 0;
-            }
-        }
+        //         assert!(offset == clus_len as usize * cluster_size);
+        //         return 0;
+        //     }
+        // }
+        let mut cluster_iter = clus_chain.cluster_vec.iter().skip(pre_cluster_cnt);
         end_trace!();
         let mut left = pre_cluster_cnt * cluster_size;
         let mut right = left + BLOCK_SIZE;
         let mut already_read = 0;
 
         while index < end {
+            let curr_cluster = cluster_iter.next();
+            if curr_cluster.is_none() {
+                break;
+            }
+            let curr_cluster = curr_cluster.unwrap().clone();
             let cluster_offset_in_disk = self.fs.read().bpb.offset(curr_cluster);
 
             let start_block_id = cluster_offset_in_disk / BLOCK_SIZE;
@@ -385,18 +394,13 @@ impl VirFile {
             //     .read()
             //     .get_cluster_at(curr_cluster, 1)
             //     .unwrap();
-            start_trace!("cluster");
-            clus_chain = clus_chain.next().unwrap();
-            // assert_eq!(curr_cluster, clus_chain.current_cluster);
-
-            curr_cluster = clus_chain.current_cluster;
-            end_trace!();
         }
 
         already_read
     }
 
     pub fn write_at(&self, offset: usize, buf: &[u8]) -> usize {
+        time_trace!("write_at");
         let spc = self.fs.read().bpb.sectors_per_cluster();
         let cluster_size = self.fs.read().cluster_size();
 
@@ -415,29 +419,15 @@ impl VirFile {
 
         let pre_cluster_cnt = offset / cluster_size;
 
-        let mut clus_chain = self.cluster_chain.read().clone().next().unwrap();
+        let mut clus_chain = self.cluster_chain.read();
 
-        let mut curr_cluster = self.first_cluster() as u32;
-        for _ in 0..pre_cluster_cnt {
-            // curr_cluster = self
-            //     .fs
-            //     .read()
-            //     .fat
-            //     .read()
-            //     .get_next_cluster(curr_cluster)
-            //     .unwrap();
-
-            clus_chain = clus_chain.next().unwrap();
-            // assert_eq!(curr_cluster, clus_chain.current_cluster);
-
-            curr_cluster = clus_chain.current_cluster;
-        }
-
+        let mut cluster_iter = clus_chain.cluster_vec.iter().skip(pre_cluster_cnt);
         let mut left = pre_cluster_cnt * cluster_size;
         let mut right = left + BLOCK_SIZE;
         let mut already_write = 0;
-
+        time_trace!("write_at2");
         while index < end {
+            let curr_cluster = cluster_iter.next().unwrap().clone();
             let cluster_offset_in_disk = self.fs.read().bpb.offset(curr_cluster);
             let start_block_id = cluster_offset_in_disk / BLOCK_SIZE;
 
@@ -469,18 +459,6 @@ impl VirFile {
             if index >= end {
                 break;
             }
-
-            // curr_cluster = self
-            //     .fs
-            //     .read()
-            //     .fat
-            //     .read()
-            //     .get_cluster_at(curr_cluster, 1)
-            //     .unwrap();
-
-            clus_chain = clus_chain.next().unwrap();
-            // assert_eq!(curr_cluster, clus_chain.current_cluster);
-            curr_cluster = clus_chain.current_cluster;
         }
 
         already_write
@@ -493,11 +471,18 @@ impl VirFile {
         if new_size <= old_size {
             return;
         }
-
-        let need_cluster_cnt = self
-            .fs
-            .read()
-            .count_needed_clusters(new_size, first_cluster);
+        let cluster_size = self.fs.read().cluster_size();
+        let need_cluster_cnt = if first_cluster == NEW_VIR_FILE_CLUSTER {
+            (new_size + cluster_size - 1) / cluster_size
+        } else {
+            let old_cluster_cnt = self.cluster_chain.read().cluster_vec.len();
+            let cluster_cnt = (new_size + cluster_size - 1) / cluster_size;
+            if cluster_cnt > old_cluster_cnt {
+                cluster_cnt - old_cluster_cnt
+            } else {
+                0
+            }
+        };
 
         if need_cluster_cnt == 0 {
             // FIX fat32 规定目录文件的大小为 0
@@ -506,6 +491,7 @@ impl VirFile {
                     sde.set_file_size(new_size as u32);
                 });
             }
+            self.cluster_chain.write().grow();
             return;
         }
 
@@ -517,12 +503,18 @@ impl VirFile {
         if let Some(start_cluster) = option {
             if first_cluster == NEW_VIR_FILE_CLUSTER {
                 self.cluster_chain.write().refresh(start_cluster);
-
                 self.modify_sde(|sde| {
                     sde.set_first_cluster(start_cluster);
                 });
             } else {
-                let last_cluster = self.fs.read().fat.read().cluster_chain_tail(first_cluster);
+                // let last_cluster = self.fs.read().fat.read().cluster_chain_tail(first_cluster);
+                let last_cluster = self
+                    .cluster_chain
+                    .read()
+                    .cluster_vec
+                    .last()
+                    .unwrap()
+                    .clone();
                 assert_ne!(last_cluster, NEW_VIR_FILE_CLUSTER);
                 self.fs
                     .write()
@@ -536,6 +528,7 @@ impl VirFile {
                     sde.set_file_size(new_size as u32);
                 });
             }
+            self.cluster_chain.write().grow();
         } else {
             panic!("Alloc Cluster Failed! Out of Space!");
         }
@@ -559,17 +552,13 @@ impl VirFile {
             let right = (old_size + cluster_size - 1) / cluster_size;
             // let right = old_size / cluster_size + 1;
             let mut release_clsuter_vec = Vec::<u32>::new();
+            let cluster_chain = self.cluster_chain.read();
             for i in left..right {
-                let cluster = self
-                    .fs
-                    .read()
-                    .fat
-                    .read()
-                    .get_cluster_at(first_cluster, i as u32);
-                assert!(cluster.is_some());
-                let cluster = cluster.unwrap();
+                let cluster = cluster_chain.cluster_vec[i];
                 release_clsuter_vec.push(cluster);
             }
+            drop(cluster_chain);
+            self.cluster_chain.write().shrink(left);
 
             self.fs.write().dealloc_cluster(release_clsuter_vec);
 
@@ -580,12 +569,12 @@ impl VirFile {
             });
 
             let last_clus = self
-                .fs
+                .cluster_chain
                 .read()
-                .fat
-                .read()
-                .get_cluster_at(first_cluster, left as u32 - 1)
-                .unwrap();
+                .cluster_vec
+                .last()
+                .unwrap()
+                .clone();
             assert!(last_clus >= 2);
             self.fs
                 .write()
@@ -607,7 +596,8 @@ impl VirFile {
             sde.delete();
         });
         if first_cluster >= 2 && first_cluster < END_OF_CLUSTER {
-            let all_clusters = self.fs.read().fat.read().get_all_cluster_id(first_cluster);
+            let all_clusters = self.cluster_chain.read().cluster_vec.clone();
+            self.cluster_chain.write().cluster_vec.clear();
             let cluster_cnt = all_clusters.len();
             self.fs.write().dealloc_cluster(all_clusters);
             cluster_cnt
