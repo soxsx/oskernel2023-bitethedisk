@@ -737,7 +737,7 @@ pub fn sys_mkdirat(dirfd: i32, path: *const u8, _mode: u32) -> Result {
     let inner = task.inner_mut();
     let fd_table = task.fd_table.read();
     let path = translated_str(token, path);
-    let fd_limit = task.inner_ref().rlimit_nofile.rlim_cur;
+    let fd_limit = inner.rlimit_nofile.rlim_cur;
     if dirfd as isize == AT_FDCWD {
         let open_path = inner.get_work_path().cd(path);
         let _ = open(
