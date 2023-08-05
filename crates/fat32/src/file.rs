@@ -35,6 +35,7 @@ pub enum FileError {
 impl File for VirFile {
     /// Read File To Buffer, Return File Length
     fn read(&self, buf: &mut [u8]) -> Result<usize, FileError> {
+        panic!("NEVER");
         let file_size = self.file_size();
         let spc = self.fs.read().sector_pre_cluster();
         let cluster_size = spc * BLOCK_SIZE;

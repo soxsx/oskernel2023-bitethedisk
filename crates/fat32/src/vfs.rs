@@ -290,6 +290,7 @@ impl VirFile {
     }
 
     pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> usize {
+        time_trace!("read_at");
         let spc = self.fs.read().bpb.sectors_per_cluster();
         let cluster_size = self.fs.read().cluster_size();
         let mut index = offset;
@@ -304,12 +305,12 @@ impl VirFile {
         if buf.len() == 0 {
             return 0;
         }
-
+        start_trace!("cluster");
         let pre_cluster_cnt = offset / cluster_size;
         let mut curr_cluster = self.first_cluster() as u32;
-
+        start_trace!("clone");
         let mut clus_chain = self.cluster_chain.read().clone().next().unwrap();
-
+        end_trace!();
         assert_ne!(clus_chain.start_cluster, NEW_VIR_FILE_CLUSTER);
 
         for _ in 0..pre_cluster_cnt {
@@ -339,6 +340,7 @@ impl VirFile {
                 return 0;
             }
         }
+        end_trace!();
         let mut left = pre_cluster_cnt * cluster_size;
         let mut right = left + BLOCK_SIZE;
         let mut already_read = 0;
@@ -383,11 +385,12 @@ impl VirFile {
             //     .read()
             //     .get_cluster_at(curr_cluster, 1)
             //     .unwrap();
-
+            start_trace!("cluster");
             clus_chain = clus_chain.next().unwrap();
             // assert_eq!(curr_cluster, clus_chain.current_cluster);
 
             curr_cluster = clus_chain.current_cluster;
+            end_trace!();
         }
 
         already_read

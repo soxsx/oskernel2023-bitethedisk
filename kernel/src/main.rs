@@ -17,6 +17,9 @@ extern crate lazy_static;
 extern crate log;
 
 #[macro_use]
+extern crate time_tracer;
+
+#[macro_use]
 mod macros;
 #[macro_use]
 mod console; // 控制台模块
@@ -96,6 +99,7 @@ pub mod lang_items {
     use crate::consts::KERNEL_HEAP_SIZE;
     use crate::sbi::shutdown;
     use core::panic::PanicInfo;
+    use time_tracer::TIME_ALL;
 
     pub fn setup() {
         init_heap();
@@ -103,6 +107,10 @@ pub mod lang_items {
 
     #[panic_handler]
     fn _panic(info: &PanicInfo) -> ! {
+        println!("PANIC");
+        for (s, t) in TIME_ALL.lock().iter() {
+            println!("{},{}", s, t);
+        }
         if let Some(location) = info.location() {
             error!(
                 "[kernel] Panicked at {}:{} {}",

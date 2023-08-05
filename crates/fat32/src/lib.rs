@@ -18,6 +18,8 @@ use core::option::Option::{None, Some};
 use core::str;
 
 extern crate alloc;
+#[macro_use]
+extern crate time_tracer;
 
 use alloc::string::String;
 use alloc::vec::Vec;

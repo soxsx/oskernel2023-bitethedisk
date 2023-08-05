@@ -18,6 +18,7 @@ pub use processor::*;
 pub use signals::*;
 pub use switch::*;
 pub use task::*;
+use time_tracer::TimeTracer;
 
 use crate::{
     consts::SIGNAL_TRAMPOLINE,

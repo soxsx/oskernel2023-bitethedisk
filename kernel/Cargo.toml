@@ -28,3 +28,4 @@ fat32 = { path = "../crates/fat32" }
 sync_cell = { path = "../crates/sync_cell" }
 nix = { path = "../crates/nix" }
 path = { path = "../crates/path" }
+time_tracer = { path = "../crates/time_tracer" }

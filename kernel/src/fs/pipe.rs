@@ -136,6 +136,7 @@ impl File for Pipe {
         true
     }
     fn read(&self, buf: UserBuffer) -> usize {
+        time_trace!("pipe_read");
         assert_eq!(self.readable(), true);
         let mut buf_iter = buf.into_iter();
         let mut read_size = 0usize;

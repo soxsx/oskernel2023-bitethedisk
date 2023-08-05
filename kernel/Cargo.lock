@@ -88,6 +88,7 @@ dependencies = [
  "lru",
  "riscv",
  "spin 0.9.8",
+ "time_tracer",
 ]
 
 [[package]]
@@ -127,6 +128,7 @@ dependencies = [
  "spin 0.9.8",
  "sync_cell",
  "thiserror-core",
+ "time_tracer",
  "virtio-drivers",
  "xmas-elf",
 ]
@@ -307,6 +309,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "time_tracer"
+version = "0.1.0"
+dependencies = [
+ "lazy_static",
+ "riscv",
+ "spin 0.9.8",
 ]
 
 [[package]]

@@ -60,6 +60,7 @@ pub trait Dir {
 impl Dir for VirFile {
     /// 根据路径递归搜索文件
     fn find(&self, path: Vec<&str>) -> Result<Arc<VirFile>, DirError> {
+        time_trace!("find");
         let len = path.len();
         if len == 0 {
             return Ok(Arc::new(self.clone()));

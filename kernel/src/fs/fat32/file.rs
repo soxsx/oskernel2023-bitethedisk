@@ -183,6 +183,7 @@ pub fn open(
     flags: OpenFlags,
     _mode: CreateMode,
 ) -> Result<Arc<Fat32File>, Errno> {
+    time_trace!("open");
     let mut pathv = path.as_vec_str();
     let (readable, writable) = flags.read_write();
     // 创建文件
@@ -323,6 +324,7 @@ impl File for Fat32File {
     }
 
     fn read(&self, mut buf: UserBuffer) -> usize {
+        time_trace!("read");
         let offset = self.inner.lock().offset;
         let file_size = self.file_size();
         let mut inner = self.inner.lock();
@@ -407,6 +409,7 @@ impl File for Fat32File {
     }
 
     fn write(&self, buf: UserBuffer) -> usize {
+        time_trace!("write");
         let mut total_write_size = 0usize;
         let filesize = self.file_size();
         let mut inner = self.inner.lock();
