@@ -159,7 +159,8 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
     }
     envs_vec.push("PATH=/".to_string());
     envs_vec.push("LD_LIBRARY_PATH=/".to_string());
-
+    // TODO right value
+    envs_vec.push("ENOUGH=5000".to_string());
     let task = current_task();
 
     let inner = task.inner_mut();
