@@ -192,7 +192,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
 pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result {
     let task = current_task();
 
-    let inner = task.inner_mut();
+    let inner = task.inner_ref();
 
     // 根据pid参数查找有没有符合要求的进程
     if pid == -1 && inner.children.len() == 0 {
@@ -214,7 +214,7 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result {
             .children
             .iter()
             .enumerate()
-            .find(|(_, p)| p.inner_mut().is_zombie() && (pid == -1 || pid as usize == p.pid()));
+            .find(|(_, p)| p.inner_ref().is_zombie() && (pid == -1 || pid as usize == p.pid()));
         if let Some((idx, _)) = pair {
             // 将子进程从向量中移除并置于当前上下文中
             let child = inner.children.remove(idx);
@@ -224,8 +224,8 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result {
             // 包括: 内核栈和它的 PID 还有它的应用地址空间存放页表的那些物理页帧等等
             assert_eq!(Arc::strong_count(&child), 1);
             // 收集的子进程信息返回
-            let found_pid = child.pid();
-            let exit_code = child.inner_mut().exit_code;
+            let cpid = child.pid();
+            let exit_code = child.inner_ref().exit_code;
             // ++++ release child PCB
             // 将子进程的退出码写入到当前进程的应用地址空间中
             if exit_code_ptr as usize != 0 {
@@ -235,7 +235,7 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result {
                 *translated_mut(token, exit_code_ptr) = exit_code << 8;
             }
 
-            return Ok(found_pid as isize);
+            return Ok(cpid as isize);
         } else {
             drop(inner); // 因为下个函数会切换上下文, 所以需要手动释放锁
             suspend_current_and_run_next();
@@ -669,7 +669,9 @@ pub fn sys_socketpair(domain: isize, _type: isize, _protocol: isize, sv: *mut [i
 
     // fd_table mut borrow
     let mut fd_table = task.fd_table.write();
-    let fd_limit = task.rlimit_nofile.read().rlim_cur;
+    let inner = task.inner_ref();
+    let fd_limit = inner.rlimit_nofile.rlim_cur;
+    drop(inner);
     let fd0 = TaskControlBlock::alloc_fd(&mut fd_table, fd_limit);
     if fd0 >= fd_limit {
         return_errno!(Errno::EMFILE);
@@ -830,7 +832,9 @@ pub fn sys_set_robust_list(head: usize, len: usize) -> Result {
         return_errno!(Errno::EINVAL, "robust list head len missmatch:{:?}", len);
     }
     let task = current_task();
-    task.robust_list.write().head = head;
+    let mut inner = task.inner_mut();
+    inner.robust_list.head = head;
+    drop(inner);
     Ok(0)
 }
 
@@ -844,9 +848,11 @@ pub fn sys_get_robust_list(pid: usize, head_ptr: *mut usize, len_ptr: *mut usize
         }
     };
     let token = current_user_token();
-    let lock = task.robust_list.read();
-    copyout(token, head_ptr, &lock.head);
-    copyout(token, len_ptr, &lock.len);
+    let inner = task.inner_ref();
+    let robust_list = &inner.robust_list;
+    copyout(token, head_ptr, &robust_list.head);
+    copyout(token, len_ptr, &robust_list.len);
+    drop(inner);
     Ok(0)
 }
 
@@ -868,8 +874,10 @@ pub fn sys_prlimit64(
         if !old_limit.is_null() {
             match resource {
                 Resource::NOFILE => {
-                    let lock = task.rlimit_nofile.read();
-                    copyout(token, old_limit, &lock);
+                    let inner = task.inner_ref();
+                    let rlimit_nofile = &inner.rlimit_nofile;
+                    copyout(token, old_limit, &rlimit_nofile);
+                    drop(inner)
                 }
                 // TODO
                 // Resource::ILLEAGAL => return_errno!(Errno::EINVAL),
@@ -882,7 +890,10 @@ pub fn sys_prlimit64(
             copyin(token, &mut rlimit, new_limit);
             match resource {
                 Resource::NOFILE => {
-                    *task.rlimit_nofile.write() = rlimit;
+                    let mut inner = task.inner_mut();
+                    let rlimit_nofile = &mut inner.rlimit_nofile;
+                    *rlimit_nofile = rlimit;
+                    drop(inner)
                 }
                 // TODO
                 // Resource::ILLEAGAL => return_errno!(Errno::EINVAL),

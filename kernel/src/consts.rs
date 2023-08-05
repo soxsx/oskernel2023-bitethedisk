@@ -31,3 +31,5 @@ pub const MMAP_BASE: usize = 0x6000_0000;
 pub const SHM_BASE: usize = 0x7000_0000;
 
 pub const LINK_BASE: usize = 0x2000_0000;
+
+pub const FD_LIMIT: usize = 1024;

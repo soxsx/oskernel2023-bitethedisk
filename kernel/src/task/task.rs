@@ -5,6 +5,7 @@ use super::kstack::KernelStack;
 use super::{pid_alloc, AuxEntry, PidHandle, SigMask, SigSet};
 use super::{SigAction, TaskContext, MAX_SIGNUM};
 use crate::consts::*;
+use crate::fs::AbsolutePath;
 use crate::fs::{File, Stdin, Stdout};
 use crate::mm::acquire_kvmm;
 use crate::mm::LoadedELF;
@@ -22,26 +23,15 @@ use nix::{itimerval, CloneFlags, RLimit, RobustList};
 use riscv::register::scause::Scause;
 use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use crate::fs::AbsolutePath;
-
-pub const FD_LIMIT: usize = 1024;
-
-// TODO futex, chan, sigmask, sigpending, rubustlist, rlimt,
 pub struct TaskControlBlock {
-    /// 进程标识符
     pub pid: PidHandle,
-    /// thread group id
     pub tgid: usize,
-    // pub set_child_tid: usize,   /* CLONE_CHILD_SETTID */
-    // pub clear_child_tid: usize, /* CLONE_CHILD_CLEARTID */
-    /// 应用内核栈
     pub kernel_stack: KernelStack,
 
     pub sigactions: Arc<RwLock<[SigAction; MAX_SIGNUM as usize]>>,
     pub memory_set: Arc<RwLock<MemorySet>>,
     pub fd_table: Arc<RwLock<FDTable>>,
-    pub robust_list: Arc<RwLock<RobustList>>,
-    pub rlimit_nofile: Arc<RwLock<RLimit>>,
+
     inner: RwLock<TaskControlBlockInner>,
 }
 
@@ -61,41 +51,30 @@ impl Debug for TaskControlBlock {
 }
 
 pub struct TaskControlBlockInner {
-    /// 应用地址空间中的 Trap 上下文所在的物理页帧的物理页号
     pub trap_cx_ppn: PhysPageNum,
-
-    /// 任务上下文
     pub task_cx: TaskContext,
-
     pub task_status: TaskStatus,
+    pub trap_cause: Option<Scause>,
 
-    /// 指向当前进程的父进程(如果存在的话)
     pub parent: Option<Weak<TaskControlBlock>>,
-
-    /// 当前进程的所有子进程的任务控制块向量
     pub children: Vec<Arc<TaskControlBlock>>,
 
-    /// 退出码
-    pub exit_code: i32,
-
     pub pending_signals: SigSet,
-
     pub sigmask: SigMask,
 
     pub cwd: AbsolutePath,
+    pub exit_code: i32,
 
     pub interval_timer: Option<IntervalTimer>,
-
     pub utime: TimeVal,
-
     pub stime: TimeVal,
-
     pub last_enter_umode_time: TimeVal,
-
     pub last_enter_smode_time: TimeVal,
-    pub clear_child_tid: usize, /* CLONE_CHILD_CLEARTID */
 
-    pub trap_cause: Option<Scause>,
+    pub robust_list: RobustList,
+    pub rlimit_nofile: RLimit,
+
+    pub clear_child_tid: usize, /* CLONE_CHILD_CLEARTID */
 }
 
 #[derive(Debug, Clone)]
@@ -218,17 +197,15 @@ impl TaskControlBlock {
                 // 2 -> stderr
                 Some(Arc::new(Stdout)),
             ])),
-            robust_list: Arc::new(RwLock::new(RobustList::default())),
-            rlimit_nofile: Arc::new(RwLock::new(RLimit::new(FD_LIMIT, FD_LIMIT))),
 
-            // set_child_tid: 0,
-            // clear_child_tid: 0,
             inner: RwLock::new(TaskControlBlockInner {
                 trap_cx_ppn,
                 task_cx: TaskContext::readied_for_switching(kernel_stack_top),
                 task_status: TaskStatus::Ready,
                 parent: None,
                 children: Vec::new(),
+                robust_list: RobustList::default(),
+                rlimit_nofile: RLimit::new(FD_LIMIT, FD_LIMIT),
                 exit_code: 0,
                 sigmask: SigMask::empty(),
                 pending_signals: SigSet::empty(),
@@ -528,8 +505,6 @@ impl TaskControlBlock {
             // set_child_tid: 0,
             // clear_child_tid: 0,
             kernel_stack,
-            robust_list: Arc::new(RwLock::new(RobustList::default())),
-            rlimit_nofile: Arc::new(RwLock::new(RLimit::new(FD_LIMIT, FD_LIMIT))),
             inner: RwLock::new(TaskControlBlockInner {
                 trap_cx_ppn,
                 task_cx: TaskContext::readied_for_switching(kernel_stack_top),
@@ -537,6 +512,9 @@ impl TaskControlBlock {
                 parent: Some(Arc::downgrade(self)),
                 children: Vec::new(),
                 exit_code: 0,
+
+                rlimit_nofile: RLimit::new(FD_LIMIT, FD_LIMIT),
+                robust_list: RobustList::default(),
 
                 // [signal: msg about fork](https://man7.org/linux/man-pages/man7/signal.7.html)
                 sigmask: parent_inner.sigmask.clone(),

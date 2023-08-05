@@ -9,7 +9,7 @@ use crate::mm::{
     translated_bytes_buffer, translated_mut, translated_ref, translated_str, UserBuffer, VirtAddr,
 };
 use crate::return_errno;
-use crate::task::{current_task, current_user_token, FD_LIMIT};
+use crate::task::{current_task, current_user_token};
 use crate::task::{suspend_current_and_run_next, TaskControlBlock};
 use crate::timer::{get_time, get_timeval};
 
@@ -95,7 +95,7 @@ pub fn sys_pipe2(pipe: *mut i32, _flag: i32) -> Result {
 
     // fd_table mut borrow
     let mut fd_table = task.fd_table.write();
-    let fd_limit = task.rlimit_nofile.read().rlim_cur;
+    let fd_limit = task.inner_ref().rlimit_nofile.rlim_cur;
     let read_fd = TaskControlBlock::alloc_fd(&mut fd_table, fd_limit);
     if read_fd >= fd_limit {
         return_errno!(Errno::EMFILE);
@@ -139,7 +139,7 @@ pub fn sys_dup(old_fd: usize) -> Result {
     let task = current_task();
     // fd_table mut borrow
     let mut fd_table = task.fd_table.write();
-    let fd_limit = task.rlimit_nofile.read().rlim_cur;
+    let fd_limit = task.inner_ref().rlimit_nofile.rlim_cur;
     // 超出范围
     if old_fd >= fd_table.len() {
         return_errno!(Errno::EBADF, "oldfd is out of range, oldfd: {}", old_fd);
@@ -261,7 +261,7 @@ pub fn sys_openat(fd: i32, filename: *const u8, flags: u32, mode: u32) -> Result
     let path = translated_str(token, filename);
     let mode = CreateMode::from_bits(mode).unwrap_or(CreateMode::empty());
     let flags = OpenFlags::from_bits(flags).unwrap_or(OpenFlags::empty());
-    let fd_limit = task.rlimit_nofile.read().rlim_cur;
+    let fd_limit = inner.rlimit_nofile.rlim_cur;
     if fd as isize == AT_FDCWD {
         let open_path = inner.get_work_path().join_string(path);
         let inode = open(open_path.clone(), flags, mode)?;
@@ -732,7 +732,7 @@ pub fn sys_mkdirat(dirfd: i32, path: *const u8, _mode: u32) -> Result {
     let inner = task.inner_mut();
     let fd_table = task.fd_table.read();
     let path = translated_str(token, path);
-    let fd_limit = task.rlimit_nofile.read().rlim_cur;
+    let fd_limit = task.inner_ref().rlimit_nofile.rlim_cur;
     if dirfd as isize == AT_FDCWD {
         let open_path = inner.get_work_path().join_string(path);
         let _ = open(
@@ -880,7 +880,7 @@ pub fn sys_fstat(fd: i32, buf: *mut u8) -> Result {
 
     let mut userbuf = UserBuffer::wrap(buf_vec);
     let mut kstat = Kstat::new();
-    let fd_limit = task.rlimit_nofile.read().rlim_cur;
+    let fd_limit = task.inner_ref().rlimit_nofile.rlim_cur;
     let dirfd = fd as usize;
     if dirfd >= fd_table.len() {
         return_errno!(
@@ -1105,7 +1105,7 @@ pub fn sys_fcntl(fd: i32, cmd: usize, arg: Option<usize>) -> Result {
             let mut new_fd = 0;
             _ = new_fd;
             let mut tmp_fd = Vec::new();
-            let fd_limit = task.rlimit_nofile.read().rlim_cur;
+            let fd_limit = inner.rlimit_nofile.rlim_cur;
             loop {
                 new_fd = TaskControlBlock::alloc_fd(&mut fd_table, fd_limit);
                 fd_table[new_fd] = Some(Arc::new(Stdin));
@@ -1146,7 +1146,7 @@ pub fn sys_newfstatat(
     let buf_vec = translated_bytes_buffer(token, satabuf as *const u8, size_of::<Kstat>());
     let mut userbuf = UserBuffer::wrap(buf_vec);
     let mut kstat = Kstat::new();
-    let fd_limit = task.rlimit_nofile.read().rlim_cur;
+    let fd_limit = inner.rlimit_nofile.rlim_cur;
     // 相对路径, 在当前工作目录
     if dirfd == AT_FDCWD {
         let open_path = inner.get_work_path().join_string(path);
