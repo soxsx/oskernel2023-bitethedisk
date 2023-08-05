@@ -81,6 +81,10 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // 将这个进程的子进程转移到 initproc 进程的子进程中
     // 若当前进程为子线程则不会执行下面的 for
     for child in inner.children.iter() {
+        if child.is_child_thread() {
+            child.inner_mut().parent = None; // weak reference 可以注释掉?
+            continue;
+        }
         let mut initproc_inner = INITPROC.inner_mut();
         child.inner_mut().parent = Some(Arc::downgrade(&INITPROC));
         initproc_inner.children.push(child.clone()); // 引用计数 -1
