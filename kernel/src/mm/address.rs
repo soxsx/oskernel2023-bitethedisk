@@ -114,7 +114,7 @@ impl VirtAddr {
     }
     /// 从虚拟地址计算虚拟页号(下取整)
     pub fn ceil(&self) -> VirtPageNum {
-        VirtPageNum((self.0 + PAGE_SIZE - 1) / PAGE_SIZE)
+        VirtPageNum((PAGE_SIZE - 1 + self.0) / PAGE_SIZE)
     }
     /// 从虚拟地址获取页内偏移(物理地址的低12位)
     pub fn page_offset(&self) -> usize {
@@ -134,7 +134,7 @@ impl PhysAddr {
 
     /// 从物理地址计算物理页号(上取整)
     pub fn ceil(&self) -> PhysPageNum {
-        PhysPageNum((self.0 + PAGE_SIZE - 1) / PAGE_SIZE)
+        PhysPageNum((PAGE_SIZE - 1 + self.0) / PAGE_SIZE)
     }
 
     /// 从物理地址获取页内偏移(物理地址的低12位)
