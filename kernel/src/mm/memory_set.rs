@@ -1,12 +1,13 @@
 use alloc::collections::BTreeMap;
 use alloc::{sync::Arc, vec::Vec};
+use path::AbsolutePath;
 
 use super::{MapPermission, MapType, VmArea, VmAreaType};
 use crate::consts::{
     CLOCK_FREQ, LINK_BASE, MMAP_BASE, PAGE_SIZE, SHM_BASE, SIGNAL_TRAMPOLINE, THREAD_LIMIT,
     TRAMPOLINE, TRAP_CONTEXT_BASE, USER_HEAP_SIZE, USER_STACK_BASE, USER_STACK_SIZE,
 };
-use crate::fs::{open, AbsolutePath, CreateMode, File, OpenFlags};
+use crate::fs::{open, CreateMode, File, OpenFlags};
 use crate::mm::{
     alloc_frame, enquire_refcount, shm_get_address_and_size, shm_get_nattch, FrameTracker,
     MmapManager, PTEFlags, PageTable, PageTableEntry, PhysAddr, PhysPageNum, SharedMemoryTracker,

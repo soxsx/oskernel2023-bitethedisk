@@ -5,7 +5,6 @@ use super::kstack::KernelStack;
 use super::{pid_alloc, AuxEntry, PidHandle, SigMask, SigSet};
 use super::{SigAction, TaskContext, MAX_SIGNUM};
 use crate::consts::*;
-use crate::fs::AbsolutePath;
 use crate::fs::{File, Stdin, Stdout};
 use crate::mm::acquire_kvmm;
 use crate::mm::LoadedELF;
@@ -20,6 +19,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use nix::time::TimeVal;
 use nix::{itimerval, CloneFlags, RLimit, RobustList};
+use path::AbsolutePath;
 use riscv::register::scause::Scause;
 use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 

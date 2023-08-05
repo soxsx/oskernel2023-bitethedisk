@@ -219,16 +219,12 @@ pub fn sys_chdir(path: *const u8) -> Result {
     let mut inner = task.inner_mut();
     let path = translated_str(token, path);
     let current_path = inner.cwd.clone();
-    if let Some(new_path) = current_path.cd(path.clone()) {
-        if chdir(new_path.clone()) {
-            inner.cwd = new_path.clone();
-            Ok(0)
-        } else {
-            return_errno!(Errno::ENOENT);
-        }
+    let new_path = current_path.cd(path.clone());
+    if chdir(new_path.clone()) {
+        inner.cwd = new_path.clone();
+        Ok(0)
     } else {
-        // TODO: 这里只能判断是否到达, 但是不知道不能到达的原因
-        return_errno!(Errno::ENOTDIR);
+        return_errno!(Errno::ENOENT);
     }
 }
 
@@ -263,7 +259,7 @@ pub fn sys_openat(fd: i32, filename: *const u8, flags: u32, mode: u32) -> Result
     let flags = OpenFlags::from_bits(flags).unwrap_or(OpenFlags::empty());
     let fd_limit = inner.rlimit_nofile.rlim_cur;
     if fd as isize == AT_FDCWD {
-        let open_path = inner.get_work_path().join_string(path);
+        let open_path = inner.get_work_path().cd(path);
         let inode = open(open_path.clone(), flags, mode)?;
         let fd = TaskControlBlock::alloc_fd(&mut fd_table, fd_limit);
         if fd >= fd_limit {
@@ -284,7 +280,7 @@ pub fn sys_openat(fd: i32, filename: *const u8, flags: u32, mode: u32) -> Result
             return_errno!(Errno::EMFILE);
         }
         if let Some(file) = &fd_table[dirfd] {
-            let open_path = file.path().join_string(path.clone());
+            let open_path = file.path().cd(path.clone());
             // target file 存在
             let tar_file = open(open_path.clone(), flags, mode)?;
             let fd = TaskControlBlock::alloc_fd(&mut fd_table, fd_limit);
@@ -693,7 +689,7 @@ pub fn sys_unlinkat(fd: isize, path: *const u8, flags: u32) -> Result {
     _ = flags;
 
     let path = translated_str(token, path);
-    let open_path = inner.get_work_path().join_string(path);
+    let open_path = inner.get_work_path().cd(path);
 
     if fd == AT_FDCWD {
         let file = open(open_path.clone(), OpenFlags::O_RDWR, CreateMode::empty())?;
@@ -734,7 +730,7 @@ pub fn sys_mkdirat(dirfd: i32, path: *const u8, _mode: u32) -> Result {
     let path = translated_str(token, path);
     let fd_limit = task.inner_ref().rlimit_nofile.rlim_cur;
     if dirfd as isize == AT_FDCWD {
-        let open_path = inner.get_work_path().join_string(path);
+        let open_path = inner.get_work_path().cd(path);
         let _ = open(
             open_path.clone(),
             OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE,
@@ -752,7 +748,7 @@ pub fn sys_mkdirat(dirfd: i32, path: *const u8, _mode: u32) -> Result {
             return_errno!(Errno::EBADF, "fd {} is out of range or reach limit", dirfd);
         }
         if let Some(file) = &fd_table[dirfd] {
-            let open_path = file.path().join_string(path);
+            let open_path = file.path().cd(path);
 
             let _ = open(
                 open_path.clone(),
@@ -1149,7 +1145,7 @@ pub fn sys_newfstatat(
     let fd_limit = inner.rlimit_nofile.rlim_cur;
     // 相对路径, 在当前工作目录
     if dirfd == AT_FDCWD {
-        let open_path = inner.get_work_path().join_string(path);
+        let open_path = inner.get_work_path().cd(path);
         let inode = open(open_path.clone(), OpenFlags::O_RDONLY, CreateMode::empty())?;
         inode.fstat(&mut kstat);
         userbuf.write(kstat.as_bytes());
@@ -1167,7 +1163,7 @@ pub fn sys_newfstatat(
         }
 
         if let Some(file) = &fd_table[dirfd] {
-            let open_path = inner.get_work_path().join_string(path);
+            let open_path = inner.get_work_path().cd(path);
             let inode = open(open_path, OpenFlags::O_RDONLY, CreateMode::empty())?;
             inode.fstat(&mut kstat);
             userbuf.write(kstat.as_bytes());
@@ -1261,7 +1257,7 @@ pub fn sys_utimensat(
             unimplemented!();
         } else {
             let pathname = translated_str(token, pathname);
-            let path = inner.get_work_path().join_string(pathname);
+            let path = inner.get_work_path().cd(pathname);
             let file = open(
                 path,
                 OpenFlags::O_RDWR | OpenFlags::O_CREATE,
@@ -1306,7 +1302,7 @@ pub fn sys_renameat2(
     let old_path = translated_str(token, old_path);
     let new_path = translated_str(token, new_path);
 
-    let old_path = inner.get_work_path().join_string(old_path);
+    let old_path = inner.get_work_path().cd(old_path);
 
     if old_dirfd == AT_FDCWD {
         let old_file = open(old_path, OpenFlags::O_RDWR, CreateMode::empty())?;
@@ -1318,7 +1314,7 @@ pub fn sys_renameat2(
             }
         };
         if new_dirfd == AT_FDCWD {
-            let new_path = inner.get_work_path().join_string(new_path);
+            let new_path = inner.get_work_path().cd(new_path);
             old_file.rename(new_path, flag);
             Ok(0)
         } else {

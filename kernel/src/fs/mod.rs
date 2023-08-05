@@ -6,7 +6,6 @@ mod fdset;
 mod file;
 mod mount;
 mod open_flags;
-mod path;
 mod pipe;
 mod stat;
 mod stdio;
@@ -22,6 +21,7 @@ pub use stat::*;
 pub use stdio::*;
 
 use alloc::string::ToString;
+use path::AbsolutePath;
 
 pub fn init() {
     // 预创建文件/文件夹

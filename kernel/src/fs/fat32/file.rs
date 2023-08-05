@@ -1,7 +1,5 @@
 use crate::drivers::BLOCK_DEVICE;
-use crate::fs::{
-    AbsolutePath, CreateMode, Dirent, File, Kstat, OpenFlags, TimeInfo, S_IFCHR, S_IFDIR, S_IFREG,
-};
+use crate::fs::{CreateMode, Dirent, File, Kstat, OpenFlags, TimeInfo, S_IFCHR, S_IFDIR, S_IFREG};
 use crate::mm::UserBuffer;
 use crate::return_errno;
 use crate::syscall::impls::Errno;
@@ -11,6 +9,7 @@ use alloc::{
     vec::Vec,
 };
 use fat32::{root, Dir as FatDir, DirError, FileSystem, VirFile, VirFileType, ATTR_DIRECTORY};
+use path::AbsolutePath;
 use spin::Mutex;
 
 /// 表示进程中一个被打开的常规文件或目录
@@ -157,7 +156,7 @@ pub fn list_apps(path: AbsolutePath) {
             if layer == 0 && app.0 == "initproc" {
                 continue;
             }
-            let app_path: AbsolutePath = path.join_string(app.0.clone());
+            let app_path: AbsolutePath = path.cd(app.0.clone());
             if app.1 & ATTR_DIRECTORY == 0 {
                 // 如果不是目录
                 for _ in 0..layer {

@@ -120,7 +120,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
     // println!("path:{:?},argv:{:?},envp:{:?}",path,argv,envp);
     let mut args_vec: Vec<String> = Vec::new();
     if path.ends_with(".sh") {
-        path = "/busybox".to_string();
+        path = "busybox".to_string();
         args_vec.push("sh".to_string());
     }
     // if path == "/bin/sh"{
@@ -163,7 +163,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
     let task = current_task();
 
     let inner = task.inner_mut();
-    let new_path = inner.cwd.clone().join_string(path);
+    let new_path = inner.cwd.clone().cd(path);
     let app_inode = open(new_path.clone(), OpenFlags::O_RDONLY, CreateMode::empty())?;
     drop(inner);
     task.exec(app_inode, args_vec, envs_vec);

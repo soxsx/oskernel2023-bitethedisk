@@ -1,8 +1,9 @@
-use super::{AbsolutePath, Dirent, Kstat, OpenFlags, TimeInfo};
+use super::{Dirent, Kstat, OpenFlags, TimeInfo};
 use crate::mm::UserBuffer;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 use core::fmt::{self, Formatter};
+use path::AbsolutePath;
 
 pub trait File: Send + Sync {
     fn readable(&self) -> bool;
