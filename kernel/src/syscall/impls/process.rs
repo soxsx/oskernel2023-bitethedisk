@@ -757,10 +757,11 @@ pub fn sys_sigaction(signum: isize, act: *const SigAction, oldact: *mut SigActio
     if act as usize != 0 {
         let mut sigaction = task.sigactions.write();
         if oldact as usize != 0 {
-            *translated_mut(token, oldact) = sigaction[signum as usize];
+            copyout(token, oldact, &sigaction[signum as usize]);
         }
         //在 pcb 中注册给定的 signaction
-        let mut sa = translated_ref(token, act).clone();
+        let mut sa = SigAction::new();
+        copyin(token, &mut sa, act);
         // kill 和 stop 信号不能被屏蔽
         sa.sa_mask.sub(Signal::SIGKILL as u32); // sub 函数保证即使不存在 SIGKILL 也无影响
         sa.sa_mask.sub(Signal::SIGSTOP as u32);
