@@ -11,6 +11,9 @@
 	#  35*8(280) | kernel_sp
 	#  36*8(288) | trap_handler
 	#  37*8(296) | executor_id
+    #  38*8(304) | float registers
+
+.attribute arch, "rv64gc"
 
 .altmacro
 .macro STORE_X n
@@ -52,6 +55,15 @@ user_trapvec:
 	# read user stack from sscratch and save it in TrapContext
 	csrr t2, sscratch
 	sd t2, 2*8(sp)
+
+    # 保存浮点寄存器
+    .set n, 0
+    .set m, 38
+    .rept 32
+        STORE_FP %n, %m
+        .set n, n+1
+        .set m, m+1
+    .endr
 
 	# 将 kernel_satp 装载到 t0
 	ld t0, 34*8(sp)
@@ -96,6 +108,14 @@ user_trapret:
 	ld t1, 33*8(sp)
 	csrw sstatus, t0
 	csrw sepc, t1
+
+    .set n, 0
+    .set m, 38
+    .rept 32
+        LOAD_FP %n, %m
+        .set n, n+1
+        .set m, m+1
+    .endr
 
     sd tp, 37*8(sp)
 
