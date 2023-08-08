@@ -15,6 +15,11 @@ NCPU = 2
 
 RUST_LOG := debug
 
+# Available features: no-page-cache,static-busybox,inode-drop,u740,dev
+FEATURES ?= static-busybox
+
+DEV ?= false
+
 ##################################################################
 #                        Run straightly                          #
 ##################################################################
@@ -28,11 +33,11 @@ kernel: initproc
 	@cargo build --release --offline
 
 kernel-dev: initproc
-	@RUST_LOG=$(RUST_LOG) cargo build --release --offline \
-	--features no_page_cache
-	# --features static_busybox
-	# --features inode_drop
-	# --features u740
+ifeq ($(DEV), true)
+	@RUST_LOG=$(RUST_LOG) cargo build --release --offline --features $(FEATURES)
+else
+	@RUST_LOG=error cargo build --release --offline --features $(FEATURES)
+endif
 
 run: kernel-dev sdcard
 	@$(QEMU) \

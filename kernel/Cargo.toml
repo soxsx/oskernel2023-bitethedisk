@@ -9,11 +9,13 @@ test = false
 bench = false
 
 [features]
-static_busybox = []
-no_page_cache = []
+default = []
+dev = []
+static-busybox = []
+no-page-cache = []
 u740 = []           # useless temporarily
-inode_drop = []
-time_tracer = []
+inode-drop = []
+time-tracer = []
 
 [dependencies]
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }

@@ -110,7 +110,7 @@ impl MmapPage {
         self.valid = true;
     }
     fn read_from_file(&mut self, token: usize) {
-        #[cfg(feature = "time_tracer")]
+        #[cfg(feature = "time-tracer")]
         time_trace!("mmap_read_from_file");
         let f = self.file.clone().unwrap();
         let old_offset = f.offset();

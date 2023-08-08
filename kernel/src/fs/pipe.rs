@@ -131,7 +131,7 @@ impl File for Pipe {
         true
     }
     fn read_to_ubuf(&self, buf: UserBuffer) -> usize {
-        #[cfg(feature = "time_tracer")]
+        #[cfg(feature = "time-tracer")]
         time_trace!("pipe_read");
         assert_eq!(self.readable(), true);
         let mut buf_iter = buf.into_iter();

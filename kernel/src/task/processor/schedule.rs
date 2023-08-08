@@ -11,7 +11,7 @@ use crate::task::{
     unblock_task, TaskContext, TaskControlBlock,
 };
 
-#[cfg(feature = "static_busybox")]
+#[cfg(feature = "static-busybox")]
 use crate::task::initproc::BUSYBOX;
 
 use super::{acquire_processor, Processor};
@@ -19,7 +19,7 @@ use super::{acquire_processor, Processor};
 /// Loop calling fetch_task until a task is successfully retrieved from the task manager,
 /// and then prepare to execute it by task switching
 pub fn run_tasks() {
-    #[cfg(feature = "static_busybox")]
+    #[cfg(feature = "static-busybox")]
     {
         let busybox = BUSYBOX.read();
         drop(busybox);

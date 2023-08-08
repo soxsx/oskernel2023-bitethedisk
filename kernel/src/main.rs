@@ -16,7 +16,7 @@ extern crate lazy_static;
 #[macro_use]
 extern crate log;
 
-#[cfg(feature = "time_tracer")]
+#[cfg(feature = "time-tracer")]
 #[macro_use]
 extern crate time_tracer;
 

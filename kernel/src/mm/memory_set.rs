@@ -191,7 +191,7 @@ impl MemorySet {
     }
 
     pub fn load_elf(elf_file: Arc<dyn File>) -> LoadedELF {
-        #[cfg(feature = "static_busybox")]
+        #[cfg(feature = "static-busybox")]
         {
             const BB: &str = "BUSYBOX";
             if elf_file.name() == BB {
@@ -743,9 +743,9 @@ impl MemorySet {
     }
 }
 
-#[cfg(feature = "static_busybox")]
+#[cfg(feature = "static-busybox")]
 use crate::task::BUSYBOX;
-#[cfg(feature = "static_busybox")]
+#[cfg(feature = "static-busybox")]
 fn hijack_busybox_load_elf() -> LoadedELF {
     let bb = BUSYBOX.read();
     let memory_set = bb.memory_set();
