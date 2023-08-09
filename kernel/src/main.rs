@@ -25,9 +25,6 @@ mod macros;
 #[macro_use]
 mod console;
 
-#[path = "boards/qemu.rs"]
-mod board;
-
 mod consts;
 mod drivers;
 mod fs;
