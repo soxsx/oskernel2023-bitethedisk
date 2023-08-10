@@ -135,7 +135,7 @@ impl File for Pipe {
     fn available(&self) -> bool {
         true
     }
-    fn read(&self, buf: UserBuffer) -> usize {
+    fn read_to_ubuf(&self, buf: UserBuffer) -> usize {
         time_trace!("pipe_read");
         assert_eq!(self.readable(), true);
         let mut buf_iter = buf.into_iter();
@@ -167,7 +167,7 @@ impl File for Pipe {
             return read_size;
         }
     }
-    fn write(&self, buf: UserBuffer) -> usize {
+    fn write_from_ubuf(&self, buf: UserBuffer) -> usize {
         assert_eq!(self.writable(), true);
         let mut buf_iter = buf.into_iter();
         let mut write_size = 0usize;

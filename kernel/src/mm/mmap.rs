@@ -127,7 +127,7 @@ impl MmapPage {
         }
         let file_size = f.file_size();
         let len = PAGE_SIZE.min(file_size - self.offset);
-        let _read_len = f.read(UserBuffer::wrap(translated_bytes_buffer(
+        let _read_len = f.read_to_ubuf(UserBuffer::wrap(translated_bytes_buffer(
             token,
             VirtAddr::from(self.vpn).0 as *const u8,
             len,
@@ -151,7 +151,7 @@ impl MmapPage {
         if !f.writable() {
             return;
         }
-        let _read_len = f.write(UserBuffer::wrap(translated_bytes_buffer(
+        let _read_len = f.write_from_ubuf(UserBuffer::wrap(translated_bytes_buffer(
             token,
             VirtAddr::from(self.vpn).0 as *const u8,
             PAGE_SIZE,

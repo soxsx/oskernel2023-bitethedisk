@@ -323,7 +323,7 @@ impl File for Fat32File {
         inner.available
     }
 
-    fn read(&self, mut buf: UserBuffer) -> usize {
+    fn read_to_ubuf(&self, mut buf: UserBuffer) -> usize {
         time_trace!("read");
         let offset = self.inner.lock().offset;
         let file_size = self.file_size();
@@ -408,7 +408,7 @@ impl File for Fat32File {
         v
     }
 
-    fn write(&self, buf: UserBuffer) -> usize {
+    fn write_from_ubuf(&self, buf: UserBuffer) -> usize {
         time_trace!("write");
         let mut total_write_size = 0usize;
         let filesize = self.file_size();

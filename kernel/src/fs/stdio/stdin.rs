@@ -16,7 +16,7 @@ impl File for Stdin {
         true
     }
 
-    fn read(&self, mut user_buf: UserBuffer) -> usize {
+    fn read_to_ubuf(&self, mut user_buf: UserBuffer) -> usize {
         assert_eq!(user_buf.len(), 1);
         let mut c: i32;
         loop {
@@ -34,7 +34,7 @@ impl File for Stdin {
         1
     }
 
-    fn write(&self, _user_buf: UserBuffer) -> usize {
+    fn write_from_ubuf(&self, _user_buf: UserBuffer) -> usize {
         panic!("Cannot write to stdin!");
     }
 

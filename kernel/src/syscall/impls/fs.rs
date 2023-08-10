@@ -475,7 +475,7 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> Result {
         }
         let len = len.min(file_size - file_offset);
         let readsize =
-            file.read(UserBuffer::wrap(translated_bytes_buffer(token, buf, len))) as isize;
+            file.read_to_ubuf(UserBuffer::wrap(translated_bytes_buffer(token, buf, len))) as isize;
         Ok(readsize as isize)
     } else {
         return_errno!(Errno::EBADF, "fd is not exist, fd: {}", fd);
@@ -586,8 +586,9 @@ pub fn sys_write(fd: i32, buf: *const u8, len: usize) -> Result {
         drop(fd_table);
         drop(memory_set);
 
-        let write_size =
-            file.write(UserBuffer::wrap(translated_bytes_buffer(token, buf, len))) as isize;
+        let write_size = file
+            .write_from_ubuf(UserBuffer::wrap(translated_bytes_buffer(token, buf, len)))
+            as isize;
         Ok(write_size)
     } else {
         return_errno!(Errno::EBADF, "fd is not found, fd: {}", fd);
@@ -948,7 +949,7 @@ pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> Result {
 
             let len = iov.iov_len.min(file_size - file_offset - total_read_len);
             // println!("[DEBUG] sys_readv iov_addr:{:x?} len:{:?},buffer_len:{:?}",iov.iov_base,iov.iov_len,len);
-            total_read_len += file.read(UserBuffer::wrap(translated_bytes_buffer(
+            total_read_len += file.read_to_ubuf(UserBuffer::wrap(translated_bytes_buffer(
                 token,
                 iov.iov_base as *const u8,
                 len,
@@ -992,7 +993,7 @@ pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> Result {
                 addr += size_of::<Iovec>();
                 continue;
             }
-            total_write_len += file.write(UserBuffer::wrap(translated_bytes_buffer(
+            total_write_len += file.write_from_ubuf(UserBuffer::wrap(translated_bytes_buffer(
                 token,
                 iov.iov_base as *const u8,
                 iov.iov_len,
