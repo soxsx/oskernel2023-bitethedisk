@@ -1,8 +1,9 @@
 use super::{set_kernel_trap_entry, trap_return};
 use crate::mm::VirtAddr;
+use crate::syscall::SYS_SIGRETURN;
 use crate::{
     consts::TRAMPOLINE,
-    syscall::dispatcher::{syscall, SYS_SIGRETURN},
+    syscall::dispatcher::syscall,
     task::{
         current_add_signal, current_task, current_trap_cx, exec_signal_handlers,
         suspend_current_and_run_next,
