@@ -36,6 +36,7 @@ mod syscall;
 mod task;
 mod timer;
 mod trap;
+mod board;
 
 use sbi::sbi_start_hart;
 
@@ -43,6 +44,15 @@ use crate::consts::NCPU;
 use core::{arch::global_asm, slice, sync::atomic::AtomicBool};
 
 global_asm!(include_str!("entry.S"));
+
+const BANNER: &str = r#"
+ ____  _ _    _______ _          _____  _     _    
+|  _ \(_) |  |__   __| |        |  __ \(_)   | |   
+| |_) |_| |_ ___| |  | |__   ___| |  | |_ ___| | __
+|  _ <| | __/ _ \ |  | '_ \ / _ \ |  | | / __| |/ /
+| |_) | | ||  __/ |  | | | |  __/ |__| | \__ \   < 
+|____/|_|\__\___|_|  |_| |_|\___|_____/|_|___/_|\_\
+"#;
 
 lazy_static! {
     static ref BOOTED: AtomicBool = AtomicBool::new(false);
@@ -54,12 +64,14 @@ pub fn meow() -> ! {
         other_harts()
     }
 
+    println!("{}", BANNER);
     println!("Boot hart: {}", hartid!());
 
     init_bss();
     logging::init();
     mm::init();
     trap::init();
+    drivers::init();
     trap::enable_stimer_interrupt();
     timer::set_next_trigger();
     fs::init();

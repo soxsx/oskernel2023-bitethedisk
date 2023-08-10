@@ -112,10 +112,6 @@ pub fn init() {
 
     open("/dev/tty".into(), OpenFlags::O_CREATE, CreateMode::empty()).unwrap();
     open("/lat_sig".into(), OpenFlags::O_CREATE, CreateMode::empty()).unwrap();
-
-    println!("===+ Files Loaded +===");
-    list_apps(AbsolutePath::from_string("/".to_string()));
-    println!("===+==============+===");
 }
 
 static INO_ALLOCATOR: Mutex<Allocator> = Mutex::new(Allocator::new());

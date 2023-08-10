@@ -3,9 +3,10 @@ use alloc::{sync::Arc, vec::Vec};
 use path::AbsolutePath;
 
 use super::{MapPermission, MapType, VmArea, VmAreaType};
+use crate::board::CLOCK_FREQ;
 use crate::consts::{
-    CLOCK_FREQ, LINK_BASE, MMAP_BASE, PAGE_SIZE, SHM_BASE, SIGNAL_TRAMPOLINE, THREAD_LIMIT,
-    TRAMPOLINE, TRAP_CONTEXT_BASE, USER_HEAP_SIZE, USER_STACK_BASE, USER_STACK_SIZE,
+    LINK_BASE, MMAP_BASE, PAGE_SIZE, SHM_BASE, SIGNAL_TRAMPOLINE, THREAD_LIMIT, TRAMPOLINE,
+    TRAP_CONTEXT_BASE, USER_HEAP_SIZE, USER_STACK_BASE, USER_STACK_SIZE,
 };
 use crate::fs::{open, File};
 use crate::mm::{

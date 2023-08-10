@@ -2,9 +2,11 @@ use alloc::sync::Arc;
 use spin::{Mutex, MutexGuard};
 
 use crate::{
-    board::MMIO,
-    consts::PHYS_END,
-    mm::{MapPermission, MapType, MemorySet, VmArea, VmAreaType},
+    board::{MMIO, PHYSICAL_MEM_END},
+    mm::{
+        vm_area::{VmArea, VmAreaType},
+        MapPermission, MapType, MemorySet,
+    },
 };
 
 extern "C" {
@@ -47,7 +49,8 @@ lazy_static! {
             srodata, erodata,  MapPermission::R, None, 0
             sdata,   edata,    MapPermission::R | MapPermission::W, None, 0
             sbss,    ebss,     MapPermission::R | MapPermission::W, None, 0
-            ekernel, PHYS_END, MapPermission::R | MapPermission::W, None, 0
+            ekernel, PHYSICAL_MEM_END,
+                MapPermission::R | MapPermission::W, None, 0
         }
 
         // For MMIO(Memory mapped IO).

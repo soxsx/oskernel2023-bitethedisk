@@ -1,10 +1,8 @@
 pub const USER_STACK_SIZE: usize = 4096 * 2048;
-pub const KERNEL_STACK_SIZE: usize = 4096 * 32; // 应用进程在内核的栈大小
+pub const KERNEL_STACK_SIZE: usize = 4096 * 32;
 
 pub const USER_HEAP_SIZE: usize = 4096 * 30000;
 pub const KERNEL_HEAP_SIZE: usize = 4096 * 8192; // 32M
-
-pub const PHYS_END: usize = 0x8800_0000; // 128 MiB
 
 pub const PAGE_SIZE: usize = 0x1000;
 

@@ -10,10 +10,10 @@ bench = false
 
 [features]
 default = []
+fu740 = []
 dev = []
 static-busybox = []
 no-page-cache = []
-u740 = []           # useless temporarily
 inode-drop = []
 time-tracer = []
 
@@ -30,11 +30,11 @@ log = "0.4"
 paste = "1"
 thiserror = { version = "1.0", package = "thiserror-core", default-features = false }
 hashbrown = "0.14.0"
-fu740-pac = { git = "https://github.com/riscv-rust/fu740-pac.git" }
-fu740-hal = { git = "https://github.com/riscv-rust/fu740-hal.git" }
 
 fat32 = { path = "../crates/fat32" }
 sync_cell = { path = "../crates/sync_cell" }
 nix = { path = "../crates/nix" }
 path = { path = "../crates/path" }
 time_tracer = { path = "../crates/time_tracer" }
+fu740-pac = { path = "../crates/fu740-pac" }
+fu740-hal = { path = "../crates/fu740-hal" }

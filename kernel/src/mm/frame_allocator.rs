@@ -1,5 +1,5 @@
 use super::address::{PhysAddr, PhysPageNum};
-use crate::consts::PHYS_END;
+use crate::board::PHYSICAL_MEM_END;
 use alloc::{collections::BTreeMap, vec::Vec};
 use core::fmt::{self, Debug, Formatter};
 use spin::Mutex;
@@ -157,14 +157,14 @@ lazy_static! {
 /// 初始化物理页帧管理器
 /// - 物理页帧范围
 ///     - 对 `ekernel` 物理地址上取整获得起始物理页号
-///     - 对 `PHYS_END` 物理地址下取整获得结束物理页号
+///     - 对 `PHYSICAL_MEM_END` 物理地址下取整获得结束物理页号
 pub fn init() {
     extern "C" {
         fn ekernel();
     }
     FRAME_ALLOCATOR.lock().init(
         PhysAddr::from(ekernel as usize).ceil(),
-        PhysAddr::from(PHYS_END).floor(),
+        PhysAddr::from(PHYSICAL_MEM_END).floor(),
     );
 }
 

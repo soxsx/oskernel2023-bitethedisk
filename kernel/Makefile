@@ -15,11 +15,36 @@ NCPU = 2
 
 RUST_LOG := debug
 
-# Available features: no-page-cache,static-busybox,inode-drop,u740,dev
+# Available features: no-page-cache,static-busybox,inode-drop,fu740,dev
 FEATURES ?= static-busybox
 
 DEV ?= false
 
+BOARD ?= QEMU
+
+define run-board-qemu
+	@$(QEMU) \
+	 	-machine virt \
+		-kernel $(KERNEL_ELF) \
+		-m 128M \
+		-nographic \
+		-smp $(NCPU) \
+		-bios default \
+		-drive file=$(SDCARD),if=none,format=raw,id=x0 \
+		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
+		-device virtio-net-device,netdev=net \
+		-netdev user,id=net
+endef
+define run-board-fu740
+	 @(QEMU) \
+		-machine virt \
+		-kernel kernel-qemu \
+		-m 128M \
+		-nographic \
+		-smp 2 \
+		-drive file=sdcard.img,if=none,format=raw,id=x0 \
+		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+endef
 ##################################################################
 #                        Run straightly                          #
 ##################################################################
@@ -30,7 +55,7 @@ sdcard:
 	@cp $(SDCARD_BAK) $(SDCARD)
 
 kernel: initproc
-	@cargo build --release --offline
+	@cargo build --release --features $(BOARD) --offline 
 
 kernel-dev: initproc
 ifeq ($(DEV), true)
@@ -40,6 +65,7 @@ else
 endif
 
 run: kernel-dev sdcard
+	# @(run-board-qemu)
 	@$(QEMU) \
 	 	-machine virt \
 		-kernel $(KERNEL_ELF) \
