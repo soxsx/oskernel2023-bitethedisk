@@ -201,11 +201,11 @@ impl File for Pipe {
         return 0;
     }
 
-    fn set_offset(&self, _offset: usize) {
+    fn seek(&self, _offset: usize) {
         return;
     }
 
-    fn read_kernel_space(&self) -> Vec<u8> {
+    fn read_to_kspace(&self) -> Vec<u8> {
         assert_eq!(self.readable(), true);
         let mut buf: Vec<u8> = Vec::new();
         loop {
@@ -227,7 +227,7 @@ impl File for Pipe {
             return buf;
         }
     }
-    fn write_kernel_space(&self, data: Vec<u8>) -> usize {
+    fn write_from_kspace(&self, data: &Vec<u8>) -> usize {
         assert_eq!(self.writable(), true);
         let mut data_iter = data.into_iter();
         let mut write_size = 0usize;
@@ -243,7 +243,7 @@ impl File for Pipe {
             }
             for _ in 0..loop_write {
                 if let Some(data_ref) = data_iter.next() {
-                    ring_buffer.write_byte(data_ref);
+                    ring_buffer.write_byte(*data_ref);
                     write_size += 1;
                 } else {
                     return write_size;

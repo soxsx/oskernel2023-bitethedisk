@@ -124,7 +124,7 @@ impl VmArea {
                     let offset =
                         (vpn.0 - self.vpn_range.get_start().0) * PAGE_SIZE + self.file_offset;
                     file.seek(offset);
-                    file.write_kernel_space(data.to_vec());
+                    file.write_from_kspace(&data.to_vec());
                 }
             }
         }
@@ -150,7 +150,8 @@ impl VmArea {
         let mut current_vpn = self.vpn_range.get_start();
         let file = self.file.as_ref().unwrap();
         loop {
-            let data = file.read_to_vec((data_start + offset) as isize, data_len.min(PAGE_SIZE));
+            let data =
+                file.read_to_kspace_with_offset(data_start + offset, data_len.min(PAGE_SIZE));
             let data_slice = data.as_slice();
 
             let src = &data_slice[0..data_len.min(PAGE_SIZE - page_offset)];

@@ -1,6 +1,6 @@
 // 定义一份打开文件的标志
 bitflags! {
-    #[derive(Debug)]
+    #[derive(Debug, Clone, Copy)]
     pub struct OpenFlags: u32 {
     // TODO do not use 0
         const O_RDONLY    = 0;

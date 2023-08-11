@@ -189,6 +189,11 @@ impl PhysPageNum {
         let pa: PhysAddr = (*self).into();
         unsafe { (pa.0 as *mut T).as_mut().unwrap() }
     }
+
+    pub fn as_ref<T>(&self) -> &'static T {
+        let pa: PhysAddr = (*self).into();
+        unsafe { (pa.0 as *const T).as_ref().unwrap() }
+    }
 }
 
 /// 虚拟页号范围, 是个左闭右开的区间

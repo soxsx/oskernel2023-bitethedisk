@@ -1199,12 +1199,12 @@ pub fn sys_sendfile(out_fd: i32, in_fd: i32, offset: usize, _count: usize) -> Re
         let out_file = fd_table[out_fd as usize].as_ref().unwrap();
         let mut data_buffer;
         loop {
-            data_buffer = in_file.read_kernel_space();
+            data_buffer = in_file.read_to_kspace();
             let len = data_buffer.len();
             if len == 0 {
                 break;
             } else {
-                out_file.write_kernel_space(data_buffer);
+                out_file.write_from_kspace(&data_buffer);
                 total_write_size += len;
             }
         }
@@ -1364,7 +1364,7 @@ pub fn sys_lseek(fd: usize, off_t: isize, whence: usize) -> Result {
                 if off_t < 0 {
                     return_errno!(Errno::EINVAL, "offset is negtive");
                 }
-                file.set_offset(off_t as usize);
+                file.seek(off_t as usize);
                 Ok(off_t as isize)
             }
             SeekFlags::SEEK_CUR => {
@@ -1373,7 +1373,7 @@ pub fn sys_lseek(fd: usize, off_t: isize, whence: usize) -> Result {
                     return_errno!(Errno::EINVAL, "new offset is negtive");
                 }
 
-                file.set_offset((off_t + current_offset) as usize);
+                file.seek((off_t + current_offset) as usize);
                 Ok((off_t + current_offset) as isize)
             }
             SeekFlags::SEEK_END => {
@@ -1382,7 +1382,7 @@ pub fn sys_lseek(fd: usize, off_t: isize, whence: usize) -> Result {
                     return_errno!(Errno::EINVAL, "new offset is negtive");
                 }
 
-                file.set_offset((end + off_t) as usize);
+                file.seek((end + off_t) as usize);
                 Ok((end + off_t) as isize)
             }
             // flag wrong

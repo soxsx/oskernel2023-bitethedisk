@@ -28,7 +28,7 @@ impl File for Stdout {
         "Stdout"
     }
 
-    fn write_kernel_space(&self, data: Vec<u8>) -> usize {
+    fn write_from_kspace(&self, data: &Vec<u8>) -> usize {
         let buffer = data.as_slice();
         print!("{}", core::str::from_utf8(buffer).unwrap());
 

@@ -46,7 +46,7 @@ impl File for Stdin {
         0
     }
 
-    fn set_offset(&self, _offset: usize) {}
+    fn seek(&self, _offset: usize) {}
 
     fn file_size(&self) -> usize {
         usize::MAX

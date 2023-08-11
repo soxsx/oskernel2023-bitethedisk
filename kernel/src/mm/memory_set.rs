@@ -304,7 +304,7 @@ impl MemorySet {
         memory_set.map_trap_context();
 
         // 第一次读取前64字节确定程序表的位置与大小
-        let elf_head_data = elf_file.read_to_vec(0, 64);
+        let elf_head_data = elf_file.read_to_kspace_with_offset(0, 64);
         let elf_head_data_slice = elf_head_data.as_slice();
         let elf = xmas_elf::ElfFile::new(elf_head_data_slice).unwrap();
 
@@ -313,7 +313,8 @@ impl MemorySet {
         let ph_count = elf.header.pt2.ph_count() as usize;
 
         // 进行第二次读取, 这样的elf对象才能正确解析程序段头的信息
-        let elf_head_data = elf_file.read_to_vec(0, ph_offset + ph_count * ph_entry_size);
+        let elf_head_data =
+            elf_file.read_to_kspace_with_offset(0, ph_offset + ph_count * ph_entry_size);
         let elf = xmas_elf::ElfFile::new(elf_head_data.as_slice()).unwrap();
 
         let mut head_va = None; // top va of ELF which points to ELF header
@@ -381,7 +382,7 @@ impl MemorySet {
             let interpreter_file = open(path, OpenFlags::O_RDONLY, CreateMode::empty())
                 .expect("can't find interpreter file");
             // 第一次读取前64字节确定程序表的位置与大小
-            let interpreter_head_data = interpreter_file.read_to_vec(0, 64);
+            let interpreter_head_data = interpreter_file.read_to_kspace_with_offset(0, 64);
             let interp_elf = xmas_elf::ElfFile::new(interpreter_head_data.as_slice()).unwrap();
 
             let ph_entry_size = interp_elf.header.pt2.ph_entry_size() as usize;
@@ -389,8 +390,8 @@ impl MemorySet {
             let ph_count = interp_elf.header.pt2.ph_count() as usize;
 
             // 进行第二次读取, 这样的elf对象才能正确解析程序段头的信息
-            let interpreter_head_data =
-                interpreter_file.read_to_vec(0, ph_offset + ph_count * ph_entry_size);
+            let interpreter_head_data = interpreter_file
+                .read_to_kspace_with_offset(0, ph_offset + ph_count * ph_entry_size);
             let interp_elf = xmas_elf::ElfFile::new(interpreter_head_data.as_slice()).unwrap();
             auxs.push(AuxEntry(AT_BASE, LINK_BASE));
             entry_point = LINK_BASE + interp_elf.header.pt2.entry_point() as usize;
