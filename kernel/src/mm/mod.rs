@@ -19,6 +19,9 @@ pub use shared_memory::*;
 pub use user_buffer::*;
 pub use vm_area::*;
 
+mod page;
+pub use page::*;
+
 use crate::{consts::PAGE_SIZE, task::current_task};
 use alloc::{string::String, vec::Vec};
 use core::{cmp::min, mem::size_of};
