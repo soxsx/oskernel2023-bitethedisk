@@ -21,17 +21,17 @@ use super::{
 };
 
 #[derive(Clone)]
-pub struct VirFile {
+pub struct VirtFile {
     pub(crate) name: String,
     pub(crate) sde_pos: DirEntryPos,
     pub(crate) lde_pos: Vec<DirEntryPos>,
     pub(crate) fs: Arc<RwLock<FileSystem>>,
     pub(crate) device: Arc<dyn BlockDevice>,
     pub(crate) cluster_chain: Arc<RwLock<ClusterChain>>,
-    pub(crate) attr: VirFileType,
+    pub(crate) attr: VirtFileType,
 }
 
-pub fn root(fs: Arc<RwLock<FileSystem>>) -> VirFile {
+pub fn root(fs: Arc<RwLock<FileSystem>>) -> VirtFile {
     let fs = Arc::clone(&fs);
     let device = Arc::clone(&fs.read().device);
 
@@ -44,7 +44,7 @@ pub fn root(fs: Arc<RwLock<FileSystem>>) -> VirFile {
     )));
     cluster_chain.write().grow();
 
-    VirFile::new(
+    VirtFile::new(
         String::from("/"),
         DirEntryPos {
             cluster: ROOT_DIR_ENTRY_CLUSTER,
@@ -54,13 +54,13 @@ pub fn root(fs: Arc<RwLock<FileSystem>>) -> VirFile {
         fs,
         device,
         cluster_chain,
-        VirFileType::Dir,
+        VirtFileType::Dir,
     )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum VirFileType {
+pub enum VirtFileType {
     Dir = ATTR_DIRECTORY,
     File = ATTR_ARCHIVE,
 }
@@ -80,7 +80,7 @@ impl DirEntryPos {
     }
 }
 
-impl VirFile {
+impl VirtFile {
     pub fn new(
         name: String,
         sde_pos: DirEntryPos,
@@ -88,7 +88,7 @@ impl VirFile {
         fs: Arc<RwLock<FileSystem>>,
         device: Arc<dyn BlockDevice>,
         cluster_chain: Arc<RwLock<ClusterChain>>,
-        attr: VirFileType,
+        attr: VirtFileType,
     ) -> Self {
         Self {
             name,
@@ -222,11 +222,11 @@ impl VirFile {
     }
 
     pub fn is_dir(&self) -> bool {
-        self.attr == VirFileType::Dir
+        self.attr == VirtFileType::Dir
     }
 
     pub fn is_file(&self) -> bool {
-        self.attr == VirFileType::File
+        self.attr == VirtFileType::File
     }
 
     /// 给出目录项 (sde/lde) 在目录文件中的偏移, 返回其在磁盘中的位置 (block_id, offset_in_block)
@@ -419,7 +419,7 @@ impl VirFile {
 
         let pre_cluster_cnt = offset / cluster_size;
 
-        let mut clus_chain = self.cluster_chain.read();
+        let clus_chain = self.cluster_chain.read();
 
         let mut cluster_iter = clus_chain.cluster_vec.iter().skip(pre_cluster_cnt);
         let mut left = pre_cluster_cnt * cluster_size;

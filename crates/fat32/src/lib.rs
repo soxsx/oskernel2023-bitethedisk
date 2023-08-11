@@ -10,7 +10,7 @@ pub mod file;
 pub mod fmt;
 pub mod fs;
 mod timer;
-pub mod vfs;
+pub mod vf;
 
 use core::convert::TryInto;
 use core::iter::Iterator;
@@ -32,7 +32,7 @@ pub use entry::*;
 pub use fat::*;
 pub use file::*;
 pub use fs::*;
-pub use vfs::*;
+pub use vf::*;
 
 #[macro_export]
 macro_rules! time2 {

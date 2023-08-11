@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use super::vfs::VirFileType;
+use super::vf::VirtFileType;
 use super::{
     ATTR_ARCHIVE, ATTR_DIRECTORY, ATTR_HIDDEN, ATTR_LONG_NAME, ATTR_READ_ONLY, ATTR_SYSTEM,
     ATTR_VOLUME_ID, DIR_ENTRY_LAST_AND_UNUSED, DIR_ENTRY_UNUSED, LAST_LONG_ENTRY,
@@ -142,7 +142,7 @@ impl Default for ShortDirEntry {
 
 impl ShortDirEntry {
     // All names must check if they have existed in the directory
-    pub fn new(cluster: u32, name: &[u8], extension: &[u8], create_type: VirFileType) -> Self {
+    pub fn new(cluster: u32, name: &[u8], extension: &[u8], create_type: VirtFileType) -> Self {
         let mut item = Self::empty();
         let mut name_: [u8; 8] = [SPACE; 8];
         let mut extension_: [u8; 3] = [SPACE; 3];
@@ -155,8 +155,8 @@ impl ShortDirEntry {
         item.name = name_;
         item.extension = extension_;
         match create_type {
-            VirFileType::File => item.attr = ATTR_ARCHIVE,
-            VirFileType::Dir => item.attr = ATTR_DIRECTORY,
+            VirtFileType::File => item.attr = ATTR_ARCHIVE,
+            VirtFileType::Dir => item.attr = ATTR_DIRECTORY,
         }
         item.set_first_cluster(cluster);
         item
@@ -302,7 +302,7 @@ impl ShortDirEntry {
     }
 
     // All names must check if they have existed in the directory
-    pub fn new_form_name_str(cluster: u32, name_str: &str, create_type: VirFileType) -> Self {
+    pub fn new_form_name_str(cluster: u32, name_str: &str, create_type: VirtFileType) -> Self {
         let (name, extension) = match name_str.find('.') {
             Some(i) => (&name_str[0..i], &name_str[i + 1..]),
             None => (&name_str[0..], ""),
@@ -338,15 +338,15 @@ impl ShortDirEntry {
         item[0x1A..0x1C].copy_from_slice(&cluster[0..2]);
 
         match create_type {
-            VirFileType::Dir => item[0x0B] = ATTR_DIRECTORY,
-            VirFileType::File => item[0x10] = ATTR_ARCHIVE,
+            VirtFileType::Dir => item[0x0B] = ATTR_DIRECTORY,
+            VirtFileType::File => item[0x10] = ATTR_ARCHIVE,
         }
 
         unsafe { *(item.as_ptr() as *const ShortDirEntry) }
     }
 
     // All names must check if they have existed in the directory
-    pub fn new_from_name_bytes(cluster: u32, name_bytes: &[u8], create_type: VirFileType) -> Self {
+    pub fn new_from_name_bytes(cluster: u32, name_bytes: &[u8], create_type: VirtFileType) -> Self {
         let mut item = [0; 32];
         item[0x00..0x0B].copy_from_slice(name_bytes);
 
@@ -359,8 +359,8 @@ impl ShortDirEntry {
         item[0x1A..0x1C].copy_from_slice(&cluster[0..2]);
 
         match create_type {
-            VirFileType::Dir => item[0x0B] = ATTR_DIRECTORY,
-            VirFileType::File => item[0x10] = ATTR_ARCHIVE,
+            VirtFileType::Dir => item[0x0B] = ATTR_DIRECTORY,
+            VirtFileType::File => item[0x10] = ATTR_ARCHIVE,
         }
 
         unsafe { *(item.as_ptr() as *const ShortDirEntry) }

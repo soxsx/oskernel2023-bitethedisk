@@ -42,7 +42,7 @@ impl Drop for TimeTracer {
     fn drop(&mut self) {
         let mut lock = TIME_ALL.lock();
         let new_time = get_time_ns() - self.time;
-        let old_time = if (lock.get(&self.tag).is_none()) {
+        let old_time = if lock.get(&self.tag).is_none() {
             0 as usize
         } else {
             *lock.get(&self.tag).unwrap()

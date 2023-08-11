@@ -1,5 +1,5 @@
 use super::cache::Cache;
-use super::vfs::VirFile;
+use super::vf::VirtFile;
 
 use super::{BLOCK_SIZE, NEW_VIR_FILE_CLUSTER};
 
@@ -32,7 +32,7 @@ pub enum FileError {
     BadClusterChain,
 }
 
-impl File for VirFile {
+impl File for VirtFile {
     /// Read File To Buffer, Return File Length
     fn read(&self, buf: &mut [u8]) -> Result<usize, FileError> {
         unreachable!();

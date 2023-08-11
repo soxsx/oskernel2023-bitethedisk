@@ -16,7 +16,7 @@ use super::cache::Cache;
 use super::device::BlockDevice;
 use super::entry::ShortDirEntry;
 use super::fat::FATManager;
-use super::vfs::VirFileType;
+use super::vf::VirtFileType;
 
 use super::{BLOCK_NUM, BLOCK_SIZE, END_OF_CLUSTER, FREE_CLUSTER, NEW_VIR_FILE_CLUSTER, ROOT};
 
@@ -132,7 +132,7 @@ impl FileSystem {
         let root_dir_entry = ShortDirEntry::new_from_name_bytes(
             root_dir_cluster as u32,
             &name_bytes,
-            VirFileType::Dir,
+            VirtFileType::Dir,
         );
 
         let fs = Arc::new(RwLock::new(Self {
@@ -170,7 +170,7 @@ impl FileSystem {
         let root_dir_entry = ShortDirEntry::new_from_name_bytes(
             root_dir_cluster as u32,
             &name_bytes,
-            VirFileType::Dir,
+            VirtFileType::Dir,
         );
 
         Arc::new(RwLock::new(Self {
