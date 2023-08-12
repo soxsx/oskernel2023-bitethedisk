@@ -92,7 +92,7 @@ impl FilePage {
     pub fn sync(&self) -> Result<(), Errno> {
         let file_info = self.file_info.as_ref().unwrap().lock();
         let inode = file_info.inode.upgrade().ok_or(Errno::EBADF)?;
-        let file_size = inode.file_size();
+        // let file_size = inode.file_size();
         // log::trace!("[Page::sync] sync page, file offset {:#x}",file_info.file_offset);
         log::trace!(
             "[Page::sync] sync page, file offset {:#x}",
@@ -108,11 +108,11 @@ impl FilePage {
                         "[Page::sync] sync block of the page, file offset {:#x}",
                         file_offset
                     );
-                    // In case of truncate
-                    if file_size <= file_offset {
-                        info!("[Page::sync] file has been truncated, now len {:#x}, page's file offset {:#x}", file_size, file_offset);
-                        return Ok(());
-                    }
+                    // // In case of truncate
+                    // if file_size <= file_offset {
+                    //     // info!("[Page::sync] file has been truncated, now len {:#x}, page's file offset {:#x}", file_size, file_offset);
+                    //     return Ok(());
+                    // }
                     let data = &self.data_frame.ppn.as_bytes_array()
                         [page_offset..page_offset + BLOCK_SIZE]
                         .to_vec();
@@ -129,7 +129,7 @@ impl FilePage {
         // trace!("[Page::load_all_buffers]: page addr {:#x}", self.bytes_array_ptr() as usize);
         trace!(
             "[Page::load_all_buffers]: page addr {:#x}",
-            self.bytes_array_ptr() as usize
+            self.as_bytes_array_ptr() as usize
         );
         let len = PAGE_SIZE;
         self.load_buffer_if_needed(0, len);
@@ -137,12 +137,12 @@ impl FilePage {
     }
 
     /// Get the raw pointer of this page
-    pub fn bytes_array_ptr(&self) -> *const u8 {
+    pub fn as_bytes_array_ptr(&self) -> *const u8 {
         self.data_frame.ppn.as_bytes_array().as_ptr()
     }
 
     /// Get the bytes array of this page
-    pub fn bytes_array(&self) -> &'static [u8] {
+    pub fn as_bytes_array(&self) -> &'static [u8] {
         self.data_frame.ppn.as_bytes_array()
     }
 

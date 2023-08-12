@@ -1,12 +1,12 @@
 use crate::consts::PAGE_SIZE;
 use crate::drivers::BLOCK_DEVICE;
 use crate::fs::{
-    page_cache, CreateMode, Dirent, File, Kstat, OpenFlags, PageCache, TimeInfo, S_IFCHR, S_IFDIR,
-    S_IFREG,
+    CreateMode, Dirent, File, Kstat, OpenFlags, PageCache, TimeInfo, S_IFCHR, S_IFDIR, S_IFREG,
 };
 use crate::mm::UserBuffer;
 use crate::return_errno;
 use crate::syscall::impls::Errno;
+use alloc::collections::BTreeMap;
 use alloc::{
     string::{String, ToString},
     sync::Arc,
@@ -14,7 +14,25 @@ use alloc::{
 };
 use fat32::{root, Dir as FatDir, DirError, FileSystem, VirtFile, VirtFileType, ATTR_DIRECTORY};
 use path::AbsolutePath;
-use spin::Mutex;
+use spin::{Mutex, RwLock};
+
+pub struct InodeCache(pub RwLock<BTreeMap<AbsolutePath, Arc<Fat32File>>>);
+
+pub static INODE_CACHE: InodeCache = InodeCache(RwLock::new(BTreeMap::new()));
+
+impl InodeCache {
+    pub fn get(&self, path: &AbsolutePath) -> Option<Arc<Fat32File>> {
+        self.0.read().get(path).cloned()
+    }
+
+    pub fn insert(&self, path: AbsolutePath, file: Arc<Fat32File>) {
+        self.0.write().insert(path, file);
+    }
+
+    pub fn remove(&self, path: &AbsolutePath) {
+        self.0.write().remove(path);
+    }
+}
 
 /// 表示进程中一个被打开的常规文件或目录
 pub struct Fat32File {
@@ -28,6 +46,7 @@ pub struct Fat32File {
     pub inner: Mutex<Arc<VirtFile>>,
     pub flags: Mutex<OpenFlags>,
     pub available: Mutex<bool>,
+    pub file_size: Mutex<usize>,
 }
 
 impl Fat32File {
@@ -39,6 +58,7 @@ impl Fat32File {
         name: String,
     ) -> Self {
         let available = true;
+        let file_size = inode.file_size() as usize;
         Self {
             readable,
             writable,
@@ -50,6 +70,7 @@ impl Fat32File {
             flags: Mutex::new(OpenFlags::empty()),
             available: Mutex::new(available),
             time_info: Mutex::new(TimeInfo::empty()),
+            file_size: Mutex::new(file_size),
         }
     }
 
@@ -60,49 +81,63 @@ impl Fat32File {
         }
     }
 
-    pub fn write_all(&self, str_vec: &Vec<u8>) -> usize {
-        let inner = self.inner.lock();
-        let mut remain = str_vec.len();
-        let mut base = 0;
-
-        loop {
-            let len = remain.min(512);
-            let offset = self.offset();
-            inner.write_at(offset, &str_vec.as_slice()[base..base + len]);
-            self.seek(offset + len);
-            base += len;
-            remain -= len;
-            if remain == 0 {
-                break;
+    pub fn write_all(&self, data: &Vec<u8>) -> usize {
+        // with page cache
+        let mut total_write_size = 0usize;
+        let page_cache = self.page_cache.lock().as_ref().cloned().unwrap();
+        let mut offset = if self.flags().contains(OpenFlags::O_APPEND) {
+            self.file_size()
+        } else {
+            self.offset()
+        };
+        let mut slice_offset = 0;
+        let slice_end = data.len();
+        while slice_offset < slice_end {
+            // to avoid slice's length spread page boundary (howerver, it's low probability)
+            let page = page_cache.get_page(offset, None).expect("get page error");
+            let page_offset = offset % PAGE_SIZE;
+            let mut slice_offset_end = slice_offset + (PAGE_SIZE - page_offset);
+            if slice_offset_end > slice_end {
+                slice_offset_end = slice_end;
             }
+            let write_size = page
+                .write(page_offset, &data[slice_offset..slice_offset_end])
+                .expect("read page error");
+            offset += write_size;
+            self.seek(offset);
+            slice_offset += write_size;
+            total_write_size += write_size;
         }
-        base
+        if self.file_size() < offset {
+            self.set_file_size(offset);
+        }
+        total_write_size
     }
-
     pub fn is_dir(&self) -> bool {
         let inner = self.inner.lock();
         inner.is_dir()
     }
-
     pub fn name(&self) -> &str {
         self.name.as_str()
     }
-
+    // TODO with page cache ? lzm
     pub fn delete(&self) -> usize {
         let inner = self.inner.lock();
         inner.clear()
     }
-
+    // TODO with page cache ? lzm
     pub fn delete_direntry(&self) {
         let inner = self.inner.lock();
         inner.clear_direntry();
     }
-
+    // TODO with page cache ? lzm
     pub fn file_size(&self) -> usize {
-        let inner = self.inner.lock();
-        inner.file_size() as usize
+        *self.file_size.lock()
     }
-
+    // TODO with page cache ? lzm
+    pub fn set_file_size(&self, file_size: usize) {
+        *self.file_size.lock() = file_size;
+    }
     pub fn rename(&self, new_path: AbsolutePath, flags: OpenFlags) {
         // duplicate a new file, and set file cluster and file size
         let inner = self.inner.lock();
@@ -169,6 +204,9 @@ pub fn open(
     _mode: CreateMode,
 ) -> Result<Arc<Fat32File>, Errno> {
     time_trace!("open");
+    if let Some(res) = INODE_CACHE.get(&path) {
+        return Ok(res.clone());
+    }
     let mut pathv = path.as_vec_str();
     let (readable, writable) = flags.read_write();
     // 创建文件
@@ -190,6 +228,7 @@ pub fn open(
                     name.to_string(),
                 ));
                 res.create_page_cache_if_needed();
+                INODE_CACHE.insert(path.clone(), res.clone());
                 Ok(res)
             }
             Err(_err) => {
@@ -215,6 +254,7 @@ pub fn open(
                                 name.to_string(),
                             ));
                             res.create_page_cache_if_needed();
+                            INODE_CACHE.insert(path.clone(), res.clone());
                             Ok(res)
                         }
                         Err(_err) => Err(Errno::UNCLEAR),
@@ -243,6 +283,7 @@ pub fn open(
                     name,
                 ));
                 res.create_page_cache_if_needed();
+                INODE_CACHE.insert(path.clone(), res.clone());
                 Ok(res)
             }
             Err(_err) => return_errno!(Errno::ENOENT, "no such file or path:{:?}", path),
@@ -308,6 +349,10 @@ impl File for Fat32File {
 
     fn write_from_direct(&self, offset: usize, data: &Vec<u8>) -> usize {
         let inner = self.inner.lock();
+        // TODO lzm
+        if offset + data.len() > self.file_size() {
+            self.set_file_size(offset + data.len());
+        }
         inner.write_at(offset, data)
     }
 
@@ -429,7 +474,11 @@ impl File for Fat32File {
                 self.seek(offset);
                 slice_offset += write_size;
                 total_write_size += write_size;
+                // page.sync().expect("sync page error");
             }
+        }
+        if self.file_size() < offset {
+            self.set_file_size(offset);
         }
         total_write_size
     }
@@ -461,24 +510,42 @@ impl File for Fat32File {
                 total_write_size += write_size;
             }
         }
+        if self.file_size() < offset {
+            self.set_file_size(offset);
+        }
         total_write_size
     }
     fn write_from_kspace(&self, data: &Vec<u8>) -> usize {
-        let inner = self.inner.lock();
-        let mut remain = data.len();
-        let mut base = 0;
-        loop {
-            let len = remain.min(512);
-            let offset = self.offset();
-            inner.write_at(offset, &data.as_slice()[base..base + len]);
-            self.seek(offset + len);
-            base += len;
-            remain -= len;
-            if remain == 0 {
-                break;
+        // with page cache
+        let mut total_write_size = 0usize;
+        let page_cache = self.page_cache.lock().as_ref().cloned().unwrap();
+        let mut offset = if self.flags().contains(OpenFlags::O_APPEND) {
+            self.file_size()
+        } else {
+            self.offset()
+        };
+        let mut slice_offset = 0;
+        let slice_end = data.len();
+        while slice_offset < slice_end {
+            // to avoid slice's length spread page boundary (howerver, it's low probability)
+            let page = page_cache.get_page(offset, None).expect("get page error");
+            let page_offset = offset % PAGE_SIZE;
+            let mut slice_offset_end = slice_offset + (PAGE_SIZE - page_offset);
+            if slice_offset_end > slice_end {
+                slice_offset_end = slice_end;
             }
+            let write_size = page
+                .write(page_offset, &data[slice_offset..slice_offset_end])
+                .expect("read page error");
+            offset += write_size;
+            self.seek(offset);
+            slice_offset += write_size;
+            total_write_size += write_size;
         }
-        base
+        if self.file_size() < offset {
+            self.set_file_size(offset);
+        }
+        total_write_size
     }
     fn set_time(&self, time_info: TimeInfo) {
         let mut time_lock = self.time_info.lock();

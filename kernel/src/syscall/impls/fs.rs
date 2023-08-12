@@ -471,7 +471,7 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> Result {
         let file_size = file.file_size();
         let file_offset = file.offset();
         if file_size == 0 {
-            warn!("sys_read: file_size is zero!");
+            warn!("sys_read: {} file_size is zero!", file.name());
         }
         let len = len.min(file_size - file_offset);
         let readsize =
