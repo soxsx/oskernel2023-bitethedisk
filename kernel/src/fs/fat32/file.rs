@@ -14,19 +14,19 @@ use alloc::{
 };
 use fat32::{root, Dir as FatDir, DirError, FileSystem, VirtFile, VirtFileType, ATTR_DIRECTORY};
 use path::AbsolutePath;
-use spin::{Mutex, RwLock};
+use spin::{Mutex, MutexGuard, RwLock};
 
-pub struct InodeCache(pub RwLock<BTreeMap<AbsolutePath, Arc<Fat32File>>>);
+pub struct InodeCache(pub RwLock<BTreeMap<AbsolutePath, Arc<Inode>>>);
 
 pub static INODE_CACHE: InodeCache = InodeCache(RwLock::new(BTreeMap::new()));
 
 impl InodeCache {
-    pub fn get(&self, path: &AbsolutePath) -> Option<Arc<Fat32File>> {
+    pub fn get(&self, path: &AbsolutePath) -> Option<Arc<Inode>> {
         self.0.read().get(path).cloned()
     }
 
-    pub fn insert(&self, path: AbsolutePath, file: Arc<Fat32File>) {
-        self.0.write().insert(path, file);
+    pub fn insert(&self, path: AbsolutePath, inode: Arc<Inode>) {
+        self.0.write().insert(path, inode);
     }
 
     pub fn remove(&self, path: &AbsolutePath) {
@@ -40,12 +40,18 @@ pub struct Fat32File {
     writable: bool,     // 该文件是否允许通过 sys_write 进行写
     path: AbsolutePath, // contain file name
     name: String,
-    pub page_cache: Mutex<Option<Arc<PageCache>>>,
+    pub inode: Arc<Inode>,
+    // pub page_cache: Mutex<Option<Arc<PageCache>>>,
     pub time_info: Mutex<TimeInfo>,
     pub offset: Mutex<usize>,
-    pub inner: Mutex<Arc<VirtFile>>,
+    // pub inner: Mutex<Arc<VirtFile>>,
     pub flags: Mutex<OpenFlags>,
     pub available: Mutex<bool>,
+}
+
+pub struct Inode {
+    pub file: Mutex<Arc<VirtFile>>,
+    pub page_cache: Mutex<Option<Arc<PageCache>>>,
     pub file_size: Mutex<usize>,
 }
 
@@ -53,38 +59,47 @@ impl Fat32File {
     pub fn new(
         readable: bool,
         writable: bool,
-        inode: Arc<VirtFile>,
+        inode: Arc<Inode>,
         path: AbsolutePath,
         name: String,
     ) -> Self {
         let available = true;
-        let file_size = inode.file_size() as usize;
+        let file_size = inode.file.lock().file_size() as usize;
         Self {
             readable,
             writable,
-            inner: Mutex::new(inode),
+            // inner: Mutex::new(inode),
             path,
             name,
-            page_cache: Mutex::new(None),
+            // page_cache: Mutex::new(None),
+            inode,
             offset: Mutex::new(0),
             flags: Mutex::new(OpenFlags::empty()),
             available: Mutex::new(available),
             time_info: Mutex::new(TimeInfo::empty()),
-            file_size: Mutex::new(file_size),
         }
     }
 
+    pub fn inner(&self) -> MutexGuard<'_, Arc<VirtFile>> {
+        self.inode.file.lock()
+    }
+
+    pub fn page_cache(&self) -> MutexGuard<'_, Option<Arc<PageCache>>> {
+        self.inode.page_cache.lock()
+    }
+
     pub fn create_page_cache_if_needed(self: &Arc<Self>) {
-        let mut page_cache = self.page_cache.lock();
+        let mut page_cache = self.page_cache();
         if page_cache.is_none() {
-            *page_cache = Some(Arc::new(PageCache::new(self.clone())));
+            // *page_cache = Some(Arc::new(PageCache::new(self.clone())));
+            *page_cache = Some(Arc::new(PageCache::new(self.inner().clone())));
         }
     }
 
     pub fn write_all(&self, data: &Vec<u8>) -> usize {
         // with page cache
         let mut total_write_size = 0usize;
-        let page_cache = self.page_cache.lock().as_ref().cloned().unwrap();
+        let page_cache = self.page_cache().as_ref().cloned().unwrap();
         let mut offset = if self.flags().contains(OpenFlags::O_APPEND) {
             self.file_size()
         } else {
@@ -114,7 +129,7 @@ impl Fat32File {
         total_write_size
     }
     pub fn is_dir(&self) -> bool {
-        let inner = self.inner.lock();
+        let inner = self.inner();
         inner.is_dir()
     }
     pub fn name(&self) -> &str {
@@ -122,28 +137,30 @@ impl Fat32File {
     }
     // TODO with page cache ? lzm
     pub fn delete(&self) -> usize {
-        let inner = self.inner.lock();
+        let inner = self.inner();
         inner.clear()
     }
     // TODO with page cache ? lzm
     pub fn delete_direntry(&self) {
-        let inner = self.inner.lock();
+        let inner = self.inner();
         inner.clear_direntry();
     }
     // TODO with page cache ? lzm
     pub fn file_size(&self) -> usize {
-        *self.file_size.lock()
+        // *self.file_size.lock()
+        *self.inode.file_size.lock()
     }
     // TODO with page cache ? lzm
     pub fn set_file_size(&self, file_size: usize) {
-        *self.file_size.lock() = file_size;
+        // *self.file_size.lock() = file_size;
+        *self.inode.file_size.lock() = file_size;
     }
     pub fn rename(&self, new_path: AbsolutePath, flags: OpenFlags) {
         // duplicate a new file, and set file cluster and file size
-        let inner = self.inner.lock();
+        let inner = self.inner();
         // check file exits
         let new_file = open(new_path, flags, CreateMode::empty()).unwrap();
-        let new_inner = new_file.inner.lock();
+        let new_inner = new_file.inner();
         let first_cluster = inner.first_cluster();
         let file_size = inner.file_size();
 
@@ -204,31 +221,50 @@ pub fn open(
     _mode: CreateMode,
 ) -> Result<Arc<Fat32File>, Errno> {
     time_trace!("open");
-    if let Some(res) = INODE_CACHE.get(&path) {
-        return Ok(res.clone());
-    }
-    let mut pathv = path.as_vec_str();
     let (readable, writable) = flags.read_write();
+    let mut pathv = path.as_vec_str();
+    if let Some(inode) = INODE_CACHE.get(&path) {
+        let name = if let Some(name_) = pathv.last() {
+            name_.to_string()
+        } else {
+            "/".to_string()
+        };
+        let res = Arc::new(Fat32File::new(
+            readable,
+            writable,
+            inode.clone(),
+            path.clone(),
+            name,
+        ));
+        res.create_page_cache_if_needed();
+        return Ok(res);
+    }
     // 创建文件
     if flags.contains(OpenFlags::O_CREATE) {
         let res = ROOT_INODE.find(pathv.clone());
         match res {
-            Ok(inode) => {
+            Ok(file) => {
                 let name = if let Some(name_) = pathv.pop() {
                     name_
                 } else {
                     "/"
                 };
+                let file_size = file.file_size();
+                let inode = Arc::new(Inode {
+                    file: Mutex::new(file),
+                    page_cache: Mutex::new(None),
+                    file_size: Mutex::new(file_size),
+                });
 
                 let res = Arc::new(Fat32File::new(
                     readable,
                     writable,
-                    inode,
+                    inode.clone(),
                     path.clone(),
                     name.to_string(),
                 ));
                 res.create_page_cache_if_needed();
-                INODE_CACHE.insert(path.clone(), res.clone());
+                INODE_CACHE.insert(path.clone(), inode.clone());
                 Ok(res)
             }
             Err(_err) => {
@@ -245,16 +281,22 @@ pub fn open(
                 let name = pathv.pop().unwrap();
                 match ROOT_INODE.find(pathv.clone()) {
                     Ok(parent) => match parent.create(name, create_type as VirtFileType) {
-                        Ok(inode) => {
+                        Ok(file) => {
+                            let file_size = file.file_size();
+                            let inode = Arc::new(Inode {
+                                file: Mutex::new(Arc::new(file)),
+                                page_cache: Mutex::new(None),
+                                file_size: Mutex::new(file_size),
+                            });
                             let res = Arc::new(Fat32File::new(
                                 readable,
                                 writable,
-                                Arc::new(inode),
+                                inode.clone(),
                                 path.clone(),
                                 name.to_string(),
                             ));
                             res.create_page_cache_if_needed();
-                            INODE_CACHE.insert(path.clone(), res.clone());
+                            INODE_CACHE.insert(path.clone(), inode.clone());
                             Ok(res)
                         }
                         Err(_err) => Err(Errno::UNCLEAR),
@@ -268,22 +310,27 @@ pub fn open(
     } else {
         // 查找文件
         match ROOT_INODE.find(pathv.clone()) {
-            Ok(inode) => {
+            Ok(file) => {
                 // 删除文件
                 if flags.contains(OpenFlags::O_TRUNC) {
-                    inode.clear();
+                    file.clear();
                 }
-
-                let name = inode.name().to_string();
+                let name = file.name().to_string();
+                let file_size = file.file_size();
+                let inode = Arc::new(Inode {
+                    file: Mutex::new(file),
+                    file_size: Mutex::new(file_size),
+                    page_cache: Mutex::new(None),
+                });
                 let res = Arc::new(Fat32File::new(
                     readable,
                     writable,
-                    inode,
+                    inode.clone(),
                     path.clone(),
                     name,
                 ));
                 res.create_page_cache_if_needed();
-                INODE_CACHE.insert(path.clone(), res.clone());
+                INODE_CACHE.insert(path.clone(), inode.clone());
                 Ok(res)
             }
             Err(_err) => return_errno!(Errno::ENOENT, "no such file or path:{:?}", path),
@@ -304,7 +351,7 @@ impl File for Fat32File {
     //  No change file offset
     fn read_to_kspace_with_offset(&self, offset: usize, len: usize) -> Vec<u8> {
         // with page cache
-        let page_cache = self.page_cache.lock().as_ref().cloned().unwrap();
+        let page_cache = self.page_cache().as_ref().cloned().unwrap();
         let mut offset = offset;
         let mut buf: Vec<u8> = vec![0; len];
         let mut buf_offset = 0;
@@ -331,7 +378,7 @@ impl File for Fat32File {
 
     fn read_at_direct(&self, offset: usize, len: usize) -> Vec<u8> {
         let mut buf: Vec<u8> = vec![0; len];
-        let inner = self.inner.lock();
+        let inner = self.inner();
         inner.read_at(offset, &mut buf);
         buf
     }
@@ -348,7 +395,7 @@ impl File for Fat32File {
     }
 
     fn write_from_direct(&self, offset: usize, data: &Vec<u8>) -> usize {
-        let inner = self.inner.lock();
+        let inner = self.inner();
         // TODO lzm
         if offset + data.len() > self.file_size() {
             self.set_file_size(offset + data.len());
@@ -387,7 +434,7 @@ impl File for Fat32File {
         if offset >= file_size {
             return 0;
         }
-        let page_cache = self.page_cache.lock().as_ref().cloned().unwrap();
+        let page_cache = self.page_cache().as_ref().cloned().unwrap();
         for slice in buf.buffers.iter_mut() {
             let slice_end = slice.len();
             let mut slice_offset = 0;
@@ -425,7 +472,7 @@ impl File for Fat32File {
         if offset >= file_size {
             return 0;
         }
-        let page_cache = self.page_cache.lock().as_ref().cloned().unwrap();
+        let page_cache = self.page_cache().as_ref().cloned().unwrap();
         for slice in buf.buffers.iter_mut() {
             let slice_end = slice.len();
             let mut slice_offset = 0;
@@ -450,7 +497,7 @@ impl File for Fat32File {
     fn write_from_ubuf(&self, buf: UserBuffer) -> usize {
         time_trace!("write");
         let mut total_write_size = 0usize;
-        let page_cache = self.page_cache.lock().as_ref().cloned().unwrap();
+        let page_cache = self.page_cache().as_ref().cloned().unwrap();
         let mut offset = if self.flags().contains(OpenFlags::O_APPEND) {
             self.file_size()
         } else {
@@ -485,7 +532,7 @@ impl File for Fat32File {
     fn pwrite(&self, buf: UserBuffer, offset: usize) -> usize {
         time_trace!("write");
         let mut total_write_size = 0usize;
-        let page_cache = self.page_cache.lock().as_ref().cloned().unwrap();
+        let page_cache = self.page_cache().as_ref().cloned().unwrap();
         let mut offset = if self.flags().contains(OpenFlags::O_APPEND) {
             self.file_size()
         } else {
@@ -518,7 +565,7 @@ impl File for Fat32File {
     fn write_from_kspace(&self, data: &Vec<u8>) -> usize {
         // with page cache
         let mut total_write_size = 0usize;
-        let page_cache = self.page_cache.lock().as_ref().cloned().unwrap();
+        let page_cache = self.page_cache().as_ref().cloned().unwrap();
         let mut offset = if self.flags().contains(OpenFlags::O_APPEND) {
             self.file_size()
         } else {
@@ -580,7 +627,7 @@ impl File for Fat32File {
         if !self.is_dir() {
             return -1;
         }
-        let inner = self.inner.lock();
+        let inner = self.inner();
         let offset = self.offset();
         if let Some((name, offset, first_cluster, _attr)) = inner.dir_info(offset) {
             dirent.init(name.as_str(), offset as isize, first_cluster as usize);
@@ -592,7 +639,7 @@ impl File for Fat32File {
         }
     }
     fn fstat(&self, kstat: &mut Kstat) {
-        let inner = self.inner.lock();
+        let inner = self.inner();
         let vfile = inner.clone();
         let mut st_mode = 0;
         _ = st_mode;
@@ -628,7 +675,7 @@ impl File for Fat32File {
         self.file_size()
     }
     fn truncate(&self, new_length: usize) {
-        let inner = self.inner.lock();
+        let inner = self.inner();
         inner.modify_size(new_length);
     }
 }

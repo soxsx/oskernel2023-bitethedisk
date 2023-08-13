@@ -5,24 +5,22 @@ use alloc::{
     sync::{Arc, Weak},
     vec::Vec,
 };
+use fat32::VirtFile;
+use nix::info;
 use spin::RwLock;
 
-use crate::{
-    consts::PAGE_SIZE,
-    mm::{FilePage, MapPermission},
-    syscall::impls::Errno,
-};
+use crate::{consts::PAGE_SIZE, mm::MapPermission, syscall::impls::Errno};
 
-use super::File;
+use super::{File, FilePage};
 
 pub struct PageCache {
-    inode: Option<Weak<dyn File>>,
+    inode: Option<Weak<VirtFile>>,
     // page number -> page
     pages: RwLock<BTreeMap<usize, Arc<FilePage>>>,
 }
 
 impl PageCache {
-    pub fn new(inode: Arc<dyn File>) -> Self {
+    pub fn new(inode: Arc<VirtFile>) -> Self {
         Self {
             inode: Some(Arc::downgrade(&inode)),
             pages: RwLock::new(BTreeMap::new()),

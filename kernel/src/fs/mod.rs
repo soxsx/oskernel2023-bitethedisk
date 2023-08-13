@@ -22,6 +22,9 @@ pub use pipe::*;
 pub use stat::*;
 pub use stdio::*;
 
+mod page;
+pub use page::*;
+
 use alloc::string::ToString;
 use path::AbsolutePath;
 

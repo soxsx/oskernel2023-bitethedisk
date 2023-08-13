@@ -1,10 +1,12 @@
 use alloc::sync::{Arc, Weak};
-use fat32::BLOCK_SIZE;
+use fat32::{VirtFile, BLOCK_SIZE};
 use spin::Mutex;
 
-use crate::{consts::PAGE_SIZE, fs::File, syscall::impls::Errno};
-
-use super::{alloc_frame, FrameTracker, MapPermission};
+use crate::{
+    consts::PAGE_SIZE,
+    mm::{alloc_frame, FrameTracker, MapPermission},
+    syscall::impls::Errno,
+};
 
 // 与 MmapPage 的区别在于不需要虚拟地址
 pub struct FilePage {
@@ -27,11 +29,11 @@ pub struct FilePageInfo {
     /// Data block state
     data_states: [DataState; PAGE_SIZE / BLOCK_SIZE],
     /// Inode that this page related to
-    inode: Weak<dyn File>,
+    inode: Weak<VirtFile>,
 }
 
 impl FilePage {
-    pub fn new(perm: MapPermission, offset: usize, inode: Arc<dyn File>) -> Self {
+    pub fn new(perm: MapPermission, offset: usize, inode: Arc<VirtFile>) -> Self {
         let data_frame = alloc_frame().expect("failed to alloc frame");
         let file_info = FilePageInfo {
             file_offset: offset,
@@ -116,7 +118,9 @@ impl FilePage {
                     let data = &self.data_frame.ppn.as_bytes_array()
                         [page_offset..page_offset + BLOCK_SIZE]
                         .to_vec();
-                    inode.write_from_direct(file_offset, data);
+
+                    // inode.write_from_direct(file_offset, data);
+                    inode.write_at(file_offset, &data);
                 }
                 _ => {}
             }
@@ -163,11 +167,18 @@ impl FilePage {
                 let file_offset = page_offset + file_info.file_offset;
                 let dst = &mut self.data_frame.ppn.as_bytes_array()
                     [page_offset..page_offset + BLOCK_SIZE];
-                let src = file_info
+
+                // let src = file_info
+                //     .inode
+                //     .upgrade()
+                //     .unwrap()
+                //     .read_at_direct(file_offset, BLOCK_SIZE);
+                let mut src = vec![0u8; BLOCK_SIZE];
+                file_info
                     .inode
                     .upgrade()
                     .unwrap()
-                    .read_at_direct(file_offset, BLOCK_SIZE);
+                    .read_at(file_offset, &mut src);
                 dst.copy_from_slice(&src);
                 file_info.data_states[idx] = DataState::Load;
             }
@@ -188,11 +199,18 @@ impl FilePage {
                 let file_offset = page_offset + file_info.file_offset;
                 let dst = &mut self.data_frame.ppn.as_bytes_array()
                     [page_offset..page_offset + BLOCK_SIZE];
-                let src = file_info
+                // let src = file_info
+                //     .inode
+                //     .upgrade()
+                //     .unwrap()
+                //     .read_at_direct(file_offset, BLOCK_SIZE);
+
+                let mut src = vec![0u8; BLOCK_SIZE];
+                file_info
                     .inode
                     .upgrade()
                     .unwrap()
-                    .read_at_direct(file_offset, BLOCK_SIZE);
+                    .read_at(file_offset, &mut src);
                 dst.copy_from_slice(src.as_slice());
                 // trace!("outdated block, idx {}, start_page_off {:#x}",idx,start_off);
                 trace!(
