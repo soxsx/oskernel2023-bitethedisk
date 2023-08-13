@@ -16,6 +16,7 @@ pub struct BIOSParameterBlock {
     pub(crate) basic_bpb: BasicBPB, // size = 36B
     pub(crate) bpb32: BPB32,        // size = 54B
 }
+
 impl BIOSParameterBlock {
     #[inline(always)]
     /// Get the first sector offset bytes of the cluster from the cluster number

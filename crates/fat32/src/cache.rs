@@ -31,6 +31,7 @@ pub trait Cache {
     /// - `block_device`: The pointer to the block_device.
     fn sync(&mut self);
 }
+
 pub struct BlockCache {
     // cache: [u8; BLOCK_SIZE],
     cache: Vec<u8>,
@@ -39,6 +40,7 @@ pub struct BlockCache {
     block_device: Arc<dyn BlockDevice>,
     modified: bool,
 }
+
 impl BlockCache {
     // load a block from the disk
     pub fn new(block_id: usize, block_device: Arc<dyn BlockDevice>) -> Self {
@@ -76,6 +78,7 @@ impl BlockCache {
         unsafe { &mut *(addr as *mut T) }
     }
 }
+
 impl Cache for BlockCache {
     fn read<T, V>(&self, offset: usize, f: impl FnOnce(&T) -> V) -> V {
         f(self.get_ref(offset))
@@ -94,6 +97,7 @@ impl Cache for BlockCache {
         }
     }
 }
+
 impl Drop for BlockCache {
     fn drop(&mut self) {
         self.sync()
@@ -103,6 +107,7 @@ impl Drop for BlockCache {
 pub struct BlockCacheManager {
     lru: LruCache<usize, Arc<RwLock<BlockCache>>>,
 }
+
 impl BlockCacheManager {
     pub fn new() -> Self {
         Self {

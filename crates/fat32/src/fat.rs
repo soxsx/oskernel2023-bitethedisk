@@ -6,18 +6,16 @@
 //! - 其他命名尽量容易理解 如 block_id_in_cluster 为簇内块号
 
 use super::cache::get_block_cache;
-use super::read_le_u32;
-
 use super::cache::Cache;
 use super::device::BlockDevice;
+use super::read_le_u32;
 use super::{BLOCK_SIZE, CLUSTER_MASK, END_OF_CLUSTER};
-
-use core::assert;
 
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::assert;
 use core::clone::Clone;
 use core::fmt::Debug;
 use core::iter::Iterator;
@@ -116,7 +114,6 @@ impl FATManager {
             fat1_offset: fat_offset,
         }
     }
-
     // Only used for std test when creating fat32 file system.
     #[allow(unused)]
     pub fn new(fat_offset: usize, device: Arc<dyn BlockDevice>) -> Self {
@@ -138,7 +135,6 @@ impl FATManager {
 
         fat
     }
-
     /// Given any valid cluster number N, return the sector number and offset of the entry for that cluster number in the FAT.
     ///
     // 给出 FAT 表的下标(clsuter_id_in_fat数据区簇号), 返回这个下标 (fat表的) 相对于磁盘的扇区数 (block_id) 与扇区内偏移
@@ -155,7 +151,6 @@ impl FATManager {
         let offset_in_block = offset % BLOCK_SIZE;
         (block_id, offset_in_block)
     }
-
     // 从 start_from 开始找 在FAT表中找到空闲的簇
     fn find_blank_cluster(&self, start_from: u32) -> u32 {
         // 加 1 过滤已经分配的簇号 (该簇号还未初始值为EOC, 防止找到同样的簇号)
@@ -183,8 +178,7 @@ impl FATManager {
         }
         cluster & CLUSTER_MASK
     }
-
-    pub fn blank_cluster(&mut self, start_from: u32) -> u32 {
+    pub fn get_blank_cluster(&mut self, start_from: u32) -> u32 {
         if let Some(cluster) = self.recycled_cluster.pop_front() {
             cluster & CLUSTER_MASK
         } else {
@@ -194,7 +188,6 @@ impl FATManager {
     pub fn recycle(&mut self, cluster: u32) {
         self.recycled_cluster.push_back(cluster);
     }
-
     // Query the next cluster of the specific cluster
     //
     // 最后一个簇的值, next_cluster 可能等于 EOC
@@ -212,7 +205,6 @@ impl FATManager {
             Some(next_cluster)
         }
     }
-
     // Set the next cluster of the specific cluster
     //
     // 在磁盘的FAT表中的簇号 cluster(offset) 处写入 cluster 的 value(下一个簇号)
@@ -224,7 +216,6 @@ impl FATManager {
                 *value = next_cluster;
             });
     }
-
     // Get the ith cluster of a cluster chain
     pub fn get_cluster_at(&self, start_cluster: u32, index: u32) -> Option<u32> {
         let mut cluster = start_cluster;
@@ -238,7 +229,6 @@ impl FATManager {
         }
         Some(cluster & CLUSTER_MASK)
     }
-
     // Get the last cluster of a cluster chain
     pub fn cluster_chain_tail(&self, start_cluster: u32) -> u32 {
         let mut curr_cluster = start_cluster;
@@ -253,7 +243,6 @@ impl FATManager {
             }
         }
     }
-
     // Get all clusters of a cluster chain starting from the specified cluster
     pub fn get_all_cluster_id(&self, start_cluster: u32) -> Vec<u32> {
         let mut curr_cluster = start_cluster;
@@ -268,7 +257,6 @@ impl FATManager {
             }
         }
     }
-
     pub fn cluster_chain_len(&self, start_cluster: u32) -> u32 {
         let mut curr_cluster = start_cluster;
         let mut len = 0;

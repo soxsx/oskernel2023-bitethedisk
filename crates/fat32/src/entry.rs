@@ -100,11 +100,13 @@ pub struct ShortDirEntry {
     /// size: 4 bytes     offset: 28 Bytes (0x1C~0x1F)
     file_size: u32,
 }
+
 impl Default for ShortDirEntry {
     fn default() -> Self {
         Self::empty()
     }
 }
+
 impl ShortDirEntry {
     pub fn empty() -> Self {
         Self {
@@ -583,6 +585,7 @@ impl ShortDirEntry {
         unsafe { *(buf.as_ptr() as *const ShortDirEntry) }
     }
 }
+
 #[allow(unused)]
 impl ShortDirEntry {
     pub fn set_create_time(&mut self, time: u16) {
@@ -601,6 +604,7 @@ impl ShortDirEntry {
         self.wrt_date = date;
     }
 }
+
 #[allow(unused)]
 impl LongDirEntry {
     pub fn set_name(&mut self, name_array: [u16; 13]) {

@@ -78,7 +78,6 @@ impl Dir for VirtFile {
         }
         Ok(Arc::new(current))
     }
-
     fn remove(&self, path: Vec<&str>) -> Result<(), DirError> {
         match self.find(path) {
             Ok(file) => {
@@ -88,7 +87,6 @@ impl Dir for VirtFile {
             Err(e) => Err(e),
         }
     }
-
     fn ls(&self) -> Result<Vec<String>, DirError> {
         match self.ls_with_attr() {
             Ok(v) => {
@@ -125,7 +123,6 @@ impl Dir for VirtFile {
                 return Err(e);
             }
         }
-
         // low -> high
         // lfn(n) -> lfn(n-1) -> .. -> lfn(1) -> sfn
         let mut sde: ShortDirEntry;

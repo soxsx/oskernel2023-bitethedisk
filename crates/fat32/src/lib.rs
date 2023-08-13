@@ -14,7 +14,6 @@ use alloc::vec::Vec;
 use core::convert::TryInto;
 use core::iter::Iterator;
 use core::str;
-
 extern crate alloc;
 #[macro_use]
 extern crate time_tracer;

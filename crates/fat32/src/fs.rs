@@ -7,18 +7,15 @@ use core::option::Option;
 use core::option::Option::{None, Some};
 use spin::RwLock;
 
-use crate::ROOT_DIR_CLUSTER;
-
-use super::cache::get_block_cache;
-
 use super::bpb::{BIOSParameterBlock, BasicBPB, FSInfo, BPB32};
+use super::cache::get_block_cache;
 use super::cache::Cache;
 use super::device::BlockDevice;
 use super::entry::ShortDirEntry;
 use super::fat::FATManager;
 use super::vf::VirtFileType;
-
 use super::{BLOCK_NUM, BLOCK_SIZE, END_OF_CLUSTER, FREE_CLUSTER, ROOT};
+use crate::ROOT_DIR_CLUSTER;
 
 pub struct FileSystem {
     pub(crate) device: Arc<dyn BlockDevice>,
@@ -178,12 +175,12 @@ impl FileSystem {
         if free_cluster_cnt < num {
             return None;
         }
-        let first_cluster_id = self.fat.write().blank_cluster(start_cluster);
+        let first_cluster_id = self.fat.write().get_blank_cluster(start_cluster);
         assert!(first_cluster_id >= 2);
         self.clear_cluster(first_cluster_id);
         let mut curr_cluster_id = first_cluster_id;
         for _ in 1..num {
-            let cluster_id = self.fat.write().blank_cluster(curr_cluster_id);
+            let cluster_id = self.fat.write().get_blank_cluster(curr_cluster_id);
             assert!(cluster_id >= 2);
             self.clear_cluster(cluster_id);
             self.fat
