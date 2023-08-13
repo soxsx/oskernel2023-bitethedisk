@@ -1,3 +1,5 @@
+//! Block device trait for FAT32.
+
 use crate::Error;
 
 use core::any::Any;

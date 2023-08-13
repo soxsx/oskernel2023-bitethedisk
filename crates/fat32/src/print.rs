@@ -1,3 +1,5 @@
+//! used for no_std environment of riscv64imac-unknown-none-elf
+
 use core::{
     arch::asm,
     fmt::{self, Write},
