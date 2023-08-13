@@ -1,3 +1,9 @@
 [submodule "testsuits"]
 	path = testsuits
 	url = https://github.com/oscomp/testsuits-for-oskernel.git
+[submodule "firmware/uboot"]
+	path = firmware/uboot
+	url = https://source.denx.de/u-boot/u-boot.git
+[submodule "firmware/opensbi"]
+	path = firmware/opensbi
+	url = https://github.com/riscv/opensbi.git

@@ -20,7 +20,7 @@ FEATURES ?= static-busybox
 
 DEV ?= false
 
-BOARD ?= QEMU
+BOARD ?= qemu
 
 define run-board-qemu
 	@$(QEMU) \
@@ -28,7 +28,7 @@ define run-board-qemu
 		-kernel $(KERNEL_ELF) \
 		-m 128M \
 		-nographic \
-		-smp $(NCPU) \
+		-smp 2 \
 		-bios default \
 		-drive file=$(SDCARD),if=none,format=raw,id=x0 \
 		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
@@ -38,10 +38,10 @@ endef
 define run-board-fu740
 	 @(QEMU) \
 		-machine virt \
-		-kernel kernel-qemu \
-		-m 128M \
+		-kernel $(KERNEL_ELF) \
+		-m 2G \
 		-nographic \
-		-smp 2 \
+		-smp 4 \
 		-drive file=sdcard.img,if=none,format=raw,id=x0 \
 		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 endef
@@ -65,16 +65,13 @@ else
 endif
 
 run: kernel-dev sdcard
-	# @(run-board-qemu)
-	@$(QEMU) \
-	 	-machine virt \
-		-kernel $(KERNEL_ELF) \
-		-m 128M \
-		-nographic \
-		-smp $(NCPU) \
-		-bios default \
-		-drive file=$(SDCARD),if=none,format=raw,id=x0 \
-		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+ifeq ($(BOARD), qemu)
+	@$(run-board-qemu)
+else ifeq ($(BOARD), fu740)
+	@(run-board-fu740)
+else
+	@$(error "Platform not supported (required $(BOARD))")
+endif
 
 ##################################################################
 #                      Debug build & run.                        #
