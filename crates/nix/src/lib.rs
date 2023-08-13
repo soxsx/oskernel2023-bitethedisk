@@ -2,21 +2,21 @@
 
 #![no_std]
 
+pub mod fs;
 pub mod info;
 pub mod io;
 pub mod ipc;
-pub mod time;
-pub mod fs;
-pub mod robustlist;
 pub mod resource;
+pub mod robustlist;
+pub mod time;
 
 #[macro_use]
 extern crate bitflags;
 
+pub use fs::*;
 pub use info::*;
 pub use io::*;
 pub use ipc::*;
-pub use time::*;
-pub use fs::*;
-pub use robustlist::*;
 pub use resource::*;
+pub use robustlist::*;
+pub use time::*;
