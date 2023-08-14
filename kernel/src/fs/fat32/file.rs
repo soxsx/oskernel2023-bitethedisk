@@ -37,9 +37,7 @@ use alloc::{
     sync::Arc,
     vec::Vec,
 };
-use fat32::{
-    root, Dir as FatDir, DirError, FileSystem, VirtFile, VirtFileType, ATTR_DIRECTORY, BLOCK_SIZE,
-};
+use fat32::{root, Dir as FatDir, DirError, FileSystem, VirtFile, VirtFileType, ATTR_DIRECTORY};
 use nix::{Dirent, InodeTime, Kstat, S_IFCHR, S_IFDIR, S_IFREG};
 use path::AbsolutePath;
 use spin::{Mutex, MutexGuard, RwLock};
