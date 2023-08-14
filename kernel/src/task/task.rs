@@ -358,11 +358,6 @@ impl TaskControlBlock {
 
     /// 用来实现 exec 系统调用, 即当前进程加载并执行另一个 ELF 格式可执行文件
     pub fn exec(&self, elf_file: Arc<dyn File>, args: Vec<String>, envs: Vec<String>) {
-        // for hackbench
-        if elf_file.name().contains("hackbench") || elf_file.name().contains("HACKBENCH") {
-            return;
-        }
-
         // 从 ELF 文件生成一个全新的地址空间并直接替换
         let LoadedELF {
             memory_set,

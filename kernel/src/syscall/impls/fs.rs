@@ -16,13 +16,14 @@ use alloc::{sync::Arc, vec::Vec};
 use core::mem::size_of;
 use fat32::sync_all;
 use nix::time::{TimeSpec, TimeVal};
-use nix::{CreateMode, Dirent, InodeTime, Kstat, OpenFlags, Statfs};
+use nix::{
+    CreateMode, Dirent, FcntlFlags, InodeTime, Kstat, OpenFlags, Statfs, AT_FDCWD, RTC_RD_TIME,
+    TCGETS, TCSETS, TIOCGPGRP, TIOCGWINSZ, TIOCSPGRP, UTIME_NOW, UTIME_OMIT,
+};
 use nix::{FdSet, Iovec};
 use spin::RwLock;
 
 use super::*;
-
-const AT_FDCWD: isize = -100;
 
 use time_tracer::{time_trace, TimeTracer};
 
@@ -1006,13 +1007,6 @@ pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> Result {
     }
 }
 
-const TCGETS: usize = 0x5401;
-const TCSETS: usize = 0x5402;
-const TIOCGPGRP: usize = 0x540f;
-const TIOCSPGRP: usize = 0x5410;
-const TIOCGWINSZ: usize = 0x5413;
-const RTC_RD_TIME: usize = 0xffffffff80247009; // 这个值还需考量
-
 pub fn sys_ioctl(fd: i32, request: usize, argp: *mut u8) -> Result {
     let token = current_user_token();
     let task = current_task();
@@ -1037,32 +1031,6 @@ pub fn sys_ioctl(fd: i32, request: usize, argp: *mut u8) -> Result {
         _ => return_errno!(Errno::EINVAL, "request {} is not supported", request),
     }
     Ok(0)
-}
-
-// 暂时写在这里
-
-bitflags! {
-#[derive(PartialEq, Eq, Debug)]
-    pub struct FcntlFlags:usize{
-        const F_DUPFD = 0;
-        const F_GETFD = 1;
-        const F_SETFD = 2;
-        const F_GETFL = 3;
-        const F_SETFL = 4;
-        const F_GETLK = 5;
-        const F_SETLK = 6;
-        const F_SETLKW = 7;
-        const F_SETOWN = 8;
-        const F_GETOWN = 9;
-        const F_SETSIG = 10;
-        const F_GETSIG = 11;
-        const F_SETOWN_EX = 15;
-        const F_GETOWN_EX = 16;
-        const F_GETOWNER_UIDS = 17;
-
-        // 发现 F_UNLCK = 2 , 这个标记分类待研究
-        const F_DUPFD_CLOEXEC = 1030;
-    }
 }
 
 pub fn sys_fcntl(fd: i32, cmd: usize, arg: Option<usize>) -> Result {
@@ -1209,9 +1177,6 @@ pub fn sys_sendfile(out_fd: i32, in_fd: i32, offset: usize, _count: usize) -> Re
         Ok(total_write_size as isize)
     }
 }
-
-const UTIME_NOW: u64 = 0x3fffffff;
-const UTIME_OMIT: u64 = 0x3ffffffe;
 
 pub fn sys_utimensat(
     dirfd: isize,

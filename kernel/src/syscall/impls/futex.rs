@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
 use errno::Errno;
 use hashbrown::HashMap;
-use nix::TimeSpec;
+use nix::{TimeSpec, FUTEX_CLOCK_REALTIME, FUTEX_CMD_MASK, FUTEX_REQUEUE, FUTEX_WAIT, FUTEX_WAKE};
 use spin::{Lazy, RwLock};
 
 use crate::mm::translated_ref;
@@ -19,14 +19,6 @@ use crate::task::{
 use crate::timer::{get_time_ns, get_time_us};
 
 use super::Result;
-
-const FUTEX_WAIT: usize = 0;
-const FUTEX_WAKE: usize = 1;
-const FUTEX_REQUEUE: usize = 3;
-
-const FUTEX_PRIVATE_FLAG: usize = 128;
-const FUTEX_CLOCK_REALTIME: usize = 256;
-const FUTEX_CMD_MASK: usize = !(FUTEX_PRIVATE_FLAG | FUTEX_CLOCK_REALTIME);
 
 lazy_static! {
     pub static ref FUTEX_QUEUE: RwLock<HashMap<usize, FutexQueue>> = RwLock::new(HashMap::new());
@@ -49,15 +41,6 @@ pub fn sys_futex(
 ) -> Result {
     let option = futex_op & FUTEX_CMD_MASK;
     let token = current_user_token();
-    // println!(
-    //     "*****sys_futex(uaddr: {:#x?}, futex_op: {:x?}, val: {:x?}, timeout: {:#x?}, uaddr2: {:#x?}, val3: {:x?}) = ?",
-    //     uaddr,
-    //     futex_op,
-    //     val,
-    //     val2,
-    //     uaddr2,
-    //     val3,
-    // );
     if futex_op & FUTEX_CLOCK_REALTIME != 0 {
         if option != FUTEX_WAIT {
             // return Err(-EPERM); // ENOSYS
@@ -82,16 +65,6 @@ pub fn sys_futex(
         }
         _ => panic!("ENOSYS"),
     };
-    // println!(
-    //     "sys_futex(uaddr: {:#x?}, futex_op: {:x?}, val: {:x?}, timeout: {:#x?}, uaddr2: {:#x?}, val3: {:x?}) = {:?}",
-    //     uaddr,
-    //     futex_op,
-    //     val,
-    //     val2,
-    //     uaddr2,
-    //     val3,
-    //     ret,
-    // );
     ret
 }
 
@@ -110,10 +83,6 @@ pub fn futex_wait(uaddr: usize, val: u32, timeout: usize) -> Result {
     let mut fq_lock = fq.chain.write();
     let token = current_user_token();
     let uval = translated_ref(token, uaddr as *const AtomicU32);
-    // debug!(
-    //     "futex_wait: uval: {:x?}, val: {:x?}, timeout: {}",
-    //     uval, val, timeout
-    // );
     // Ordering is Relaxed
     if uval.load(Ordering::Relaxed) != val {
         drop(fq_lock);

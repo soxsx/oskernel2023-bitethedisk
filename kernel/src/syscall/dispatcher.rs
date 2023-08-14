@@ -2,7 +2,7 @@
 
 use super::impls::*;
 use nix::{itimerval, time::TimeSpec};
-use nix::{RLimit, SigAction, SigMask};
+use nix::{RLimit, SchedParam, SigAction, SigMask};
 
 // 系统调用号
 // const SYS_RT_SIGPROMASK: usize = 135;

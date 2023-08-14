@@ -23,7 +23,8 @@ use nix::resource::{RLimit, Resource};
 use nix::robustlist::RobustList;
 use nix::time::{TimeSpec, TimeVal};
 use nix::{
-    CreateMode, MaskFlags, OpenFlags, SigAction, SigInfo, SigMask, Signal, UContext, MAX_SIGNUM,
+    CpuMask, CreateMode, MaskFlags, OpenFlags, SchedParam, SigAction, SigInfo, SigMask, Signal,
+    UContext, MAX_SIGNUM, RUSAGE_SELF, SCHED_OTHER,
 };
 
 use super::super::errno::*;
@@ -392,7 +393,6 @@ pub fn sys_tkill(tid: usize, signal: usize) -> Result {
     }
 }
 
-const RUSAGE_SELF: isize = 0;
 pub fn sys_getrusage(who: isize, usage: *mut u8) -> Result {
     if who != RUSAGE_SELF {
         return_errno!(Errno::EINVAL, "currently only supports RUSAGE_SELF");
@@ -435,82 +435,6 @@ pub fn sys_tgkill(tgid: isize, tid: usize, sig: isize) -> Result {
     }
 }
 
-pub struct CpuMask {
-    mask: [u8; 1024 / (8 * core::mem::size_of::<u8>())],
-}
-
-impl CpuMask {
-    pub fn new() -> Self {
-        Self {
-            mask: [0; 1024 / (8 * core::mem::size_of::<u8>())],
-        }
-    }
-
-    pub fn set(&mut self, cpu: usize) {
-        let index = cpu / (8 * core::mem::size_of::<u8>());
-        let offset = cpu % (8 * core::mem::size_of::<u8>());
-        self.mask[index] |= 1 << offset;
-    }
-
-    pub fn get(&self, cpu: usize) -> bool {
-        let index = cpu / (8 * core::mem::size_of::<u8>());
-        let offset = cpu % (8 * core::mem::size_of::<u8>());
-        self.mask[index] & (1 << offset) != 0
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.mask
-    }
-
-    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
-        &mut self.mask
-    }
-}
-
-// TODO
-#[repr(C)]
-pub struct CpuSet {
-    mask: [usize; 1024 / (8 * core::mem::size_of::<usize>())],
-}
-
-impl CpuSet {
-    pub fn new() -> Self {
-        Self {
-            mask: [0; 1024 / (8 * core::mem::size_of::<usize>())],
-        }
-    }
-
-    pub fn set(&mut self, cpu: usize) {
-        let index = cpu / (8 * core::mem::size_of::<usize>());
-        let offset = cpu % (8 * core::mem::size_of::<usize>());
-        self.mask[index] |= 1 << offset;
-    }
-
-    pub fn get(&self, cpu: usize) -> bool {
-        let index = cpu / (8 * core::mem::size_of::<usize>());
-        let offset = cpu % (8 * core::mem::size_of::<usize>());
-        self.mask[index] & (1 << offset) != 0
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        unsafe {
-            core::slice::from_raw_parts(
-                self as *const Self as *const u8,
-                core::mem::size_of::<Self>(),
-            )
-        }
-    }
-
-    pub fn as_mut_bytes(&mut self) -> &mut [u8] {
-        unsafe {
-            core::slice::from_raw_parts_mut(
-                self as *mut Self as *mut u8,
-                core::mem::size_of::<Self>(),
-            )
-        }
-    }
-}
-
 // TODO 多核 在进程内加入 CpuMask
 // 用于获取一个进程或线程的 CPU 亲和性(CPU affinity).
 // CPU 亲和性指定了一个进程或线程可以运行在哪些 CPU 上.
@@ -545,13 +469,6 @@ pub fn sys_sched_setaffinity(pid: usize, cpusetsize: usize, mask: *const u8) -> 
     Ok(0)
 }
 
-pub const SCHED_OTHER: isize = 0;
-pub const SCHED_FIFO: isize = 1;
-pub const SCHED_RR: isize = 2;
-pub const SCHED_BATCH: isize = 3;
-pub const SCHED_IDLE: isize = 5;
-pub const SCHED_DEADLINE: isize = 6;
-
 // TODO 系统调用策略
 // 该函数接受一个参数 pid, 表示要查询的进程的 PID.如果 pid 是 0, 则表示查询当前进程的调度策略.
 // 函数返回值是一个整数, 表示指定进程的调度策略, 可能的取值包括:
@@ -564,31 +481,6 @@ pub fn sys_getscheduler(pid: usize) -> Result {
     // let inner = task.read();
     // Ok(inner.policy as isize) // TODO
     Ok(SCHED_OTHER as isize)
-}
-
-#[repr(C)]
-pub struct SchedParam {
-    sched_priority: isize,
-}
-
-impl SchedParam {
-    pub fn new() -> Self {
-        Self { sched_priority: 0 }
-    }
-    pub fn as_bytes(&self) -> &[u8] {
-        unsafe { core::slice::from_raw_parts(&self.sched_priority as *const isize as *const u8, 8) }
-    }
-    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
-        unsafe {
-            core::slice::from_raw_parts_mut(&mut self.sched_priority as *mut isize as *mut u8, 8)
-        }
-    }
-    pub fn set_priority(&mut self, priority: isize) {
-        self.sched_priority = priority;
-    }
-    pub fn get_priority(&self) -> isize {
-        self.sched_priority
-    }
 }
 
 // sched_priority 成员表示进程的调度优先级, 值越高表示优先级越高.
@@ -609,9 +501,6 @@ pub fn sys_sched_getparam(pid: usize, param: *mut SchedParam) -> Result {
     user_param.set_priority(1);
     Ok(0)
 }
-
-#[repr(C)]
-pub struct SchedPolicy(isize);
 
 // pid 参数指定要设置调度策略和参数的进程的 PID;
 // policy 参数是一个整数值, 表示要设置的调度策略;
@@ -653,9 +542,6 @@ pub fn sys_clock_getres(clockid: usize, res: *mut TimeSpec) -> Result {
     user_res.tv_nsec = 1;
     Ok(0)
 }
-
-pub const SOCK_DGRAM: isize = 1;
-pub const SOCK_STREAM: isize = 2;
 
 // int socketpair(int domain, int type, int protocol, int sv[2]);
 // domain: 指定要创建的套接字的协议族, 可以取值为 AF_UNIX 或 AF_LOCAL, 表示使用本地 IPC.

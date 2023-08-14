@@ -292,10 +292,13 @@ impl MemorySet {
     /// +--------------------+
     /// ```
     pub fn load_elf(elf_file: Arc<dyn File>) -> LoadedELF {
-        // const BB: &str = "BUSYBOX";
-        // if elf_file.name() == BB {
-        //     return hijack_busybox_load_elf();
-        // }
+        #[cfg(feature = "static_busybox")]
+        {
+            const BB: &str = "BUSYBOX";
+            if elf_file.name() == BB {
+                return hijack_busybox_load_elf();
+            }
+        }
         let mut memory_set = Self::new_bare();
         let mut auxs = Vec::new();
 
@@ -845,19 +848,20 @@ impl MemorySet {
     }
 }
 
-// fn hijack_busybox_load_elf() -> LoadedELF {
-//     let bb = BUSYBOX.read();
-//     let memory_set = bb.memory_set();
-//     let user_stack_top = memory_set.user_stack_end;
-//     let elf_entry = bb.elf_entry_point();
-//     let auxs = bb.aux();
-//     LoadedELF {
-//         memory_set,
-//         user_stack_top,
-//         elf_entry,
-//         auxs,
-//     }
-// }
+#[cfg(feature = "stack_busybox")]
+fn hijack_busybox_load_elf() -> LoadedELF {
+    let bb = BUSYBOX.read();
+    let memory_set = bb.memory_set();
+    let user_stack_top = memory_set.user_stack_end;
+    let elf_entry = bb.elf_entry_point();
+    let auxs = bb.aux();
+    LoadedELF {
+        memory_set,
+        user_stack_top,
+        elf_entry,
+        auxs,
+    }
+}
 
 pub struct LoadedELF {
     pub memory_set: MemorySet,

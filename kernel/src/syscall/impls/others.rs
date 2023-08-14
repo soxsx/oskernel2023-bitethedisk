@@ -171,15 +171,14 @@ pub fn sys_getrandom(buf: *const u8, buf_size: usize, flags: usize) -> Result {
 }
 
 pub fn sys_setitimer(which: i32, new_value: *const itimerval, old_value: *mut itimerval) -> Result {
-    const NULL: usize = 0;
     let nvp_usize = new_value as usize;
     let ovp_usize = old_value as usize;
-    if nvp_usize == NULL {
+    if nvp_usize == 0 {
         return_errno!(Errno::EFAULT);
     }
     if let Ok(itimer_type) = IntervalTimerType::try_from(which) {
         let task = current_task();
-        if ovp_usize != NULL {
+        if ovp_usize != 0 {
             let inner = task.inner_ref();
             if let Some(itimer) = &inner.interval_timer {
                 let ov = translated_mut(task.token(), old_value);
@@ -217,9 +216,8 @@ pub fn sys_setitimer(which: i32, new_value: *const itimerval, old_value: *mut it
 }
 
 pub fn sys_getitimer(which: i32, curr_value: *mut itimerval) -> Result {
-    const NULL: usize = 0;
     let cv_usize = curr_value as usize;
-    if cv_usize == NULL {
+    if cv_usize == 0 {
         return_errno!(Errno::EFAULT);
     }
     if let Ok(itimer_type) = IntervalTimerType::try_from(which) {
