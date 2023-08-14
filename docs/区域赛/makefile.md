@@ -1,4 +1,4 @@
-## 有关 Makefile
+# 有关 Makefile
 
 一般只会用到项目根目录中的 [Makefile](./Makefile)
 
