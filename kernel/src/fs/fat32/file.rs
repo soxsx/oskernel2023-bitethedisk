@@ -27,9 +27,7 @@
 
 use crate::consts::PAGE_SIZE;
 use crate::drivers::BLOCK_DEVICE;
-use crate::fs::{
-    CreateMode, Dirent, File, Kstat, OpenFlags, PageCache, TimeInfo, S_IFCHR, S_IFDIR, S_IFREG,
-};
+use crate::fs::{ino_alloc, CreateMode, File, OpenFlags, PageCache};
 use crate::mm::UserBuffer;
 use crate::return_errno;
 use crate::syscall::impls::Errno;
@@ -39,32 +37,51 @@ use alloc::{
     sync::Arc,
     vec::Vec,
 };
-use fat32::{root, Dir as FatDir, DirError, FileSystem, VirtFile, VirtFileType, ATTR_DIRECTORY};
+use fat32::{
+    root, Dir as FatDir, DirError, FileSystem, VirtFile, VirtFileType, ATTR_DIRECTORY, BLOCK_SIZE,
+};
+use nix::{Dirent, InodeTime, Kstat, S_IFCHR, S_IFDIR, S_IFREG};
 use path::AbsolutePath;
 use spin::{Mutex, MutexGuard, RwLock};
 
+pub const INODE_CACHE_LIMIT: usize = 1024;
+
+/// InodeCache is used to cache the Inode of the file. Mainly used for the Open syscall.
 pub struct InodeCache(pub RwLock<BTreeMap<AbsolutePath, Arc<Inode>>>);
-
 pub static INODE_CACHE: InodeCache = InodeCache(RwLock::new(BTreeMap::new()));
-
+#[allow(unused)]
 impl InodeCache {
     pub fn get(&self, path: &AbsolutePath) -> Option<Arc<Inode>> {
         self.0.read().get(path).cloned()
     }
-
     pub fn insert(&self, path: AbsolutePath, inode: Arc<Inode>) {
         self.0.write().insert(path, inode);
+        if self.0.read().len() > INODE_CACHE_LIMIT {
+            self.shrink();
+        }
     }
-
     pub fn remove(&self, path: &AbsolutePath) {
         self.0.write().remove(path);
     }
-
     pub fn release(&self) {
         self.0.write().clear();
     }
+    pub fn shrink(&self) {
+        // 移除掉 Inode 强引用计数为1的项
+        let mut map = self.0.write();
+        let mut remove_list = Vec::new();
+        for (path, inode) in map.iter() {
+            if Arc::strong_count(inode) == 1 {
+                remove_list.push(path.clone());
+            }
+        }
+        for path in remove_list {
+            map.remove(&path);
+        }
+    }
 }
 
+/// Kernel File
 pub struct KFile {
     // read only feilds
     readable: bool,
@@ -72,20 +89,52 @@ pub struct KFile {
     path: AbsolutePath, // It contains the file name, so the name field is not needed actually.
     name: String,
 
-    // shared by some files
-    pub time_info: Mutex<TimeInfo>,
+    // shared by some files (uaually happens when fork)
+    pub time_info: Mutex<InodeTime>,
     pub offset: Mutex<usize>,
     pub flags: Mutex<OpenFlags>,
     pub available: Mutex<bool>,
 
-    // shared by the same file
+    // shared by the same file (with page cache)
     pub inode: Arc<Inode>,
 }
 
+// You can see the introduction at the beginning of this file.
 pub struct Inode {
     pub file: Mutex<Arc<VirtFile>>,
     pub page_cache: Mutex<Option<Arc<PageCache>>>,
     pub file_size: Mutex<usize>,
+}
+
+#[cfg(feature = "inode_drop")]
+impl Drop for Inode {
+    // Actually, all the tests create files in memory, read and write files,
+    // and do not need to be written back to the file system.
+    fn drop(&mut self) {
+        use crate::fs::DataState;
+        use fat32::BLOCK_SIZE;
+        let mut page_set: Vec<Arc<FilePage>> = Vec::new();
+        let pages = &self.page_cache.lock().as_ref().cloned().unwrap().pages;
+        for (_, page) in pages.read().iter() {
+            page_set.push(page.clone());
+        }
+        for page in page_set {
+            let file_info = page.file_info.as_ref().unwrap().lock();
+            for idx in 0..PAGE_SIZE / BLOCK_SIZE {
+                match file_info.data_states[idx] {
+                    DataState::Dirty => {
+                        let page_offset = idx * BLOCK_SIZE;
+                        let file_offset = file_info.file_offset + page_offset;
+                        let data = page.data_frame.ppn.as_bytes_array()
+                            [page_offset..page_offset + BLOCK_SIZE]
+                            .to_vec();
+                        self.file.lock().write_at(file_offset, &data);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
 }
 
 impl KFile {
@@ -97,40 +146,32 @@ impl KFile {
         name: String,
     ) -> Self {
         let available = true;
-        let file_size = inode.file.lock().file_size() as usize;
         Self {
             readable,
             writable,
-            // inner: Mutex::new(inode),
             path,
             name,
-            // page_cache: Mutex::new(None),
             inode,
             offset: Mutex::new(0),
             flags: Mutex::new(OpenFlags::empty()),
             available: Mutex::new(available),
-            time_info: Mutex::new(TimeInfo::empty()),
+            time_info: Mutex::new(InodeTime::empty()),
         }
     }
-
-    pub fn inner(&self) -> MutexGuard<'_, Arc<VirtFile>> {
+    pub fn file(&self) -> MutexGuard<'_, Arc<VirtFile>> {
         self.inode.file.lock()
     }
-
     pub fn page_cache(&self) -> MutexGuard<'_, Option<Arc<PageCache>>> {
         self.inode.page_cache.lock()
     }
-
+    // Because of the weak pointer, we need to create a page cache after creating KFile.
     pub fn create_page_cache_if_needed(self: &Arc<Self>) {
         let mut page_cache = self.page_cache();
         if page_cache.is_none() {
-            // *page_cache = Some(Arc::new(PageCache::new(self.clone())));
-            *page_cache = Some(Arc::new(PageCache::new(self.inner().clone())));
+            *page_cache = Some(Arc::new(PageCache::new(self.file().clone())));
         }
     }
-
     pub fn write_all(&self, data: &Vec<u8>) -> usize {
-        // with page cache
         let mut total_write_size = 0usize;
         let page_cache = self.page_cache().as_ref().cloned().unwrap();
         let mut offset = if self.flags().contains(OpenFlags::O_APPEND) {
@@ -141,7 +182,7 @@ impl KFile {
         let mut slice_offset = 0;
         let slice_end = data.len();
         while slice_offset < slice_end {
-            // to avoid slice's length spread page boundary (howerver, it's low probability)
+            // to avoid slice's length spread page boundary
             let page = page_cache.get_page(offset, None).expect("get page error");
             let page_offset = offset % PAGE_SIZE;
             let mut slice_offset_end = slice_offset + (PAGE_SIZE - page_offset);
@@ -162,56 +203,49 @@ impl KFile {
         total_write_size
     }
     pub fn is_dir(&self) -> bool {
-        let inner = self.inner();
-        inner.is_dir()
+        let file = self.file();
+        file.is_dir()
     }
     pub fn name(&self) -> &str {
         self.name.as_str()
     }
-    // TODO with page cache ? lzm
+    // TODO with page cache?
     pub fn delete(&self) -> usize {
-        let inner = self.inner();
-        inner.clear()
+        let file = self.file();
+        let path = self.path.clone();
+        INODE_CACHE.remove(&path);
+        file.clear()
     }
-    // TODO with page cache ? lzm
+    // TODO with page cache?
     pub fn delete_direntry(&self) {
-        let inner = self.inner();
-        inner.clear_direntry();
+        let file = self.file();
+        file.clear_direntry();
     }
-    // TODO with page cache ? lzm
     pub fn file_size(&self) -> usize {
-        // *self.file_size.lock()
         *self.inode.file_size.lock()
     }
-    // TODO with page cache ? lzm
     pub fn set_file_size(&self, file_size: usize) {
-        // *self.file_size.lock() = file_size;
         *self.inode.file_size.lock() = file_size;
     }
     pub fn rename(&self, new_path: AbsolutePath, flags: OpenFlags) {
         // duplicate a new file, and set file cluster and file size
-        let inner = self.inner();
+        let inner = self.file();
         // check file exits
         let new_file = open(new_path, flags, CreateMode::empty()).unwrap();
-        let new_inner = new_file.inner();
+        let new_inner = new_file.file();
         let first_cluster = inner.first_cluster();
         let file_size = inner.file_size();
-
         new_inner.set_first_cluster(first_cluster);
         new_inner.set_file_size(file_size);
-
         drop(inner);
         // clear old direntry
         self.delete_direntry();
     }
 }
 
-// 这里在实例化的时候进行文件系统的打开
 lazy_static! {
     pub static ref ROOT_INODE: Arc<VirtFile> = {
         let fs = FileSystem::open(BLOCK_DEVICE.clone());
-
-        // 返回根目录
         Arc::new(root(fs.clone()))
     };
 }
@@ -222,21 +256,21 @@ pub fn list_apps(path: AbsolutePath) {
     fn ls(path: AbsolutePath, layer: usize) {
         let dir = ROOT_INODE.find(path.as_vec_str()).unwrap();
         for app in dir.ls_with_attr().unwrap() {
-            // 不打印initproc, 事实上它也在task::new之后删除了
+            // no print initproc(However, it is deleted after task::new)
             if layer == 0 && app.0 == "initproc" {
                 continue;
             }
             let app_path: AbsolutePath = path.cd(app.0.clone());
             if app.1 & ATTR_DIRECTORY == 0 {
-                // 如果不是目录
+                // if it is not directory
                 for _ in 0..layer {
-                    print!("   ");
+                    print!("    ");
                 }
                 crate::println!("{}", app.0);
             } else if app.0 != "." && app.0 != ".." {
-                // 目录
+                // if it is directory
                 for _ in 0..layer {
-                    crate::print!("  ");
+                    crate::print!("    ");
                 }
                 crate::println!("{}/", app.0);
                 ls(app_path.clone(), layer + 1);
@@ -247,7 +281,6 @@ pub fn list_apps(path: AbsolutePath) {
     ls(path, layer);
 }
 
-// work_path 绝对路径
 pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<Arc<KFile>, Errno> {
     time_trace!("open");
     let (readable, writable) = flags.read_write();
@@ -268,8 +301,8 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<A
         res.create_page_cache_if_needed();
         return Ok(res);
     }
-    // 创建文件
     if flags.contains(OpenFlags::O_CREATE) {
+        // Create File
         let res = ROOT_INODE.find(pathv.clone());
         match res {
             Ok(file) => {
@@ -292,6 +325,7 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<A
                     path.clone(),
                     name.to_string(),
                 ));
+                // create page cache
                 res.create_page_cache_if_needed();
                 INODE_CACHE.insert(path.clone(), inode.clone());
                 Ok(res)
@@ -300,15 +334,15 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<A
                 if _err == DirError::NotDir {
                     return Err(Errno::ENOTDIR);
                 }
-                // 设置创建类型
                 let mut create_type = VirtFileType::File;
                 if flags.contains(OpenFlags::O_DIRECTROY) {
                     create_type = VirtFileType::Dir;
                 }
 
-                // 找到父目录
+                // to find parent
                 let name = pathv.pop().unwrap();
                 match ROOT_INODE.find(pathv.clone()) {
+                    // find parent to create file
                     Ok(parent) => match parent.create(name, create_type as VirtFileType) {
                         Ok(file) => {
                             let file_size = file.file_size();
@@ -337,10 +371,10 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<A
             }
         }
     } else {
-        // 查找文件
+        // Open File
         match ROOT_INODE.find(pathv.clone()) {
             Ok(file) => {
-                // 删除文件
+                // clear file if O_TRUNC
                 if flags.contains(OpenFlags::O_TRUNC) {
                     file.clear();
                 }
@@ -367,6 +401,7 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<A
     }
 }
 
+// TODO This only used to check whether can cd to path
 pub fn chdir(path: AbsolutePath) -> bool {
     if let Ok(_) = ROOT_INODE.find(path.as_vec_str()) {
         true
@@ -375,11 +410,9 @@ pub fn chdir(path: AbsolutePath) -> bool {
     }
 }
 
-// 为 OSInode 实现 File Trait
 impl File for KFile {
     //  No change file offset
-    fn read_to_kspace_with_offset(&self, offset: usize, len: usize) -> Vec<u8> {
-        // with page cache
+    fn kernel_read_with_offset(&self, offset: usize, len: usize) -> Vec<u8> {
         let page_cache = self.page_cache().as_ref().cloned().unwrap();
         let mut offset = offset;
         let mut buf: Vec<u8> = vec![0; len];
@@ -387,7 +420,6 @@ impl File for KFile {
         let buf_end = len;
 
         while buf_offset < buf_end {
-            // TODO error handle?
             let page = page_cache.get_page(offset, None).expect("get page error");
             let page_offset = offset % PAGE_SIZE;
             let mut buf_offset_end = buf_offset + (PAGE_SIZE - page_offset);
@@ -404,50 +436,15 @@ impl File for KFile {
 
         buf
     }
-
-    fn read_at_direct(&self, offset: usize, len: usize) -> Vec<u8> {
-        let mut buf: Vec<u8> = vec![0; len];
-        let inner = self.inner();
-        inner.read_at(offset, &mut buf);
-        buf
-    }
-
     // change file offset
-    // TODO lzm
     fn read_to_kspace(&self) -> Vec<u8> {
         let file_size = self.file_size();
         let offset = self.offset();
         let len = file_size - offset;
-        let res = self.read_to_kspace_with_offset(offset, len);
+        let res = self.kernel_read_with_offset(offset, len);
         self.seek(offset + res.len());
         res
     }
-
-    fn write_from_direct(&self, offset: usize, data: &Vec<u8>) -> usize {
-        let inner = self.inner();
-        // TODO lzm
-        if offset + data.len() > self.file_size() {
-            self.set_file_size(offset + data.len());
-        }
-        inner.write_at(offset, data)
-    }
-
-    fn path(&self) -> AbsolutePath {
-        self.path.clone()
-    }
-
-    fn readable(&self) -> bool {
-        self.readable
-    }
-
-    fn writable(&self) -> bool {
-        self.writable
-    }
-
-    fn available(&self) -> bool {
-        *self.available.lock()
-    }
-
     fn read_to_ubuf(&self, mut buf: UserBuffer) -> usize {
         // with page cache
         time_trace!("read");
@@ -468,7 +465,7 @@ impl File for KFile {
             let slice_end = slice.len();
             let mut slice_offset = 0;
             while slice_offset < slice_end {
-                // to avoid slice's length spread page boundary (howerver, it's low probability)
+                // to avoid slice's length spread page boundary
                 let offset = self.offset();
                 let page = page_cache.get_page(offset, None).expect("get page error");
                 let page_offset = offset % PAGE_SIZE;
@@ -486,7 +483,7 @@ impl File for KFile {
         }
         total_read_size
     }
-    // 同read_to_ubuf，只是不会改变offset
+    // The same as read_to_ubuf, but will not change offset
     fn pread(&self, mut buf: UserBuffer, offset: usize) -> usize {
         time_trace!("read");
         let mut offset = offset;
@@ -506,7 +503,7 @@ impl File for KFile {
             let slice_end = slice.len();
             let mut slice_offset = 0;
             while slice_offset < slice_end {
-                // to avoid slice's length spread page boundary (howerver, it's low probability)
+                // to avoid slice's length spread page boundary
                 let page = page_cache.get_page(offset, None).expect("get page error");
                 let page_offset = offset % PAGE_SIZE;
                 let mut slice_offset_end = slice_offset + (PAGE_SIZE - page_offset);
@@ -523,6 +520,37 @@ impl File for KFile {
         }
         total_read_size
     }
+    fn write_from_kspace(&self, data: &Vec<u8>) -> usize {
+        let mut total_write_size = 0usize;
+        let page_cache = self.page_cache().as_ref().cloned().unwrap();
+        let mut offset = if self.flags().contains(OpenFlags::O_APPEND) {
+            self.file_size()
+        } else {
+            self.offset()
+        };
+        let mut slice_offset = 0;
+        let slice_end = data.len();
+        while slice_offset < slice_end {
+            // to avoid slice's length spread page boundary
+            let page = page_cache.get_page(offset, None).expect("get page error");
+            let page_offset = offset % PAGE_SIZE;
+            let mut slice_offset_end = slice_offset + (PAGE_SIZE - page_offset);
+            if slice_offset_end > slice_end {
+                slice_offset_end = slice_end;
+            }
+            let write_size = page
+                .write(page_offset, &data[slice_offset..slice_offset_end])
+                .expect("read page error");
+            offset += write_size;
+            self.seek(offset);
+            slice_offset += write_size;
+            total_write_size += write_size;
+        }
+        if self.file_size() < offset {
+            self.set_file_size(offset);
+        }
+        total_write_size
+    }
     fn write_from_ubuf(&self, buf: UserBuffer) -> usize {
         time_trace!("write");
         let mut total_write_size = 0usize;
@@ -536,7 +564,7 @@ impl File for KFile {
             let slice_end = slice.len();
             let mut slice_offset = 0;
             while slice_offset < slice_end {
-                // to avoid slice's length spread page boundary (howerver, it's low probability)
+                // to avoid slice's length spread page boundary
                 let page = page_cache.get_page(offset, None).expect("get page error");
                 let page_offset = offset % PAGE_SIZE;
                 let mut slice_offset_end = slice_offset + (PAGE_SIZE - page_offset);
@@ -550,7 +578,6 @@ impl File for KFile {
                 self.seek(offset);
                 slice_offset += write_size;
                 total_write_size += write_size;
-                // page.sync().expect("sync page error");
             }
         }
         if self.file_size() < offset {
@@ -558,6 +585,7 @@ impl File for KFile {
         }
         total_write_size
     }
+    // The same as write_from_ubuf, but will not change offset
     fn pwrite(&self, buf: UserBuffer, offset: usize) -> usize {
         time_trace!("write");
         let mut total_write_size = 0usize;
@@ -591,47 +619,66 @@ impl File for KFile {
         }
         total_write_size
     }
-    fn write_from_kspace(&self, data: &Vec<u8>) -> usize {
-        // with page cache
-        let mut total_write_size = 0usize;
-        let page_cache = self.page_cache().as_ref().cloned().unwrap();
-        let mut offset = if self.flags().contains(OpenFlags::O_APPEND) {
-            self.file_size()
-        } else {
-            self.offset()
-        };
-        let mut slice_offset = 0;
-        let slice_end = data.len();
-        while slice_offset < slice_end {
-            // to avoid slice's length spread page boundary (howerver, it's low probability)
-            let page = page_cache.get_page(offset, None).expect("get page error");
-            let page_offset = offset % PAGE_SIZE;
-            let mut slice_offset_end = slice_offset + (PAGE_SIZE - page_offset);
-            if slice_offset_end > slice_end {
-                slice_offset_end = slice_end;
-            }
-            let write_size = page
-                .write(page_offset, &data[slice_offset..slice_offset_end])
-                .expect("read page error");
-            offset += write_size;
-            self.seek(offset);
-            slice_offset += write_size;
-            total_write_size += write_size;
-        }
-        if self.file_size() < offset {
-            self.set_file_size(offset);
-        }
-        total_write_size
-    }
-    fn set_time(&self, time_info: TimeInfo) {
+    fn set_time(&self, time_info: InodeTime) {
         let mut time_lock = self.time_info.lock();
         // 根据测例改动
-        if time_info.mtime < time_lock.mtime {
-            time_lock.atime = time_info.atime;
-            time_lock.ctime = time_info.ctime;
+        if time_info.modify_time < time_lock.modify_time {
+            time_lock.access_time = time_info.access_time;
+            time_lock.create_time = time_info.create_time;
         } else {
             *time_lock = time_info;
         }
+    }
+    // set dir entry
+    fn dirent(&self, dirent: &mut Dirent) -> isize {
+        if !self.is_dir() {
+            return -1;
+        }
+        let inner = self.file();
+        let offset = self.offset();
+        if let Some((name, offset, first_cluster, _attr)) = inner.dir_info(offset) {
+            dirent.init(name.as_str(), offset as isize, first_cluster as usize);
+            self.seek(offset as usize);
+            // return size of Dirent as read size
+            core::mem::size_of::<Dirent>() as isize
+        } else {
+            -1
+        }
+    }
+    fn fstat(&self, kstat: &mut Kstat) {
+        let inner = self.file();
+        let vfile = inner.clone();
+        let mut st_mode = 0;
+        _ = st_mode;
+        let (st_size, st_blksize, st_blocks, is_dir, _time) = vfile.stat();
+
+        if is_dir {
+            st_mode = S_IFDIR;
+        } else {
+            st_mode = S_IFREG;
+        }
+        if vfile.name() == "null"
+            || vfile.name() == "NULL"
+            || vfile.name() == "zero"
+            || vfile.name() == "ZERO"
+        {
+            st_mode = S_IFCHR;
+        }
+        let time_info = self.time_info.lock();
+        let atime = time_info.access_time;
+        let mtime = time_info.modify_time;
+        let ctime = time_info.create_time;
+        let ino = ino_alloc();
+        kstat.init(
+            st_size as i64,
+            st_blksize as i32,
+            st_blocks as u64,
+            ino,
+            st_mode as u32,
+            atime as i64,
+            mtime as i64,
+            ctime as i64,
+        );
     }
     fn name(&self) -> &str {
         self.name()
@@ -651,60 +698,44 @@ impl File for KFile {
     fn set_cloexec(&self) {
         *self.available.lock() = false;
     }
-    // set dir entry
-    fn dirent(&self, dirent: &mut Dirent) -> isize {
-        if !self.is_dir() {
-            return -1;
-        }
-        let inner = self.inner();
-        let offset = self.offset();
-        if let Some((name, offset, first_cluster, _attr)) = inner.dir_info(offset) {
-            dirent.init(name.as_str(), offset as isize, first_cluster as usize);
-            self.seek(offset as usize);
-            // return size of Dirent as read size
-            core::mem::size_of::<Dirent>() as isize
-        } else {
-            -1
-        }
+    fn path(&self) -> AbsolutePath {
+        self.path.clone()
     }
-    fn fstat(&self, kstat: &mut Kstat) {
-        let inner = self.inner();
-        let vfile = inner.clone();
-        let mut st_mode = 0;
-        _ = st_mode;
-        let (st_size, st_blksize, st_blocks, is_dir, _time) = vfile.stat();
-
-        if is_dir {
-            st_mode = S_IFDIR;
-        } else {
-            st_mode = S_IFREG;
-        }
-        if vfile.name() == "null"
-            || vfile.name() == "NULL"
-            || vfile.name() == "zero"
-            || vfile.name() == "ZERO"
-        {
-            st_mode = S_IFCHR;
-        }
-        let time_info = self.time_info.lock();
-        let atime = time_info.atime;
-        let mtime = time_info.mtime;
-        let ctime = time_info.ctime;
-        kstat.init(
-            st_size as i64,
-            st_blksize as i32,
-            st_blocks as u64,
-            st_mode as u32,
-            atime as i64,
-            mtime as i64,
-            ctime as i64,
-        );
+    fn readable(&self) -> bool {
+        self.readable
+    }
+    fn writable(&self) -> bool {
+        self.writable
+    }
+    fn available(&self) -> bool {
+        *self.available.lock()
     }
     fn file_size(&self) -> usize {
         self.file_size()
     }
     fn truncate(&self, new_length: usize) {
-        let inner = self.inner();
+        let inner = self.file();
         inner.modify_size(new_length);
+    }
+    // Currently not used in the kernel. Design problem, it can be used to design general
+    // Inode and PageCache, which can use this method to create page cache
+    // (the file parameter field of Inode and PageCache can be Arc<dyn File>,
+    // but the current kernel file is coupled with fat32 file),
+    fn read_at_direct(&self, offset: usize, len: usize) -> Vec<u8> {
+        let mut buf: Vec<u8> = vec![0; len];
+        let inner = self.file();
+        inner.read_at(offset, &mut buf);
+        buf
+    }
+    // Currently not used in the kernel. Design problem, it can be used to design general
+    // Inode and PageCache, which can use this method to create page cache
+    // (the file parameter field of Inode and PageCache can be Arc<dyn File>,
+    // but the current kernel file is coupled with fat32 file),
+    fn write_from_direct(&self, offset: usize, data: &Vec<u8>) -> usize {
+        let inner = self.file();
+        if offset + data.len() > self.file_size() {
+            self.set_file_size(offset + data.len());
+        }
+        inner.write_at(offset, data)
     }
 }
