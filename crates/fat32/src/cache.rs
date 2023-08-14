@@ -1,5 +1,7 @@
 //! Block cache
-//! 关于 BlockCache 使用 Vec<u8> 的原因: https://github.com/rcore-os/rCore-Tutorial-v3/pull/79
+//! The reason why BlockCache uses Vec<u8>: https://github.com/rcore-os/rCore-Tutorial-v3/pull/79
+//! alse see atricle: https://gitlab.eduxiji.net/2019301887/oskernel2022-npucore/-/blob/master/Doc/debug/Virt-IO%E9%A9%B1%E5%8A%A8bug.md
+
 use super::device::BlockDevice;
 use super::{BLOCK_CACHE_LIMIT, BLOCK_SIZE};
 
