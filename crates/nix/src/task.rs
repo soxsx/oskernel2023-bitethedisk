@@ -26,3 +26,105 @@ pub const AT_HWCAP: usize = 16; // arch dependent hints at CPU capabilities
 pub const AT_CLKTCK: usize = 17; // frequency at which times() increments
 pub const AT_SECURE: usize = 23; // secure mode boolean
 pub const AT_RANDOM: usize = 25; // address of 16 random bytes
+
+pub const RUSAGE_SELF: isize = 0;
+
+pub const SCHED_OTHER: isize = 0;
+pub const SCHED_FIFO: isize = 1;
+pub const SCHED_RR: isize = 2;
+pub const SCHED_BATCH: isize = 3;
+pub const SCHED_IDLE: isize = 5;
+pub const SCHED_DEADLINE: isize = 6;
+
+#[repr(C)]
+pub struct SchedParam {
+    sched_priority: isize,
+}
+impl SchedParam {
+    pub fn new() -> Self {
+        Self { sched_priority: 0 }
+    }
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe { core::slice::from_raw_parts(&self.sched_priority as *const isize as *const u8, 8) }
+    }
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            core::slice::from_raw_parts_mut(&mut self.sched_priority as *mut isize as *mut u8, 8)
+        }
+    }
+    pub fn set_priority(&mut self, priority: isize) {
+        self.sched_priority = priority;
+    }
+    pub fn get_priority(&self) -> isize {
+        self.sched_priority
+    }
+}
+
+#[repr(C)]
+pub struct SchedPolicy(isize);
+
+pub struct CpuMask {
+    mask: [u8; 1024 / (8 * core::mem::size_of::<u8>())],
+}
+impl CpuMask {
+    pub fn new() -> Self {
+        Self {
+            mask: [0; 1024 / (8 * core::mem::size_of::<u8>())],
+        }
+    }
+    pub fn set(&mut self, cpu: usize) {
+        let index = cpu / (8 * core::mem::size_of::<u8>());
+        let offset = cpu % (8 * core::mem::size_of::<u8>());
+        self.mask[index] |= 1 << offset;
+    }
+    pub fn get(&self, cpu: usize) -> bool {
+        let index = cpu / (8 * core::mem::size_of::<u8>());
+        let offset = cpu % (8 * core::mem::size_of::<u8>());
+        self.mask[index] & (1 << offset) != 0
+    }
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.mask
+    }
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        &mut self.mask
+    }
+}
+
+#[repr(C)]
+pub struct CpuSet {
+    mask: [usize; 1024 / (8 * core::mem::size_of::<usize>())],
+}
+
+impl CpuSet {
+    pub fn new() -> Self {
+        Self {
+            mask: [0; 1024 / (8 * core::mem::size_of::<usize>())],
+        }
+    }
+    pub fn set(&mut self, cpu: usize) {
+        let index = cpu / (8 * core::mem::size_of::<usize>());
+        let offset = cpu % (8 * core::mem::size_of::<usize>());
+        self.mask[index] |= 1 << offset;
+    }
+    pub fn get(&self, cpu: usize) -> bool {
+        let index = cpu / (8 * core::mem::size_of::<usize>());
+        let offset = cpu % (8 * core::mem::size_of::<usize>());
+        self.mask[index] & (1 << offset) != 0
+    }
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            core::slice::from_raw_parts(
+                self as *const Self as *const u8,
+                core::mem::size_of::<Self>(),
+            )
+        }
+    }
+    pub fn as_mut_bytes(&mut self) -> &mut [u8] {
+        unsafe {
+            core::slice::from_raw_parts_mut(
+                self as *mut Self as *mut u8,
+                core::mem::size_of::<Self>(),
+            )
+        }
+    }
+}

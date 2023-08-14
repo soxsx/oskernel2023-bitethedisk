@@ -1,3 +1,39 @@
+pub const AT_FDCWD: isize = -100;
+
+pub const TCGETS: usize = 0x5401;
+pub const TCSETS: usize = 0x5402;
+pub const TIOCGPGRP: usize = 0x540f;
+pub const TIOCSPGRP: usize = 0x5410;
+pub const TIOCGWINSZ: usize = 0x5413;
+pub const RTC_RD_TIME: usize = 0xffffffff80247009; // 这个值还需考量
+
+bitflags! {
+#[derive(PartialEq, Eq, Debug)]
+    pub struct FcntlFlags:usize{
+        const F_DUPFD = 0;
+        const F_GETFD = 1;
+        const F_SETFD = 2;
+        const F_GETFL = 3;
+        const F_SETFL = 4;
+        const F_GETLK = 5;
+        const F_SETLK = 6;
+        const F_SETLKW = 7;
+        const F_SETOWN = 8;
+        const F_GETOWN = 9;
+        const F_SETSIG = 10;
+        const F_GETSIG = 11;
+        const F_SETOWN_EX = 15;
+        const F_GETOWN_EX = 16;
+        const F_GETOWNER_UIDS = 17;
+
+        // 发现 F_UNLCK = 2 , 这个标记分类待研究
+        const F_DUPFD_CLOEXEC = 1030;
+    }
+}
+
+pub const UTIME_NOW: u64 = 0x3fffffff;
+pub const UTIME_OMIT: u64 = 0x3ffffffe;
+
 #[repr(C)]
 pub struct Statfs {
     pub f_type: u64,
