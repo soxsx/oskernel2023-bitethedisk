@@ -198,3 +198,18 @@ impl itimerval {
         }
     }
 }
+#[derive(Debug, Clone)]
+pub struct IntervalTimer {
+    /// Creation time of the timer.
+    pub creation_time: TimeVal,
+    pub timer_value: itimerval,
+}
+
+impl IntervalTimer {
+    pub fn new(timer_value: itimerval, creation_time: TimeVal) -> Self {
+        Self {
+            creation_time,
+            timer_value,
+        }
+    }
+}
