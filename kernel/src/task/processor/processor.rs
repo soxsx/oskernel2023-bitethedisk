@@ -2,11 +2,11 @@ use crate::task::manager::TASK_MANAGER;
 use crate::task::{task::TaskControlBlock, TaskContext};
 use alloc::sync::Arc;
 
-/// 每个核上的处理器, 负责运行一个进程
+/// Processor provides a series of abstractions
 pub struct Processor {
-    /// 当前处理器上正在执行的任务
+    /// Current task running on this processor
     current: Option<Arc<TaskControlBlock>>,
-    /// 当前处理器上的 idle 控制流的任务上下文
+    /// Current idle task context on this processor
     idle_task_cx: TaskContext,
 }
 

@@ -2,7 +2,7 @@ use crate::task::TaskControlBlock;
 use alloc::sync::Arc;
 
 pub struct HangingTask {
-    wake_up_time: usize, // 单位: ns
+    wake_up_time: usize, // nanoseconds
     inner: Arc<TaskControlBlock>,
 }
 impl PartialEq for HangingTask {

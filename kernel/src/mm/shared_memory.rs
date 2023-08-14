@@ -1,8 +1,9 @@
+use crate::mm::PhysAddr;
 use crate::task::current_task;
 use crate::timer::get_time;
-use crate::{fs::CreateMode, mm::PhysAddr};
 use alloc::{collections::BTreeMap, vec::Vec};
 
+use nix::{CreateMode, SharedMemoryIdentifierDs};
 use spin::Mutex;
 lazy_static! {
     pub static ref SHM_MANAGER: Mutex<SharedMemoryManager> = Mutex::new(SharedMemoryManager::new());
@@ -14,16 +15,7 @@ pub struct SharedMemoryArea {
     shmid_ds: SharedMemoryIdentifierDs,
     buffer: Vec<u8>,
 }
-pub struct SharedMemoryIdentifierDs {
-    _shm_perm: CreateMode, /* Ownership and permissions */
-    shm_size: usize,       /* Size of segment (bytes) */
-    shm_atime: usize,      /* Last attach time */
-    shm_dtime: usize,      /* Last detach time */
-    _shm_ctime: usize,     /* Creation time/time of last modification via shmctl() */
-    _shm_cpid: usize,      /* PID of creator */
-    shm_lpid: usize,       /* PID of last shmat(2)/shmdt(2) */
-    shm_nattch: usize,     /* Number of current attaches */
-}
+
 pub struct SharedMemoryTracker {
     pub key: usize,
 }
@@ -57,12 +49,12 @@ impl SharedMemoryManager {
         let pid = current_task().pid();
         let perm = CreateMode::from_bits((shmflags & 0o777) as u32).unwrap();
         let shmid_ds = SharedMemoryIdentifierDs {
-            _shm_perm: perm,
+            shm_perm: perm,
             shm_size: size,
             shm_atime: 0,
             shm_dtime: 0,
-            _shm_ctime: get_time(),
-            _shm_cpid: pid,
+            shm_ctime: get_time(),
+            shm_cpid: pid,
             shm_lpid: 0,
             shm_nattch: 0,
         };

@@ -2,33 +2,27 @@
 //!
 //! The kernel uniformly borrows the VirtFile provided by the fat32 file system as the object for the kernel to operate files.
 
-mod dirent;
 mod fat32;
-mod fdset;
 mod file;
 mod mount;
-mod open_flags;
 mod page_cache;
 mod pipe;
-mod stat;
 mod stdio;
 pub use self::fat32::*;
-pub use dirent::*;
-pub use fdset::*;
 pub use file::*;
 pub use mount::*;
-pub use open_flags::*;
 pub use page_cache::*;
 pub use path::*;
 pub use pipe::*;
-pub use stat::*;
 pub use stdio::*;
 
 mod page;
 pub use page::*;
 
 use alloc::string::ToString;
+use nix::{CreateMode, OpenFlags};
 use path::AbsolutePath;
+use sync_cell::SyncRefCell;
 
 pub fn init() {
     // 预创建文件/文件夹
@@ -117,4 +111,25 @@ pub fn init() {
     println!("===+ Files Loaded +===");
     list_apps(AbsolutePath::from_string("/".to_string()));
     println!("===+==============+===");
+}
+
+static INO_ALLOCATOR: SyncRefCell<Allocator> = SyncRefCell::new(Allocator::new());
+struct Allocator {
+    current: u64,
+}
+impl Allocator {
+    pub const fn new() -> Self {
+        Allocator { current: 0 }
+    }
+    fn fetch_add(&mut self) -> u64 {
+        let id = self.current;
+        self.current += 1;
+        id
+    }
+    pub fn alloc(&mut self) -> u64 {
+        self.fetch_add()
+    }
+}
+pub fn ino_alloc() -> u64 {
+    INO_ALLOCATOR.borrow_mut().alloc()
 }

@@ -1,8 +1,8 @@
-/// 获取当前 CPU id
+/// Get the current CPU id
 ///
-/// 通过 RISC-V SBI 规范, SBI 会将 `mhartid` 读到 `a0` 寄存器
+/// According to the RISC-V SBI specification, SBI will read `mhartid` to the `a0` register
 ///
-/// 我们在 `entry.S` 中将 `a0` 读到了 `tp` 中, 之后不再更改 `tp` 中的值
+/// We read `a0` to `tp` in `entry.S`, and then do not change the value in `tp`
 macro_rules! hartid {
     () => { {
         let hartid: usize;

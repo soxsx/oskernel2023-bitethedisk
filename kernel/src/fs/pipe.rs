@@ -1,21 +1,20 @@
 use super::file::File;
 use crate::mm::UserBuffer;
+use crate::task::suspend_current_and_run_next;
 use alloc::{
     sync::{Arc, Weak},
     vec::Vec,
 };
+use nix::Kstat;
 use spin::Mutex;
-
-use crate::task::suspend_current_and_run_next;
 
 pub struct Pipe {
     readable: bool,
     writable: bool,
     buffer: Arc<Mutex<PipeRingBuffer>>,
 }
-
 impl Pipe {
-    /// 创建管道的读端
+    /// Create the read end of a pipe.
     pub fn read_end_with_buffer(buffer: Arc<Mutex<PipeRingBuffer>>) -> Self {
         Self {
             readable: true,
@@ -23,7 +22,7 @@ impl Pipe {
             buffer,
         }
     }
-    /// 创建管道的写端
+    /// Create the write end of a pipe.
     pub fn write_end_with_buffer(buffer: Arc<Mutex<PipeRingBuffer>>) -> Self {
         Self {
             readable: false,
@@ -33,7 +32,6 @@ impl Pipe {
     }
 }
 
-/// 管道缓冲区状态
 #[derive(Copy, Clone, PartialEq)]
 enum RingBufferStatus {
     Full,
@@ -43,19 +41,17 @@ enum RingBufferStatus {
 
 const RING_BUFFER_SIZE: usize = 4096;
 
-/// ### 管道缓冲区(双端队列,向右增长)
-/// |成员变量|描述|
-/// |--|--|
-/// |`arr`|缓冲区内存块|
-/// |`head`|队列头, 读|
-/// |`tail`|队列尾, 写|
-/// |`status`|队列状态|
-/// |`write_end`|保存了它的写端的一个弱引用计数, <br>在需要确认该管道所有的写端是否都已经被关闭时, <br>通过这个字段很容易确认这一点|
 pub struct PipeRingBuffer {
+    /// Buffer memory block
     arr: [u8; RING_BUFFER_SIZE],
+    /// Queue head, read
     head: usize,
+    /// Queue tail, write
     tail: usize,
+    /// Queue status
     status: RingBufferStatus,
+    /// Save a weak reference count of its write end.
+    /// Used to determine if all write ends of the pipe have been closed.
     write_end: Option<Weak<Pipe>>,
 }
 
@@ -72,7 +68,7 @@ impl PipeRingBuffer {
     pub fn set_write_end(&mut self, write_end: &Arc<Pipe>) {
         self.write_end = Some(Arc::downgrade(write_end));
     }
-    /// 写一个字节到管道尾
+    /// Write a byte to the tail of the pipe
     pub fn write_byte(&mut self, byte: u8) {
         self.status = RingBufferStatus::Normal;
         self.arr[self.tail] = byte;
@@ -81,7 +77,7 @@ impl PipeRingBuffer {
             self.status = RingBufferStatus::Full;
         }
     }
-    /// 从管道头读一个字节
+    /// Read a byte from the head of the pipe
     pub fn read_byte(&mut self) -> u8 {
         self.status = RingBufferStatus::Normal;
         let c = self.arr[self.head];
@@ -91,7 +87,7 @@ impl PipeRingBuffer {
         }
         c
     }
-    /// 获取管道中剩余可读长度
+    /// Get the remaining readable length in the pipe
     pub fn available_read(&self) -> usize {
         if self.status == RingBufferStatus::Empty {
             0
@@ -101,7 +97,7 @@ impl PipeRingBuffer {
             self.tail + RING_BUFFER_SIZE - self.head
         }
     }
-    /// 获取管道中剩余可写长度
+    /// Get the remaining writable length in the pipe
     pub fn available_write(&self) -> usize {
         if self.status == RingBufferStatus::Full {
             0
@@ -109,13 +105,13 @@ impl PipeRingBuffer {
             RING_BUFFER_SIZE - self.available_read()
         }
     }
-    /// 通过管道缓冲区写端弱指针判断管道的所有写端都被关闭
+    /// Check if all write ends of the pipe have been closed by the weak pointer of the pipe buffer write end
     pub fn all_write_ends_closed(&self) -> bool {
         self.write_end.as_ref().unwrap().upgrade().is_none()
     }
 }
 
-/// 创建一个管道并返回管道的读端和写端 (read_end, write_end)
+/// Create a pipe and return the read end and write end of the pipe (read_end, write_end)
 pub fn make_pipe() -> (Arc<Pipe>, Arc<Pipe>) {
     let buffer = Arc::new(Mutex::new(PipeRingBuffer::new()));
     let read_end = Arc::new(Pipe::read_end_with_buffer(buffer.clone()));
@@ -181,7 +177,6 @@ impl File for Pipe {
                 }
                 continue;
             }
-
             for _ in 0..loop_write {
                 if let Some(byte_ref) = buf_iter.next() {
                     ring_buffer.write_byte(unsafe { *byte_ref });
@@ -192,19 +187,15 @@ impl File for Pipe {
             }
         }
     }
-
     fn name(&self) -> &str {
         "pipe"
     }
-
     fn offset(&self) -> usize {
         return 0;
     }
-
     fn seek(&self, _offset: usize) {
         return;
     }
-
     fn read_to_kspace(&self) -> Vec<u8> {
         assert_eq!(self.readable(), true);
         let mut buf: Vec<u8> = Vec::new();
@@ -251,27 +242,22 @@ impl File for Pipe {
             }
         }
     }
-
     fn file_size(&self) -> usize {
         core::usize::MAX
     }
-
     fn r_ready(&self) -> bool {
         let ring_buffer = self.buffer.lock();
         let loop_read = ring_buffer.available_read();
         loop_read > 0
     }
-
     fn w_ready(&self) -> bool {
         let ring_buffer = self.buffer.lock();
         let loop_write = ring_buffer.available_write();
         loop_write > 0
     }
-
-    fn fstat(&self, _kstat: &mut super::Kstat) {
-        // TODO: 是否要实现
+    fn fstat(&self, _kstat: &mut Kstat) {
+        // TODO: if needed to implement?
     }
-
     fn set_cloexec(&self) {
         let pipe = unsafe { (self as *const _ as *mut Self).as_mut().unwrap() };
         pipe.readable = false;

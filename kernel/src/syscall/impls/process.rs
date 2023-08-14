@@ -1,12 +1,10 @@
 //! 进程相关系统调用
 
 use crate::board::CLOCK_FREQ;
-use crate::fs::PollFd;
 use core::task::Poll;
 use core::usize;
 
-use crate::fs::CreateMode;
-use crate::fs::{make_pipe, open, OpenFlags};
+use crate::fs::{make_pipe, open};
 use crate::mm::{
     copyin, copyout, translated_bytes_buffer, translated_mut, translated_ref, translated_str,
     UserBuffer, VirtPageNum,
@@ -14,7 +12,7 @@ use crate::mm::{
 use crate::return_errno;
 use crate::task::{
     add_task, current_task, current_user_token, exit_current_and_run_next, pid2task,
-    suspend_current_and_run_next, SigAction, SigMask, Signal, SignalContext, MAX_SIGNUM,
+    suspend_current_and_run_next, SignalContext,
 };
 use crate::timer::get_timeval;
 use crate::timer::{get_time, NSEC_PER_SEC};
@@ -24,6 +22,9 @@ use nix::info::{CloneFlags, RUsage, Utsname};
 use nix::resource::{RLimit, Resource};
 use nix::robustlist::RobustList;
 use nix::time::{TimeSpec, TimeVal};
+use nix::{
+    CreateMode, MaskFlags, OpenFlags, SigAction, SigInfo, SigMask, Signal, UContext, MAX_SIGNUM,
+};
 
 use super::super::errno::*;
 use super::*;

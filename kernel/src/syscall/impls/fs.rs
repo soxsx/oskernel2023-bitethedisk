@@ -1,10 +1,7 @@
 //! 文件相关的系统调用
 
 use super::super::errno::*;
-use crate::fs::CreateMode;
-use crate::fs::FdSet;
-use crate::fs::{chdir, make_pipe, open, Dirent, File, Kstat, OpenFlags, Stdin, MNT_TABLE};
-use crate::fs::{Statfs, TimeInfo};
+use crate::fs::{chdir, make_pipe, open, File, Stdin, MNT_TABLE};
 use crate::mm::{
     translated_bytes_buffer, translated_mut, translated_ref, translated_str, UserBuffer, VirtAddr,
 };
@@ -19,7 +16,8 @@ use alloc::{sync::Arc, vec::Vec};
 use core::mem::size_of;
 use fat32::sync_all;
 use nix::time::{TimeSpec, TimeVal};
-use nix::Iovec;
+use nix::{CreateMode, Dirent, InodeTime, Kstat, OpenFlags, Statfs};
+use nix::{FdSet, Iovec};
 use spin::RwLock;
 
 use super::*;
@@ -1230,7 +1228,7 @@ pub fn sys_utimensat(
     let mut time1 = TimeSpec::empty();
 
     let time = TimeSpec::from_ticks(get_time());
-    let mut time_info = TimeInfo::empty();
+    let mut time_info = InodeTime::empty();
 
     if times as usize != 0 {
         let times = translated_ref(token, times);
@@ -1239,24 +1237,24 @@ pub fn sys_utimensat(
         // { info!("utimensat: {:?}, {:?}, {:x?}, {:x?}",dirfd, pathname, time0, time1); }
         match time0.tv_nsec {
             UTIME_NOW => {
-                time_info.atime = time.tv_sec;
+                time_info.access_time = time.tv_sec;
             }
             UTIME_OMIT => {
-                time_info.atime = 0;
+                time_info.access_time = 0;
             }
             _ => {
-                time_info.atime = time0.tv_sec;
+                time_info.access_time = time0.tv_sec;
             }
         }
         match time1.tv_nsec {
             UTIME_NOW => {
-                time_info.mtime = time.tv_sec;
+                time_info.modify_time = time.tv_sec;
             }
             UTIME_OMIT => {
-                time_info.mtime = 0;
+                time_info.modify_time = 0;
             }
             _ => {
-                time_info.mtime = time1.tv_sec;
+                time_info.modify_time = time1.tv_sec;
             }
         }
     }

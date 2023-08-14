@@ -1,8 +1,8 @@
-use super::{Dirent, Kstat, OpenFlags, TimeInfo};
 use crate::mm::UserBuffer;
 use alloc::vec::Vec;
 use core::fmt::Debug;
 use core::fmt::{self, Formatter};
+use nix::{Dirent, InodeTime, Kstat, OpenFlags};
 use path::AbsolutePath;
 
 pub trait File: Send + Sync {
@@ -25,7 +25,7 @@ pub trait File: Send + Sync {
     fn write_from_direct(&self, _offset: usize, _data: &Vec<u8>) -> usize {
         panic!("{} not implement write_from_direct", self.name());
     }
-    fn read_to_kspace_with_offset(&self, _offset: usize, _len: usize) -> Vec<u8> {
+    fn kernel_read_with_offset(&self, _offset: usize, _len: usize) -> Vec<u8> {
         panic!("{} not implement read_to_kspace_with_offset", self.name());
     }
     fn seek(&self, _pos: usize) {
@@ -35,10 +35,10 @@ pub trait File: Send + Sync {
     fn fstat(&self, _kstat: &mut Kstat) {
         panic!("{} not implement fstat", self.name());
     }
-    fn set_time(&self, _xtime_info: TimeInfo) {
+    fn set_time(&self, _xtime_info: InodeTime) {
         panic!("{} not implement set_time", self.name());
     }
-    fn time(&self) -> TimeInfo {
+    fn time(&self) -> InodeTime {
         panic!("{} not implement get_time", self.name());
     }
     fn dirent(&self, _dirent: &mut Dirent) -> isize {

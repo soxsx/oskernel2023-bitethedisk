@@ -2,6 +2,7 @@
 //!
 //! 根据 trap 发生的原因进行分发处理
 
+use nix::SigMask;
 use riscv::register::{
     mcause,
     mstatus::{self},
@@ -16,7 +17,7 @@ use crate::{
     syscall::dispatcher::{syscall, SYS_SIGRETURN},
     task::{
         current_add_signal, current_task, current_trap_cx, exec_signal_handlers,
-        suspend_current_and_run_next, SigMask,
+        suspend_current_and_run_next,
     },
     timer::{check_interval_timer, get_timeval, set_next_trigger},
 };

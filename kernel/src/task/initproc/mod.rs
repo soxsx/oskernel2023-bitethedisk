@@ -1,16 +1,10 @@
 use core::arch::global_asm;
 
-use alloc::{borrow::ToOwned, sync::Arc, vec::Vec};
+use alloc::{borrow::ToOwned, sync::Arc};
+use nix::{CreateMode, OpenFlags};
 use path::AbsolutePath;
-use spin::RwLock;
 
-use crate::{
-    fs::{self, CreateMode, OpenFlags},
-    mm::MemorySet,
-    task::task::TaskControlBlock,
-};
-
-use super::AuxEntry;
+use crate::{fs::open, task::TaskControlBlock};
 
 global_asm!(include_str!("initproc.S"));
 
@@ -28,7 +22,7 @@ lazy_static! {
         let initproc = unsafe { core::slice::from_raw_parts(entry as *const u8, siz) };
         let path = AbsolutePath::from_str("/initproc");
 
-        let  inode = fs::open(path, OpenFlags::O_CREATE, CreateMode::empty()).expect("initproc create failed!");
+        let  inode = open(path, OpenFlags::O_CREATE, CreateMode::empty()).expect("initproc create failed!");
         inode.write_all(&initproc.to_owned());
 
         let task = TaskControlBlock::new(inode.clone());
@@ -36,45 +30,56 @@ lazy_static! {
         task
     });
 
-    // pub static ref BUSYBOX: RwLock<Busybox> = RwLock::new({
-    //     extern "C" {
-    //         fn busybox_entry();
-    //         fn busybox_tail();
-    //     }
-    //     let entry = busybox_entry as usize;
-    //     let tail = busybox_tail as usize;
-    //     let siz = tail - entry;
-
-    //     let busybox = unsafe { core::slice::from_raw_parts(entry as *const u8, siz) };
-    //     let path = AbsolutePath::from_str("/static-busybox");
-
-    //     let inode = fs::open(path, OpenFlags::O_CREATE, CreateMode::empty()).expect("static-busybox create failed");
-    //     inode.write_all(&busybox.to_owned());
-
-    //     let task = Arc::new(TaskControlBlock::new(inode.clone()));
-    //     inode.delete();
-    //     Busybox {
-    //         inner: task,
-    //     }
-    // });
 }
 
-// pub static mut STATIC_BUSYBOX_ENTRY: usize = 0;
-// pub static mut STATIC_BUSYBOX_AUX: Vec<AuxEntry> = Vec::new();
+// This is the processing done in the first stage of the national competition.
+// At that time, the file system was not optimized, and the page cache mechanism was not added.
+// We could only do some simple optimization.
+#[cfg(feature = "static_busybox")]
+pub static mut STATIC_BUSYBOX_ENTRY: usize = 0;
+#[cfg(feature = "static_busybox")]
+pub static mut STATIC_BUSYBOX_AUX: Vec<AuxEntry> = Vec::new();
+#[cfg(feature = "static_busybox")]
+pub struct Busybox {
+    inner: Arc<TaskControlBlock>,
+}
+#[cfg(feature = "static_busybox")]
+impl Busybox {
+    pub fn elf_entry_point(&self) -> usize {
+        unsafe { STATIC_BUSYBOX_ENTRY }
+    }
+    pub fn aux(&self) -> Vec<AuxEntry> {
+        use alloc::vec::Vec;
+        unsafe { STATIC_BUSYBOX_AUX.clone() }
+    }
+    pub fn memory_set(&self) -> MemorySet {
+        use crate::mm::MemorySet;
+        let mut memory_set = self.inner.memory_set.write();
+        MemorySet::from_copy_on_write(&mut memory_set)
+    }
+}
+#[cfg(feature = "static_busybox")]
+lazy_static! {
+    pub static ref BUSYBOX: RwLock<Busybox> = RwLock::new({
+        use super::AuxEntry;
+        use spin::RwLock;
+        extern "C" {
+            fn busybox_entry();
+            fn busybox_tail();
+        }
+        let entry = busybox_entry as usize;
+        let tail = busybox_tail as usize;
+        let siz = tail - entry;
 
-// pub struct Busybox {
-//     inner: Arc<TaskControlBlock>,
-// }
+        let busybox = unsafe { core::slice::from_raw_parts(entry as *const u8, siz) };
+        let path = AbsolutePath::from_str("/static-busybox");
 
-// impl Busybox {
-//     pub fn elf_entry_point(&self) -> usize {
-//         unsafe { STATIC_BUSYBOX_ENTRY }
-//     }
-//     pub fn aux(&self) -> Vec<AuxEntry> {
-//         unsafe { STATIC_BUSYBOX_AUX.clone() }
-//     }
-//     pub fn memory_set(&self) -> MemorySet {
-//         let mut memory_set = self.inner.memory_set.write();
-//         MemorySet::from_copy_on_write(&mut memory_set)
-//     }
-// }
+        let inode = open(path, OpenFlags::O_CREATE, CreateMode::empty())
+            .expect("static-busybox create failed");
+        inode.write_all(&busybox.to_owned());
+
+        let task = Arc::new(TaskControlBlock::new(inode.clone()));
+        inode.delete();
+        Busybox { inner: task }
+    });
+}

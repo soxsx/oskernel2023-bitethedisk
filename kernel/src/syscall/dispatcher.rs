@@ -1,10 +1,8 @@
 //! 根据 SYS_id 分发具体系统调用
 
-use crate::task::{SigAction, SigMask};
-
 use super::impls::*;
-use nix::RLimit;
 use nix::{itimerval, time::TimeSpec};
+use nix::{RLimit, SigAction, SigMask};
 
 // 系统调用号
 // const SYS_RT_SIGPROMASK: usize = 135;

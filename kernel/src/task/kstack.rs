@@ -1,11 +1,10 @@
-//! 进程内核栈
+//! Kernel stack for a process.
 
+use super::PidHandle;
 use crate::{
     consts::{KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE},
     mm::{acquire_kvmm, MapPermission, VirtAddr, VmAreaType},
 };
-
-use super::PidHandle;
 
 /// Return (bottom, top) of a kernel stack in kernel space.
 pub fn kernel_stack_position(id: usize) -> (usize, usize) {
@@ -14,13 +13,11 @@ pub fn kernel_stack_position(id: usize) -> (usize, usize) {
 
     (bottom, top)
 }
-
 pub struct KernelStack {
     pid: usize,
 }
-
 impl KernelStack {
-    /// 从一个已分配的进程标识符中对应生成一个内核栈
+    /// Generate a kernel stack for a process with a given pid.
     pub fn new(pid_handle: &PidHandle) -> Self {
         let pid = pid_handle.0;
         let (kernel_stack_bottom, kernel_stack_top) = kernel_stack_position(pid);
@@ -33,14 +30,12 @@ impl KernelStack {
 
         KernelStack { pid: pid_handle.0 }
     }
-
-    /// 获取当前应用内核栈顶在内核地址空间中的地址(这地址仅与app_id有关)
+    /// Get the top address of the kernel stack in the kernel address space.(This address is only related to app_id)
     pub fn top(&self) -> usize {
         let (_, kernel_stack_top) = kernel_stack_position(self.pid);
         kernel_stack_top
     }
 }
-
 impl Drop for KernelStack {
     fn drop(&mut self) {
         let (kernel_stack_bottom, _) = kernel_stack_position(self.pid);

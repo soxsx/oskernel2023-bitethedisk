@@ -6,19 +6,19 @@ use alloc::{
     vec::Vec,
 };
 use fat32::VirtFile;
-use nix::info;
 use spin::RwLock;
 
 use crate::{consts::PAGE_SIZE, mm::MapPermission, syscall::impls::Errno};
 
-use super::{File, FilePage};
+use super::FilePage;
 
 pub struct PageCache {
     inode: Option<Weak<VirtFile>>,
     // page number -> page
-    pages: RwLock<BTreeMap<usize, Arc<FilePage>>>,
+    pub pages: RwLock<BTreeMap<usize, Arc<FilePage>>>,
 }
 
+#[allow(unused)]
 impl PageCache {
     pub fn new(inode: Arc<VirtFile>) -> Self {
         Self {

@@ -42,7 +42,6 @@ lazy_static! {
     pub static ref PID2TCB: Mutex<BTreeMap<usize, Arc<TaskControlBlock>>> =
         Mutex::new(BTreeMap::new());
 }
-/// 通过PID获取对应的进程控制块
 pub fn pid2task(pid: usize) -> Option<Arc<TaskControlBlock>> {
     let map = PID2TCB.lock();
     map.get(&pid).map(Arc::clone)

@@ -6,13 +6,13 @@ use alloc::collections::{BinaryHeap, VecDeque};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-/// FIFO 任务管理器
+/// FIFO Task Manager
 pub struct TaskManager {
-    // 用于一般进程/线程的调度
+    // Used for general process/thread scheduling
     ready_queue: VecDeque<Arc<TaskControlBlock>>,
-    // 用于 sleep 的调度, 使用 BinaryHeap 方便对睡眠时间的管理
+    // Used for sleep scheduling, using BinaryHeap to facilitate the management of sleep time
     hanging_queue: BinaryHeap<HangingTask>,
-    // 用于 futex, 唤醒时加入 ready_queue
+    // Used for futex, add to ready_queue when waking up
     waiting_queue: VecDeque<Arc<TaskControlBlock>>,
 }
 
@@ -49,7 +49,7 @@ impl TaskManager {
             Some(self.hanging_queue.pop().unwrap().inner())
         }
     }
-    /// 检查被信号中断的进程/线程中是否有信号处理完成的 或 被 futex_wait 唤醒的
+    /// Check if there are signals that have been processed in the process/thread interrupted by the signal or woken up by futex_wait
     pub fn check_futex_interupt_or_expire(&mut self) -> Option<Arc<TaskControlBlock>> {
         for tcb in self.waiting_queue.iter() {
             let lock = tcb.inner_ref();
@@ -66,7 +66,6 @@ impl TaskManager {
         }
         None
     }
-
     pub fn unblock_task(&mut self, task: Arc<TaskControlBlock>) {
         let p = self
             .waiting_queue
@@ -82,7 +81,7 @@ impl TaskManager {
     }
 }
 
-/// 用于线程退出时对线程的收集, 与进程/线程调度时清理
+/// Used to collect threads when threads exit, and clean up when process/thread scheduling
 pub struct CancelledThreads {
     collector: Vec<Arc<TaskControlBlock>>,
 }

@@ -1,27 +1,30 @@
-use core::fmt::Debug;
-
-// use super::initproc::{STATIC_BUSYBOX_AUX, STATIC_BUSYBOX_ENTRY};
 use super::kstack::KernelStack;
-use super::{pid_alloc, AuxEntry, PidHandle, SigMask, SigSet};
-use super::{SigAction, TaskContext, MAX_SIGNUM};
+use super::TaskContext;
+use super::{pid_alloc, PidHandle, SigSet};
 use crate::consts::*;
 use crate::fs::{File, Stdin, Stdout};
 use crate::mm::acquire_kvmm;
+use crate::mm::copyout;
 use crate::mm::LoadedELF;
-use crate::mm::{copyout, MmapFlags};
-use crate::mm::{MemorySet, MmapProts, PhysPageNum, VirtAddr, VirtPageNum};
-use crate::timer::get_timeval;
+use crate::mm::{MemorySet, PhysPageNum, VirtAddr, VirtPageNum};
 use crate::trap::user_trap_handler;
 use crate::trap::TrapContext;
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
+use core::fmt::Debug;
 use nix::time::TimeVal;
-use nix::{itimerval, CloneFlags, RLimit, RobustList};
+use nix::{
+    AuxEntry, CloneFlags, IntervalTimer, MmapFlags, MmapProts, RLimit, RobustList, SigAction,
+    SigMask, MAX_SIGNUM,
+};
 use path::AbsolutePath;
 use riscv::register::scause::Scause;
 use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+
+#[cfg(feature = "static_busybox")]
+use super::initproc::{STATIC_BUSYBOX_AUX, STATIC_BUSYBOX_ENTRY};
 
 pub struct TaskControlBlock {
     pub pid: PidHandle,
@@ -77,53 +80,30 @@ pub struct TaskControlBlockInner {
     pub clear_child_tid: usize, /* CLONE_CHILD_CLEARTID */
 }
 
-#[derive(Debug, Clone)]
-pub struct IntervalTimer {
-    /// 定时器创建时间
-    pub creation_time: TimeVal,
-    pub timer_value: itimerval,
-}
-
-impl IntervalTimer {
-    pub fn new(timer_value: itimerval) -> Self {
-        Self {
-            creation_time: get_timeval(),
-            timer_value,
-        }
-    }
-}
-
 pub type FDTable = Vec<Option<Arc<dyn File>>>;
 
 impl TaskControlBlockInner {
     pub fn trap_context(&self) -> &'static mut TrapContext {
         self.trap_cx_ppn.as_mut()
     }
-
     fn status(&self) -> TaskStatus {
         self.task_status
     }
-
     pub fn is_zombie(&self) -> bool {
         self.status() == TaskStatus::Zombie
     }
-
     pub fn get_work_path(&self) -> AbsolutePath {
         self.cwd.clone()
     }
-
     pub fn add_utime(&mut self, new_time: TimeVal) {
         self.utime = self.utime + new_time;
     }
-
     pub fn add_stime(&mut self, new_time: TimeVal) {
         self.stime = self.stime + new_time;
     }
-
     pub fn set_last_enter_umode(&mut self, new_time: TimeVal) {
         self.last_enter_umode_time = new_time;
     }
-
     pub fn set_last_enter_smode(&mut self, new_time: TimeVal) {
         self.last_enter_smode_time = new_time;
     }
@@ -134,9 +114,10 @@ impl TaskControlBlock {
         self.memory_set.read().token()
     }
 
-    /// 查找空闲文件描述符下标
+    /// Find an empty slot in the file descriptor table
     ///
-    /// 从文件描述符表中 **由低到高** 查找空位, 返回向量下标, 没有空位则在最后插入一个空位
+    /// From low to high, find an empty slot in the file descriptor table,
+    /// return the vector subscript, and insert an empty slot at the end if there is no empty slot
     pub fn alloc_fd(fd_table: &mut FDTable, fd_limit: usize) -> usize {
         if let Some(fd) = (0..fd_table.len()).find(|fd| fd_table[*fd].is_none()) {
             fd
@@ -148,34 +129,33 @@ impl TaskControlBlock {
             fd_table.len() - 1
         }
     }
-
     pub fn inner_mut(&self) -> RwLockWriteGuard<'_, TaskControlBlockInner> {
         self.inner.write()
     }
-
     pub fn inner_ref(&self) -> RwLockReadGuard<'_, TaskControlBlockInner> {
         self.inner.read()
     }
-
-    /// 通过 elf 数据新建一个任务控制块
     pub fn new(elf: Arc<dyn File>) -> Self {
-        // 解析传入的 ELF 格式数据构造应用的地址空间 memory_set 并获得其他信息
+        // Translate ELF format data to construct the application address
+        // space memory_set and obtain other information
         let LoadedELF {
             memory_set,
             elf_entry: entry_point,
             user_stack_top: user_sp,
-            auxs,
+            auxs: _,
         } = MemorySet::load_elf(elf.clone());
 
-        // if elf.name() == "static-busybox" {
-        //     save_busybox_related(entry_point, auxs.clone());
-        // }
+        #[cfg(feature = "static_busybox")]
+        if elf.name() == "static-busybox" {
+            save_busybox_related(entry_point, auxs.clone());
+        }
 
-        // 为进程分配 PID 以及内核栈, 并记录下内核栈在内核地址空间的位置
+        // Allocate PID and kernel stack for the process,
+        // and record the position of the kernel stack in the kernel address space
         let pid_handle = pid_alloc();
         let tgid = pid_handle.0;
-        // 从地址空间 memory_set 中查多级页表找到应用地址空间中的 Trap 上下文实际被放在哪个物理页帧
-        // main tread: no need to  use fn: trap_context_position
+        // Find out which physical page frame the Trap context in the application address space is actually placed in
+        // note: main tread no need to use fn trap_context_position
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
             .unwrap()
@@ -183,7 +163,9 @@ impl TaskControlBlock {
         let kernel_stack = KernelStack::new(&pid_handle);
         let kernel_stack_top = kernel_stack.top();
 
-        // 在该进程的内核栈上压入初始化的任务上下文, 使得第一次任务切换到它的时候可以跳转到 trap_return 并进入用户态开始执行
+        // Push the initialized task context on the kernel stack of the process,
+        // so that when the task is switched to it for the first time,
+        // it can jump to trap_return and enter the user mode to start execution
         let task_control_block = Self {
             pid: pid_handle,
             tgid,
@@ -220,8 +202,10 @@ impl TaskControlBlock {
             }),
             sigactions: Arc::new(RwLock::new([SigAction::new(); MAX_SIGNUM as usize])),
         };
-        // 初始化位于该进程应用地址空间中的 Trap 上下文, 使得第一次进入用户态的时候时候能正
-        // 确跳转到应用入口点并设置好用户栈, 同时也保证在 Trap 的时候用户态能正确进入内核态
+        // Init the Trap context in the application address space so that when it first enters the user mode,
+        // it can be correct to enter the kernel mode when Trap occurs
+        // Jump to the application entry point and set the user stack,
+        // and also ensure that the user state can enter the kernel state correctly when Trap occurs
         let trap_cx = task_control_block.inner_mut().trap_context();
         *trap_cx = TrapContext::app_init_context(
             entry_point,
@@ -245,23 +229,25 @@ impl TaskControlBlock {
         drop(memory_set);
         let mut user_sp = user_sp;
 
-        // 计算共需要多少字节的空间
-        // let mut total_len = 0;
-        // for i in 0..envs.len() {
-        //     total_len += envs[i].len() + 1; // String 不包含 '\0'
-        // }
-        // for i in 0..args.len() {
-        //     total_len += args[i].len() + 1;
-        // }
-        // 先进行进行对齐
-        // let align = core::mem::size_of::<usize>() / core::mem::size_of::<u8>(); // 8
-        // let mut user_sp = user_sp - (align - total_len % align) * core::mem::size_of::<u8>();
-        // user_sp -= core::mem::size_of::<usize>();
-        // *translated_mut(token, user_sp as *mut usize) = 123;
-        // user_sp -= core::mem::size_of::<usize>();
-        // *translated_mut(token, user_sp as *mut usize) = 456;
+        #[cfg(feature = "u740")]
+        {
+            // Calculate the total length of args and envs
+            let mut total_len = 0;
+            for i in 0..envs.len() {
+                total_len += envs[i].len() + 1; // add 1 for '\0'
+            }
+            for i in 0..args.len() {
+                total_len += args[i].len() + 1;
+            }
+            let align = core::mem::size_of::<usize>() / core::mem::size_of::<u8>(); // 8
+            let mut user_sp = user_sp - (align - total_len % align) * core::mem::size_of::<u8>();
+            user_sp -= core::mem::size_of::<usize>();
+            *translated_mut(token, user_sp as *mut usize) = 123;
+            user_sp -= core::mem::size_of::<usize>();
+            *translated_mut(token, user_sp as *mut usize) = 456;
+        }
 
-        // 分配 envs 的空间, 加入动态链接库位置
+        // alloc envs space, and add the position of dynamic link libraryc
         let envs_ptrv: Vec<_> = (0..envs.len())
             .map(|idx| {
                 user_sp -= envs[idx].len() + 1; // 1 是手动添加结束标记的空间('\0')
@@ -276,23 +262,24 @@ impl TaskControlBlock {
             })
             .collect();
 
-        // 分配 args 的空间, 并写入字符串数据, 把字符串首地址保存在 argv 中
-        // 这里高地址放前面的参数, 即先存放 argv[0]
+        // alloc args space, and write string data, save the string address in argv
+        // Here the high address puts the previous parameter, that is, store argv[0] first
         let args_ptrv: Vec<_> = (0..args.len())
             .map(|idx| {
-                user_sp -= args[idx].len() + 1; // 1 是手动添加结束标记的空间('\0')
+                user_sp -= args[idx].len() + 1; // add 1 for '\0'
                 let mut ptr = user_sp;
                 for c in args[idx].as_bytes() {
-                    // 将参数写入到用户栈
+                    // copyout the parameter to the user stack
                     copyout(token, unsafe { (ptr as *mut u8).as_mut().unwrap() }, c);
                     ptr += 1;
-                } // 写入字符串结束标记
+                }
+                // write the string end mark
                 copyout(token, unsafe { (ptr as *mut u8).as_mut().unwrap() }, &0);
                 user_sp
             })
             .collect();
 
-        // padding 0 表示结束 AT_NULL aux entry
+        // padding 0 to indicate the end of AT_NULL aux entry
         user_sp -= core::mem::size_of::<usize>();
         copyout(
             token,
@@ -300,7 +287,7 @@ impl TaskControlBlock {
             &0,
         );
 
-        // 分配 auxs 空间, 并写入数据
+        // alloc auxs space, and write data
         for i in 0..auxv.len() {
             user_sp -= core::mem::size_of::<AuxEntry>();
             copyout(
@@ -311,7 +298,7 @@ impl TaskControlBlock {
         }
         // auxv.push(AuxEntry(AT_EXECFN,args_ptrv[0] ));
 
-        // padding 0 表示结束
+        // padding 0 to indicate the end of args
         user_sp -= core::mem::size_of::<usize>();
         copyout(
             token,
@@ -321,7 +308,7 @@ impl TaskControlBlock {
 
         // envs_ptr
         user_sp -= (envs.len()) * core::mem::size_of::<usize>();
-        let envs_ptr_base = user_sp; // 参数字符串指针起始地址
+        let envs_ptr_base = user_sp; // start address of parameter string pointer
         for i in 0..envs.len() {
             copyout(
                 token,
@@ -334,7 +321,7 @@ impl TaskControlBlock {
             );
         }
 
-        // padding 0 表示结束
+        // padding 0 to indicate the end of envs
         user_sp -= core::mem::size_of::<usize>();
         copyout(
             token,
@@ -344,7 +331,7 @@ impl TaskControlBlock {
 
         // args_ptr
         user_sp -= (args.len()) * core::mem::size_of::<usize>();
-        let args_ptr_base = user_sp; // 参数字符串指针起始地址
+        let args_ptr_base = user_sp; // start address of parameter string pointer
         for i in 0..args.len() {
             copyout(
                 token,
@@ -677,27 +664,21 @@ impl TaskControlBlock {
     }
 }
 
-// pub fn save_busybox_related(elf_entry: usize, auxs: Vec<AuxEntry>) {
-//     unsafe {
-//         STATIC_BUSYBOX_ENTRY = elf_entry;
-//         STATIC_BUSYBOX_AUX = auxs;
-//     }
-// }
+#[cfg(feature = "static_busybox")]
+pub fn save_busybox_related(elf_entry: usize, auxs: Vec<AuxEntry>) {
+    unsafe {
+        STATIC_BUSYBOX_ENTRY = elf_entry;
+        STATIC_BUSYBOX_AUX = auxs;
+    }
+}
 
-/// 任务状态枚举
-///
-/// |状态|描述|
-/// |--|--|
-/// |`Ready`|准备运行|
-/// |`Running`|正在运行|
-/// |`Zombie`|僵尸态|
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum TaskStatus {
-    Ready,    // 准备运行
-    Running,  // 正在运行
-    Blocking, // 阻塞态
-    Hanging,  // 挂起态
-    Zombie,   // 僵尸态
+    Ready,
+    Running,
+    Blocking,
+    Hanging,
+    Zombie,
 }
 pub fn trap_context_position(tid: usize) -> VirtAddr {
     VirtAddr::from(TRAP_CONTEXT_BASE - tid * PAGE_SIZE)

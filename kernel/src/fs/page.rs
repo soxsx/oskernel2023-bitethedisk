@@ -18,20 +18,20 @@ pub struct FilePage {
 }
 
 #[derive(PartialEq, Clone, Copy)]
-enum DataState {
+pub enum DataState {
     Dirty,
     Load,
     Unload,
 }
 pub struct FilePageInfo {
     /// Start offset of this page at its related file
-    file_offset: usize,
+    pub file_offset: usize,
     /// Data block state
-    data_states: [DataState; PAGE_SIZE / BLOCK_SIZE],
+    pub data_states: [DataState; PAGE_SIZE / BLOCK_SIZE],
     /// Inode that this page related to
     inode: Weak<VirtFile>,
 }
-
+#[allow(unused)]
 impl FilePage {
     pub fn new(perm: MapPermission, offset: usize, inode: Arc<VirtFile>) -> Self {
         let data_frame = alloc_frame().expect("failed to alloc frame");

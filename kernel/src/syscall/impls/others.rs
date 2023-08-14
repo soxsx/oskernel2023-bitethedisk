@@ -1,11 +1,11 @@
 use nix::info::Utsname;
 use nix::{
-    itimerval, tms, IntervalTimerType, TimeSpec, TimeVal, ITIMER_PROF, ITIMER_REAL, ITIMER_VIRTUAL,
+    itimerval, tms, IntervalTimer, IntervalTimerType, TimeSpec, TimeVal, ITIMER_PROF, ITIMER_REAL,
+    ITIMER_VIRTUAL,
 };
 
 use crate::mm::translated_mut;
 use crate::return_errno;
-use crate::task::IntervalTimer;
 use crate::task::{current_task, hanging_current_and_run_next};
 use crate::timer::{get_time, get_time_ns};
 use crate::{
@@ -196,7 +196,7 @@ pub fn sys_setitimer(which: i32, new_value: *const itimerval, old_value: *mut it
                     inner.interval_timer = None;
                     return Ok(0);
                 }
-                inner.interval_timer = Some(IntervalTimer::new(*nv));
+                inner.interval_timer = Some(IntervalTimer::new(*nv, get_timeval()));
             }
             // TODO: 用到再写
             IntervalTimerType::Virtual => {
@@ -267,7 +267,7 @@ pub fn sys_timer_settime(
         if nv.it_interval == zero && nv.it_value == zero {
             inner.interval_timer = None;
         }
-        inner.interval_timer = Some(IntervalTimer::new(*nv));
+        inner.interval_timer = Some(IntervalTimer::new(*nv, get_timeval()));
     }
     if old_value as usize != 0 {
         let inner = task.inner_ref();

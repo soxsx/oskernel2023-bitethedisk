@@ -10,12 +10,13 @@ use crate::mm::{VPNRange, VirtAddr};
 use crate::return_errno;
 use crate::{
     consts::PAGE_SIZE,
-    fs::CreateMode,
-    mm::{remove_shm, MmapFlags, MmapProts},
+    mm::remove_shm,
     task::{current_task, current_user_token},
 };
 
 use nix::ipc::{ShmFlags, IPC_PRIVATE, IPC_RMID};
+use nix::MmapFlags;
+use nix::MmapProts;
 
 use super::*;
 

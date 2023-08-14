@@ -1,24 +1,22 @@
-mod aux_entry;
 mod context;
 mod id;
 mod initproc;
 mod kstack;
 mod manager;
 mod processor;
-mod signals;
+mod signal;
 mod switch;
 mod task;
-pub use aux_entry::*;
 pub use context::*;
 pub use id::*;
 pub use initproc::*;
 pub use kstack::*;
 pub use manager::*;
+use nix::{SAFlags, SigInfo, SigSet, Signal, UContext, SIG_DFL, SIG_IGN};
 pub use processor::*;
-pub use signals::*;
+pub use signal::*;
 pub use switch::*;
 pub use task::*;
-use time_tracer::TimeTracer;
 
 use crate::{
     consts::SIGNAL_TRAMPOLINE,

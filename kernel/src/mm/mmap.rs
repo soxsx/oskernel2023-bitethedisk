@@ -1,11 +1,10 @@
 use super::address::VirtAddr;
-use super::{
-    translated_bytes_buffer, FrameTracker, MmapFlags, MmapProts, UserBuffer, VPNRange, VirtPageNum,
-};
+use super::{translated_bytes_buffer, FrameTracker, UserBuffer, VPNRange, VirtPageNum};
 use crate::consts::PAGE_SIZE;
 use crate::fs::File;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
+use nix::{MmapFlags, MmapProts};
 
 /// mmap 块管理器
 ///

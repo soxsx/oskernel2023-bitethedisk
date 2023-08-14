@@ -5,11 +5,11 @@
 use crate::{
     consts::CLOCK_FREQ,
     sbi::set_timer,
-    task::{current_add_signal, current_task, SigMask, TaskControlBlock},
+    task::{current_add_signal, current_task, TaskControlBlock},
 };
 use alloc::sync::Arc;
 use core::ops::{Add, Sub};
-use nix::TimeVal;
+use nix::{SigMask, TimeVal};
 use riscv::register::time;
 
 pub const TIME_SLICE: usize = 100;

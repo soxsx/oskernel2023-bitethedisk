@@ -1,4 +1,5 @@
 use alloc::vec::Vec;
+use nix::Kstat;
 
 use crate::{fs::file::File, mm::UserBuffer};
 
@@ -35,7 +36,7 @@ impl File for Stdout {
         data.len()
     }
     fn set_cloexec(&self) {}
-    fn fstat(&self, _kstat: &mut crate::fs::Kstat) {
+    fn fstat(&self, _kstat: &mut Kstat) {
         warn!("Fake fstat for Stdout");
     }
 }

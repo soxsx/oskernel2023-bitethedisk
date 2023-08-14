@@ -1,19 +1,19 @@
-//! 虚实地址抽象
+//! VirtAddr Abstraction
 
 use super::PageTableEntry;
 use crate::consts::PAGE_SIZE;
 use core::fmt::Debug;
 
-/// 页内偏移: 12bit
+/// Page Offset: 12bit
 pub const IN_PAGE_OFFSET: usize = 0xc;
 
-/// 物理地址宽度: 56bit
+/// Physical Address Width: 56bit
 const PA_WIDTH_SV39: usize = 56;
-/// 虚拟地址宽度: 39bit
+/// Virtual Address Width: 39bit
 const VA_WIDTH_SV39: usize = 39;
-/// 物理页号宽度: 44bit
+/// Physical Page Number Width: 44bit
 const PPN_WIDTH_SV39: usize = PA_WIDTH_SV39 - IN_PAGE_OFFSET;
-/// 虚拟页号宽度: 27bit
+/// Virtual Page Number Width: 27bit
 const VPN_WIDTH_SV39: usize = VA_WIDTH_SV39 - IN_PAGE_OFFSET;
 
 macro_rules! derive_wrap {
@@ -108,58 +108,53 @@ mk_convertion_bridge! {
 }
 
 impl VirtAddr {
-    /// 从虚拟地址计算虚拟页号(下取整)
+    /// Calculate the virtual page number from the virtual address (rounded down)
     pub fn floor(&self) -> VirtPageNum {
         VirtPageNum(self.0 / PAGE_SIZE)
     }
-    /// 从虚拟地址计算虚拟页号(下取整)
+    /// Calculate the virtual page number from the virtual address (rounded up)
     pub fn ceil(&self) -> VirtPageNum {
         VirtPageNum((PAGE_SIZE - 1 + self.0) / PAGE_SIZE)
     }
-    /// 从虚拟地址获取页内偏移(物理地址的低12位)
+    /// Get the page offset from the virtual address (the low 12 bits of the virtual address)
     pub fn page_offset(&self) -> usize {
         self.0 & (PAGE_SIZE - 1)
     }
-    /// 判断虚拟地址是否与页面大小对齐
+    /// Judge whether the virtual address is aligned with the page size
     pub fn is_aligned(&self) -> bool {
         self.page_offset() == 0
     }
 }
 
 impl PhysAddr {
-    /// 从物理地址计算物理页号(下取整)
+    /// Calculate the physical page number from the physical address (rounded down)
     pub fn floor(&self) -> PhysPageNum {
         PhysPageNum(self.0 / PAGE_SIZE)
     }
-
-    /// 从物理地址计算物理页号(上取整)
+    /// Calculate the physical page number from the physical address (rounded up)
     pub fn ceil(&self) -> PhysPageNum {
         PhysPageNum((PAGE_SIZE - 1 + self.0) / PAGE_SIZE)
     }
-
-    /// 从物理地址获取页内偏移(物理地址的低12位)
+    /// Get the page offset from the physical address (the low 12 bits of the physical address)
     pub fn page_offset(&self) -> usize {
         self.0 & (PAGE_SIZE - 1)
     }
-
-    /// 判断物理地址是否与页面大小对齐
+    /// Judge whether the physical address is aligned with the page size
     pub fn is_aligned(&self) -> bool {
         self.page_offset() == 0
     }
-
-    /// 获取一个大小为 T 的不可变切片
+    /// Get an immutable slice of size T
     pub fn as_ref<T>(&self) -> &'static T {
         unsafe { (self.0 as *const T).as_ref().unwrap() }
     }
-
-    /// 获取一个大小为 T 的可变切片
+    /// Get a mutable slice of size T
     pub fn as_mut<T>(&self) -> &'static mut T {
         unsafe { (self.0 as *mut T).as_mut().unwrap() }
     }
 }
 
 impl VirtPageNum {
-    /// 取出虚拟页号的三级页索引, 并按照从高到低的顺序返回
+    /// Take out the three-level page index of the virtual page number and return it in order from high to low
     pub fn indexes(&self) -> [usize; 3] {
         let mut vpn = self.0;
         let mut idx = [0usize; 3];
@@ -172,44 +167,40 @@ impl VirtPageNum {
 }
 
 impl PhysPageNum {
-    /// 根据自己的PPN取出当前节点的页表项数组
+    /// According to its own PPN, take out the page table item array of the current node
     pub fn as_pte_array(&self) -> &'static mut [PageTableEntry] {
         let pa: PhysAddr = (*self).into();
         unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut PageTableEntry, 512) }
     }
-
-    /// 返回一个字节数组的可变引用, 可以以字节为粒度对物理页帧上的数据进行访问
+    /// Returns a mutable reference to a byte array that can be used to access data on a physical page frame in bytes
     pub fn as_bytes_array(&self) -> &'static mut [u8] {
         let pa: PhysAddr = (*self).into();
         unsafe { core::slice::from_raw_parts_mut(pa.0 as *mut u8, 4096) }
     }
-
-    /// 获取一个恰好放在一个物理页帧开头的类型为 T 的数据的可变引用
+    /// Get a mutable reference to a type T data that is exactly placed at the beginning of a physical page frame
     pub fn as_mut<T>(&self) -> &'static mut T {
         let pa: PhysAddr = (*self).into();
         unsafe { (pa.0 as *mut T).as_mut().unwrap() }
     }
-
+    /// Get an immutable reference to a type T data that is exactly placed at the beginning of a physical page frame
     pub fn as_ref<T>(&self) -> &'static T {
         let pa: PhysAddr = (*self).into();
         unsafe { (pa.0 as *const T).as_ref().unwrap() }
     }
 }
 
-/// 虚拟页号范围, 是个左闭右开的区间
+/// Virtual page number range, is a left closed and right open interval
 #[derive(Copy, Clone, Debug)]
 pub struct VPNRange {
     start: VirtPageNum,
     end: VirtPageNum,
 }
-
 impl VPNRange {
     #[allow(unused)]
     pub fn from_vpn(start: VirtPageNum, end: VirtPageNum) -> Self {
         assert!(start <= end, "start {:?} > end {:?}!", start, end);
         Self { start, end }
     }
-
     pub fn from_va(start_va: VirtAddr, end_va: VirtAddr) -> Self {
         let start = start_va.floor();
         let end = end_va.ceil();
@@ -217,11 +208,9 @@ impl VPNRange {
 
         Self { start, end }
     }
-
     pub fn get_start(&self) -> VirtPageNum {
         self.start
     }
-
     pub fn get_end(&self) -> VirtPageNum {
         self.end
     }
@@ -229,7 +218,6 @@ impl VPNRange {
 
 impl IntoIterator for VPNRange {
     type Item = VirtPageNum;
-
     type IntoIter = IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -244,7 +232,6 @@ pub struct IntoIter<T> {
     next: T,
     end: T,
 }
-
 impl<T> Iterator for IntoIter<T>
 where
     T: PartialEq + Step,
@@ -259,26 +246,21 @@ where
         }
     }
 }
-
 pub trait Step {
     /// 返回当前值后步进 1
     fn step(&mut self) -> Self;
 }
-
 impl Step for VirtPageNum {
     fn step(&mut self) -> Self {
         let current = self.clone();
         self.0 += 1;
-
         current
     }
 }
-
 impl Step for PhysPageNum {
     fn step(&mut self) -> Self {
         let current = self.clone();
         self.0 += 1;
-
         current
     }
 }
