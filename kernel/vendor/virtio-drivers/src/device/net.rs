@@ -8,7 +8,7 @@ use crate::{Error, Result};
 use alloc::{vec, vec::Vec};
 use bitflags::bitflags;
 use core::{convert::TryInto, mem::size_of};
-use log::{debug, info, warn};
+use log::{debug, warn};
 use zerocopy::{AsBytes, FromBytes};
 
 const MAX_BUFFER_LEN: usize = 65535;
@@ -112,12 +112,7 @@ pub struct VirtIONet<H: Hal, T: Transport, const QUEUE_SIZE: usize> {
 impl<H: Hal, T: Transport, const QUEUE_SIZE: usize> VirtIONet<H, T, QUEUE_SIZE> {
     /// Create a new VirtIO-Net driver.
     pub fn new(mut transport: T, buf_len: usize) -> Result<Self> {
-        transport.begin_init(|features| {
-            let features = Features::from_bits_truncate(features);
-            info!("Device features {:?}", features);
-            let supported_features = Features::MAC | Features::STATUS;
-            (features & supported_features).bits()
-        });
+        let negotiated_features = transport.begin_init(SUPPORTED_FEATURES);
         // read configuration space
         let config = transport.config_space::<Config>()?;
         let mac;
@@ -139,8 +134,18 @@ impl<H: Hal, T: Transport, const QUEUE_SIZE: usize> VirtIONet<H, T, QUEUE_SIZE> 
             return Err(Error::InvalidParam);
         }
 
-        let send_queue = VirtQueue::new(&mut transport, QUEUE_TRANSMIT)?;
-        let mut recv_queue = VirtQueue::new(&mut transport, QUEUE_RECEIVE)?;
+        let send_queue = VirtQueue::new(
+            &mut transport,
+            QUEUE_TRANSMIT,
+            false,
+            negotiated_features.contains(Features::RING_EVENT_IDX),
+        )?;
+        let mut recv_queue = VirtQueue::new(
+            &mut transport,
+            QUEUE_RECEIVE,
+            false,
+            negotiated_features.contains(Features::RING_EVENT_IDX),
+        )?;
 
         const NONE_BUF: Option<RxBuffer> = None;
         let mut rx_buffers = [NONE_BUF; QUEUE_SIZE];
@@ -243,11 +248,21 @@ impl<H: Hal, T: Transport, const QUEUE_SIZE: usize> VirtIONet<H, T, QUEUE_SIZE> 
     /// completed.
     pub fn send(&mut self, tx_buf: TxBuffer) -> Result {
         let header = VirtioNetHdr::default();
-        self.send_queue.add_notify_wait_pop(
-            &[header.as_bytes(), tx_buf.packet()],
-            &mut [],
-            &mut self.transport,
-        )?;
+        if tx_buf.packet_len() == 0 {
+            // Special case sending an empty packet, to avoid adding an empty buffer to the
+            // virtqueue.
+            self.send_queue.add_notify_wait_pop(
+                &[header.as_bytes()],
+                &mut [],
+                &mut self.transport,
+            )?;
+        } else {
+            self.send_queue.add_notify_wait_pop(
+                &[header.as_bytes(), tx_buf.packet()],
+                &mut [],
+                &mut self.transport,
+            )?;
+        }
         Ok(())
     }
 }
@@ -262,6 +277,7 @@ impl<H: Hal, T: Transport, const QUEUE_SIZE: usize> Drop for VirtIONet<H, T, QUE
 }
 
 bitflags! {
+    #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
     struct Features: u64 {
         /// Device handles packets with partial checksum.
         /// This "checksum offload" is a common feature on modern network cards.
@@ -323,6 +339,7 @@ bitflags! {
 }
 
 bitflags! {
+    #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
     struct Status: u16 {
         const LINK_UP = 1;
         const ANNOUNCE = 2;
@@ -330,6 +347,7 @@ bitflags! {
 }
 
 bitflags! {
+    #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
     struct InterruptStatus : u32 {
         const USED_RING_UPDATE = 1 << 0;
         const CONFIGURATION_CHANGE = 1 << 1;
@@ -364,10 +382,12 @@ pub struct VirtioNetHdr {
     // payload starts from here
 }
 
+#[derive(AsBytes, Copy, Clone, Debug, Default, Eq, FromBytes, PartialEq)]
+#[repr(transparent)]
+struct Flags(u8);
+
 bitflags! {
-    #[repr(transparent)]
-    #[derive(AsBytes, Default, FromBytes)]
-    struct Flags: u8 {
+    impl Flags: u8 {
         const NEEDS_CSUM = 1;
         const DATA_VALID = 2;
         const RSC_INFO   = 4;
@@ -388,3 +408,6 @@ impl GsoType {
 
 const QUEUE_RECEIVE: u16 = 0;
 const QUEUE_TRANSMIT: u16 = 1;
+const SUPPORTED_FEATURES: Features = Features::MAC
+    .union(Features::STATUS)
+    .union(Features::RING_EVENT_IDX);

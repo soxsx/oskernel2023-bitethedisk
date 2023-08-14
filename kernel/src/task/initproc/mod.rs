@@ -36,45 +36,45 @@ lazy_static! {
         task
     });
 
-    pub static ref BUSYBOX: RwLock<Busybox> = RwLock::new({
-        extern "C" {
-            fn busybox_entry();
-            fn busybox_tail();
-        }
-        let entry = busybox_entry as usize;
-        let tail = busybox_tail as usize;
-        let siz = tail - entry;
+    // pub static ref BUSYBOX: RwLock<Busybox> = RwLock::new({
+    //     extern "C" {
+    //         fn busybox_entry();
+    //         fn busybox_tail();
+    //     }
+    //     let entry = busybox_entry as usize;
+    //     let tail = busybox_tail as usize;
+    //     let siz = tail - entry;
 
-        let busybox = unsafe { core::slice::from_raw_parts(entry as *const u8, siz) };
-        let path = AbsolutePath::from_str("/static-busybox");
+    //     let busybox = unsafe { core::slice::from_raw_parts(entry as *const u8, siz) };
+    //     let path = AbsolutePath::from_str("/static-busybox");
 
-        let inode = fs::open(path, OpenFlags::O_CREATE, CreateMode::empty()).expect("static-busybox create failed");
-        inode.write_all(&busybox.to_owned());
+    //     let inode = fs::open(path, OpenFlags::O_CREATE, CreateMode::empty()).expect("static-busybox create failed");
+    //     inode.write_all(&busybox.to_owned());
 
-        let task = Arc::new(TaskControlBlock::new(inode.clone()));
-        inode.delete();
-        Busybox {
-            inner: task,
-        }
-    });
+    //     let task = Arc::new(TaskControlBlock::new(inode.clone()));
+    //     inode.delete();
+    //     Busybox {
+    //         inner: task,
+    //     }
+    // });
 }
 
-pub static mut STATIC_BUSYBOX_ENTRY: usize = 0;
-pub static mut STATIC_BUSYBOX_AUX: Vec<AuxEntry> = Vec::new();
+// pub static mut STATIC_BUSYBOX_ENTRY: usize = 0;
+// pub static mut STATIC_BUSYBOX_AUX: Vec<AuxEntry> = Vec::new();
 
-pub struct Busybox {
-    inner: Arc<TaskControlBlock>,
-}
+// pub struct Busybox {
+//     inner: Arc<TaskControlBlock>,
+// }
 
-impl Busybox {
-    pub fn elf_entry_point(&self) -> usize {
-        unsafe { STATIC_BUSYBOX_ENTRY }
-    }
-    pub fn aux(&self) -> Vec<AuxEntry> {
-        unsafe { STATIC_BUSYBOX_AUX.clone() }
-    }
-    pub fn memory_set(&self) -> MemorySet {
-        let mut memory_set = self.inner.memory_set.write();
-        MemorySet::from_copy_on_write(&mut memory_set)
-    }
-}
+// impl Busybox {
+//     pub fn elf_entry_point(&self) -> usize {
+//         unsafe { STATIC_BUSYBOX_ENTRY }
+//     }
+//     pub fn aux(&self) -> Vec<AuxEntry> {
+//         unsafe { STATIC_BUSYBOX_AUX.clone() }
+//     }
+//     pub fn memory_set(&self) -> MemorySet {
+//         let mut memory_set = self.inner.memory_set.write();
+//         MemorySet::from_copy_on_write(&mut memory_set)
+//     }
+// }

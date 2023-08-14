@@ -1,3 +1,6 @@
+//! The examples provided by virtio_drivers serve as references for implementation.
+//! [reference](https://github.com/rcore-os/virtio-drivers/tree/master/examples/riscv)
+
 use core::ptr::NonNull;
 use lazy_static::lazy_static;
 use virtio_drivers::{BufferDirection, Hal, PhysAddr};
@@ -33,7 +36,6 @@ unsafe impl Hal for HalImpl {
         let vaddr = NonNull::new(paddr as _).unwrap();
         (paddr, vaddr)
     }
-
     #[no_mangle]
     unsafe fn dma_dealloc(paddr: PhysAddr, _vaddr: NonNull<u8>, pages: usize) -> i32 {
         let pa: KPhysAddr = paddr.into();
@@ -45,19 +47,16 @@ unsafe impl Hal for HalImpl {
 
         0
     }
-
     #[no_mangle]
     unsafe fn mmio_phys_to_virt(paddr: PhysAddr, _size: usize) -> NonNull<u8> {
         NonNull::new(paddr as _).unwrap()
     }
-
     #[no_mangle]
     unsafe fn share(buffer: NonNull<[u8]>, _direction: BufferDirection) -> PhysAddr {
         let vaddr = buffer.as_ptr() as *mut u8 as usize;
         // Nothing to do, as the host already has access to all memory.
         virt_to_phys(vaddr)
     }
-
     #[no_mangle]
     unsafe fn unshare(_paddr: PhysAddr, _buffer: NonNull<[u8]>, _direction: BufferDirection) {
         // Nothing to do, as the host already has access to all memory and we didn't copy the buffer

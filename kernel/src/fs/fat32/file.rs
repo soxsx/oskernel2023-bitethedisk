@@ -1,3 +1,30 @@
+//! Kernel file system implementation for FAT32.
+//!
+//! Design considerations for [`Inode`]:
+//! 1. Enhance lookup efficiency by utilizing InodeCache for file caching.
+//! 2. Regarding the fields of file and page cache:
+//!     - Due to time constraints after the first stage of the national competition,
+//!       it was not feasible to redesign the FAT32 file system or implement tempfs within the kernel.
+//!       As a result, the VirtFile provided by the FAT32 file system was adopted as the kernel's file manipulation object.
+//!     - During the submission process of the first stage of the national competition,
+//!       we discovered that our file system design was inadequate, resulting in very slow execution speed.
+//!       After the first stage, we conducted our own analysis and addressed the issue of inefficient cluster chain lookup in the FAT32 library.
+//!       However, we were still troubled by the efficiency problems caused by direct disk/SD card read/write operations.
+//!       That's when we came across TitanixOS, which was developed by contestants of the same session.
+//!     - We greatly admire the design of TitanixOS, as its file and file system structure and functionality are excellent.
+//!       In comparison, our kernel file design appears relatively simplistic, mainly due to its strong coupling with the FAT32 file system.
+//!       However, after studying TitanixOS's PageCache design, we introduced a page caching mechanism for kernel files,
+//!       effectively creating a virtual tempfs and significantly improving execution efficiency.
+//! 3. Regarding the file_size field (storing the file size in the Inode):
+//!     - During kernel execution, files created are often memory-mapped, treating them as files managed by a virtual tempfs.
+//!     - The read and write operations on these files created during kernel execution are actually performed in memory using the Page Cache
+//!       and are often not directly written back to the file system.
+//!       This is because a large number of direct disk writes in a single-core environment would significantly slow down the kernel's execution speed.
+//!     - Since the file_size parameter is required during file read and write operations and the files are not directly
+//!       written back to the file system after each write or file close, retrieving the file size from the file system (inconsistently) is not feasible.
+//!     - As different processes may write to the file, altering its size, when reopening the file with the Inode Cache,
+//!       it is essential to ensure consistency in file size.
+
 use crate::consts::PAGE_SIZE;
 use crate::drivers::BLOCK_DEVICE;
 use crate::fs::{
@@ -32,21 +59,27 @@ impl InodeCache {
     pub fn remove(&self, path: &AbsolutePath) {
         self.0.write().remove(path);
     }
+
+    pub fn release(&self) {
+        self.0.write().clear();
+    }
 }
 
-/// 表示进程中一个被打开的常规文件或目录
-pub struct Fat32File {
-    readable: bool,     // 该文件是否允许通过 sys_read 进行读
-    writable: bool,     // 该文件是否允许通过 sys_write 进行写
-    path: AbsolutePath, // contain file name
+pub struct KFile {
+    // read only feilds
+    readable: bool,
+    writable: bool,
+    path: AbsolutePath, // It contains the file name, so the name field is not needed actually.
     name: String,
-    pub inode: Arc<Inode>,
-    // pub page_cache: Mutex<Option<Arc<PageCache>>>,
+
+    // shared by some files
     pub time_info: Mutex<TimeInfo>,
     pub offset: Mutex<usize>,
-    // pub inner: Mutex<Arc<VirtFile>>,
     pub flags: Mutex<OpenFlags>,
     pub available: Mutex<bool>,
+
+    // shared by the same file
+    pub inode: Arc<Inode>,
 }
 
 pub struct Inode {
@@ -55,7 +88,7 @@ pub struct Inode {
     pub file_size: Mutex<usize>,
 }
 
-impl Fat32File {
+impl KFile {
     pub fn new(
         readable: bool,
         writable: bool,
@@ -215,11 +248,7 @@ pub fn list_apps(path: AbsolutePath) {
 }
 
 // work_path 绝对路径
-pub fn open(
-    path: AbsolutePath,
-    flags: OpenFlags,
-    _mode: CreateMode,
-) -> Result<Arc<Fat32File>, Errno> {
+pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<Arc<KFile>, Errno> {
     time_trace!("open");
     let (readable, writable) = flags.read_write();
     let mut pathv = path.as_vec_str();
@@ -229,7 +258,7 @@ pub fn open(
         } else {
             "/".to_string()
         };
-        let res = Arc::new(Fat32File::new(
+        let res = Arc::new(KFile::new(
             readable,
             writable,
             inode.clone(),
@@ -256,7 +285,7 @@ pub fn open(
                     file_size: Mutex::new(file_size),
                 });
 
-                let res = Arc::new(Fat32File::new(
+                let res = Arc::new(KFile::new(
                     readable,
                     writable,
                     inode.clone(),
@@ -288,7 +317,7 @@ pub fn open(
                                 page_cache: Mutex::new(None),
                                 file_size: Mutex::new(file_size),
                             });
-                            let res = Arc::new(Fat32File::new(
+                            let res = Arc::new(KFile::new(
                                 readable,
                                 writable,
                                 inode.clone(),
@@ -322,7 +351,7 @@ pub fn open(
                     file_size: Mutex::new(file_size),
                     page_cache: Mutex::new(None),
                 });
-                let res = Arc::new(Fat32File::new(
+                let res = Arc::new(KFile::new(
                     readable,
                     writable,
                     inode.clone(),
@@ -347,7 +376,7 @@ pub fn chdir(path: AbsolutePath) -> bool {
 }
 
 // 为 OSInode 实现 File Trait
-impl File for Fat32File {
+impl File for KFile {
     //  No change file offset
     fn read_to_kspace_with_offset(&self, offset: usize, len: usize) -> Vec<u8> {
         // with page cache

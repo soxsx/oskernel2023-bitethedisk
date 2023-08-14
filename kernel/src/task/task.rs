@@ -1,6 +1,6 @@
 use core::fmt::Debug;
 
-use super::initproc::{STATIC_BUSYBOX_AUX, STATIC_BUSYBOX_ENTRY};
+// use super::initproc::{STATIC_BUSYBOX_AUX, STATIC_BUSYBOX_ENTRY};
 use super::kstack::KernelStack;
 use super::{pid_alloc, AuxEntry, PidHandle, SigMask, SigSet};
 use super::{SigAction, TaskContext, MAX_SIGNUM};
@@ -167,9 +167,9 @@ impl TaskControlBlock {
             auxs,
         } = MemorySet::load_elf(elf.clone());
 
-        if elf.name() == "static-busybox" {
-            save_busybox_related(entry_point, auxs.clone());
-        }
+        // if elf.name() == "static-busybox" {
+        //     save_busybox_related(entry_point, auxs.clone());
+        // }
 
         // 为进程分配 PID 以及内核栈, 并记录下内核栈在内核地址空间的位置
         let pid_handle = pid_alloc();
@@ -677,12 +677,12 @@ impl TaskControlBlock {
     }
 }
 
-pub fn save_busybox_related(elf_entry: usize, auxs: Vec<AuxEntry>) {
-    unsafe {
-        STATIC_BUSYBOX_ENTRY = elf_entry;
-        STATIC_BUSYBOX_AUX = auxs;
-    }
-}
+// pub fn save_busybox_related(elf_entry: usize, auxs: Vec<AuxEntry>) {
+//     unsafe {
+//         STATIC_BUSYBOX_ENTRY = elf_entry;
+//         STATIC_BUSYBOX_AUX = auxs;
+//     }
+// }
 
 /// 任务状态枚举
 ///

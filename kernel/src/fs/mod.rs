@@ -1,4 +1,6 @@
-//! 内核 fs
+//! Kernel file system
+//!
+//! The kernel uniformly borrows the VirtFile provided by the fat32 file system as the object for the kernel to operate files.
 
 mod dirent;
 mod fat32;

@@ -3,6 +3,8 @@
 use crate::hal::{BufferDirection, Dma, Hal, PhysAddr};
 use crate::transport::Transport;
 use crate::{align_up, nonnull_slice_from_raw_parts, pages, Error, Result, PAGE_SIZE};
+#[cfg(feature = "alloc")]
+use alloc::boxed::Box;
 use bitflags::bitflags;
 #[cfg(test)]
 use core::cmp::min;
@@ -12,7 +14,7 @@ use core::mem::{size_of, take};
 use core::ptr;
 use core::ptr::NonNull;
 use core::sync::atomic::{fence, Ordering};
-use zerocopy::FromBytes;
+use zerocopy::{AsBytes, FromBytes};
 
 /// The mechanism for bulk data transport on virtio devices.
 ///
@@ -50,17 +52,34 @@ pub struct VirtQueue<H: Hal, const SIZE: usize> {
     /// Our trusted copy of `avail.idx`.
     avail_idx: u16,
     last_used_idx: u16,
+    /// Whether the `VIRTIO_F_EVENT_IDX` feature has been negotiated.
+    event_idx: bool,
+    #[cfg(feature = "alloc")]
+    indirect: bool,
+    #[cfg(feature = "alloc")]
+    indirect_lists: [Option<NonNull<[Descriptor]>>; SIZE],
 }
 
 impl<H: Hal, const SIZE: usize> VirtQueue<H, SIZE> {
-    /// Create a new VirtQueue.
-    pub fn new<T: Transport>(transport: &mut T, idx: u16) -> Result<Self> {
+    /// Creates a new VirtQueue.
+    ///
+    /// * `indirect`: Whether to use indirect descriptors. This should be set if the
+    ///   `VIRTIO_F_INDIRECT_DESC` feature has been negotiated with the device.
+    /// * `event_idx`: Whether to use the `used_event` and `avail_event` fields for notification
+    ///   suppression. This should be set if the `VIRTIO_F_EVENT_IDX` feature has been negotiated
+    ///   with the device.
+    pub fn new<T: Transport>(
+        transport: &mut T,
+        idx: u16,
+        indirect: bool,
+        event_idx: bool,
+    ) -> Result<Self> {
         if transport.queue_used(idx) {
             return Err(Error::AlreadyUsed);
         }
         if !SIZE.is_power_of_two()
             || SIZE > u16::MAX.into()
-            || transport.max_queue_size() < SIZE as u32
+            || transport.max_queue_size(idx) < SIZE as u32
         {
             return Err(Error::InvalidParam);
         }
@@ -96,6 +115,8 @@ impl<H: Hal, const SIZE: usize> VirtQueue<H, SIZE> {
             }
         }
 
+        #[cfg(feature = "alloc")]
+        const NONE: Option<NonNull<[Descriptor]>> = None;
         Ok(VirtQueue {
             layout,
             desc,
@@ -107,10 +128,17 @@ impl<H: Hal, const SIZE: usize> VirtQueue<H, SIZE> {
             desc_shadow,
             avail_idx: 0,
             last_used_idx: 0,
+            event_idx,
+            #[cfg(feature = "alloc")]
+            indirect,
+            #[cfg(feature = "alloc")]
+            indirect_lists: [NONE; SIZE],
         })
     }
 
     /// Add buffers to the virtqueue, return a token.
+    ///
+    /// The buffers must not be empty.
     ///
     /// Ref: linux virtio_ring.c virtqueue_add
     ///
@@ -126,35 +154,29 @@ impl<H: Hal, const SIZE: usize> VirtQueue<H, SIZE> {
         if inputs.is_empty() && outputs.is_empty() {
             return Err(Error::InvalidParam);
         }
-        if inputs.len() + outputs.len() + self.num_used as usize > SIZE {
+        let descriptors_needed = inputs.len() + outputs.len();
+        // Only consider indirect descriptors if the alloc feature is enabled, as they require
+        // allocation.
+        #[cfg(feature = "alloc")]
+        if self.num_used as usize + 1 > SIZE
+            || descriptors_needed > SIZE
+            || (!self.indirect && self.num_used as usize + descriptors_needed > SIZE)
+        {
+            return Err(Error::QueueFull);
+        }
+        #[cfg(not(feature = "alloc"))]
+        if self.num_used as usize + descriptors_needed > SIZE {
             return Err(Error::QueueFull);
         }
 
-        // allocate descriptors from free list
-        let head = self.free_head;
-        let mut last = self.free_head;
-
-        for (buffer, direction) in InputOutputIter::new(inputs, outputs) {
-            // Write to desc_shadow then copy.
-            let desc = &mut self.desc_shadow[usize::from(self.free_head)];
-            // Safe because our caller promises that the buffers live at least until `pop_used`
-            // returns them.
-            unsafe {
-                desc.set_buf::<H>(buffer, direction, DescFlags::NEXT);
-            }
-            last = self.free_head;
-            self.free_head = desc.next;
-
-            self.write_desc(last);
-        }
-
-        // set last_elem.next = NULL
-        self.desc_shadow[usize::from(last)]
-            .flags
-            .remove(DescFlags::NEXT);
-        self.write_desc(last);
-
-        self.num_used += (inputs.len() + outputs.len()) as u16;
+        #[cfg(feature = "alloc")]
+        let head = if self.indirect && descriptors_needed > 1 {
+            self.add_indirect(inputs, outputs)
+        } else {
+            self.add_direct(inputs, outputs)
+        };
+        #[cfg(not(feature = "alloc"))]
+        let head = self.add_direct(inputs, outputs);
 
         let avail_slot = self.avail_idx & (SIZE as u16 - 1);
         // Safe because self.avail is properly aligned, dereferenceable and initialised.
@@ -179,10 +201,96 @@ impl<H: Hal, const SIZE: usize> VirtQueue<H, SIZE> {
         Ok(head)
     }
 
+    fn add_direct<'a, 'b>(
+        &mut self,
+        inputs: &'a [&'b [u8]],
+        outputs: &'a mut [&'b mut [u8]],
+    ) -> u16 {
+        // allocate descriptors from free list
+        let head = self.free_head;
+        let mut last = self.free_head;
+
+        for (buffer, direction) in InputOutputIter::new(inputs, outputs) {
+            assert_ne!(buffer.len(), 0);
+
+            // Write to desc_shadow then copy.
+            let desc = &mut self.desc_shadow[usize::from(self.free_head)];
+            // Safe because our caller promises that the buffers live at least until `pop_used`
+            // returns them.
+            unsafe {
+                desc.set_buf::<H>(buffer, direction, DescFlags::NEXT);
+            }
+            last = self.free_head;
+            self.free_head = desc.next;
+
+            self.write_desc(last);
+        }
+
+        // set last_elem.next = NULL
+        self.desc_shadow[usize::from(last)]
+            .flags
+            .remove(DescFlags::NEXT);
+        self.write_desc(last);
+
+        self.num_used += (inputs.len() + outputs.len()) as u16;
+
+        head
+    }
+
+    #[cfg(feature = "alloc")]
+    fn add_indirect<'a, 'b>(
+        &mut self,
+        inputs: &'a [&'b [u8]],
+        outputs: &'a mut [&'b mut [u8]],
+    ) -> u16 {
+        let head = self.free_head;
+
+        // Allocate and fill in indirect descriptor list.
+        let mut indirect_list = Descriptor::new_box_slice_zeroed(inputs.len() + outputs.len());
+        for (i, (buffer, direction)) in InputOutputIter::new(inputs, outputs).enumerate() {
+            let desc = &mut indirect_list[i];
+            // Safe because our caller promises that the buffers live at least until `pop_used`
+            // returns them.
+            unsafe {
+                desc.set_buf::<H>(buffer, direction, DescFlags::NEXT);
+            }
+            desc.next = (i + 1) as u16;
+        }
+        indirect_list
+            .last_mut()
+            .unwrap()
+            .flags
+            .remove(DescFlags::NEXT);
+
+        // Need to store pointer to indirect_list too, because direct_desc.set_buf will only store
+        // the physical DMA address which might be different.
+        assert!(self.indirect_lists[usize::from(head)].is_none());
+        self.indirect_lists[usize::from(head)] = Some(indirect_list.as_mut().into());
+
+        // Write a descriptor pointing to indirect descriptor list. We use Box::leak to prevent the
+        // indirect list from being freed when this function returns; recycle_descriptors is instead
+        // responsible for freeing the memory after the buffer chain is popped.
+        let direct_desc = &mut self.desc_shadow[usize::from(head)];
+        self.free_head = direct_desc.next;
+        unsafe {
+            direct_desc.set_buf::<H>(
+                Box::leak(indirect_list).as_bytes().into(),
+                BufferDirection::DriverToDevice,
+                DescFlags::INDIRECT,
+            );
+        }
+        self.write_desc(head);
+        self.num_used += 1;
+
+        head
+    }
+
     /// Add the given buffers to the virtqueue, notifies the device, blocks until the device uses
     /// them, then pops them.
     ///
     /// This assumes that the device isn't processing any other buffers at the same time.
+    ///
+    /// The buffers must not be empty.
     pub fn add_notify_wait_pop<'a>(
         &mut self,
         inputs: &'a [&'a [u8]],
@@ -216,9 +324,16 @@ impl<H: Hal, const SIZE: usize> VirtQueue<H, SIZE> {
         // Read barrier, so we read a fresh value from the device.
         fence(Ordering::SeqCst);
 
-        // Safe because self.used points to a valid, aligned, initialised, dereferenceable, readable
-        // instance of UsedRing.
-        unsafe { (*self.used.as_ptr()).flags & 0x0001 == 0 }
+        if self.event_idx {
+            // Safe because self.used points to a valid, aligned, initialised, dereferenceable, readable
+            // instance of UsedRing.
+            let avail_event = unsafe { (*self.used.as_ptr()).avail_event };
+            self.avail_idx >= avail_event.wrapping_add(1)
+        } else {
+            // Safe because self.used points to a valid, aligned, initialised, dereferenceable, readable
+            // instance of UsedRing.
+            unsafe { (*self.used.as_ptr()).flags & 0x0001 == 0 }
+        }
     }
 
     /// Copies the descriptor at the given index from `desc_shadow` to `desc`, so it can be seen by
@@ -257,7 +372,16 @@ impl<H: Hal, const SIZE: usize> VirtQueue<H, SIZE> {
 
     /// Returns the number of free descriptors.
     pub fn available_desc(&self) -> usize {
-        SIZE - self.num_used as usize
+        #[cfg(feature = "alloc")]
+        if self.indirect {
+            return if usize::from(self.num_used) == SIZE {
+                0
+            } else {
+                SIZE
+            };
+        }
+
+        SIZE - usize::from(self.num_used)
     }
 
     /// Unshares buffers in the list starting at descriptor index `head` and adds them to the free
@@ -278,32 +402,75 @@ impl<H: Hal, const SIZE: usize> VirtQueue<H, SIZE> {
     ) {
         let original_free_head = self.free_head;
         self.free_head = head;
-        let mut next = Some(head);
 
-        for (buffer, direction) in InputOutputIter::new(inputs, outputs) {
-            let desc_index = next.expect("Descriptor chain was shorter than expected.");
-            let desc = &mut self.desc_shadow[usize::from(desc_index)];
+        let head_desc = &mut self.desc_shadow[usize::from(head)];
+        if head_desc.flags.contains(DescFlags::INDIRECT) {
+            #[cfg(feature = "alloc")]
+            {
+                // Find the indirect descriptor list, unshare it and move its descriptor to the free
+                // list.
+                let indirect_list = self.indirect_lists[usize::from(head)].take().unwrap();
+                // SAFETY: We allocated the indirect list in `add_indirect`, and the device has
+                // finished accessing it by this point.
+                let mut indirect_list = unsafe { Box::from_raw(indirect_list.as_ptr()) };
+                let paddr = head_desc.addr;
+                head_desc.unset_buf();
+                self.num_used -= 1;
+                head_desc.next = original_free_head;
 
-            let paddr = desc.addr;
-            desc.unset_buf();
-            self.num_used -= 1;
-            next = desc.next();
-            if next.is_none() {
-                desc.next = original_free_head;
+                unsafe {
+                    H::unshare(
+                        paddr as usize,
+                        indirect_list.as_bytes_mut().into(),
+                        BufferDirection::DriverToDevice,
+                    );
+                }
+
+                // Unshare the buffers in the indirect descriptor list, and free it.
+                assert_eq!(indirect_list.len(), inputs.len() + outputs.len());
+                for (i, (buffer, direction)) in InputOutputIter::new(inputs, outputs).enumerate() {
+                    assert_ne!(buffer.len(), 0);
+
+                    // SAFETY: The caller ensures that the buffer is valid and matches the
+                    // descriptor from which we got `paddr`.
+                    unsafe {
+                        // Unshare the buffer (and perhaps copy its contents back to the original
+                        // buffer).
+                        H::unshare(indirect_list[i].addr as usize, buffer, direction);
+                    }
+                }
+                drop(indirect_list);
+            }
+        } else {
+            let mut next = Some(head);
+
+            for (buffer, direction) in InputOutputIter::new(inputs, outputs) {
+                assert_ne!(buffer.len(), 0);
+
+                let desc_index = next.expect("Descriptor chain was shorter than expected.");
+                let desc = &mut self.desc_shadow[usize::from(desc_index)];
+
+                let paddr = desc.addr;
+                desc.unset_buf();
+                self.num_used -= 1;
+                next = desc.next();
+                if next.is_none() {
+                    desc.next = original_free_head;
+                }
+
+                self.write_desc(desc_index);
+
+                // SAFETY: The caller ensures that the buffer is valid and matches the descriptor
+                // from which we got `paddr`.
+                unsafe {
+                    // Unshare the buffer (and perhaps copy its contents back to the original buffer).
+                    H::unshare(paddr as usize, buffer, direction);
+                }
             }
 
-            self.write_desc(desc_index);
-
-            // Safe because the caller ensures that the buffer is valid and matches the descriptor
-            // from which we got `paddr`.
-            unsafe {
-                // Unshare the buffer (and perhaps copy its contents back to the original buffer).
-                H::unshare(paddr as usize, buffer, direction);
+            if next.is_some() {
+                panic!("Descriptor chain was longer than expected.");
             }
-        }
-
-        if next.is_some() {
-            panic!("Descriptor chain was longer than expected.");
         }
     }
 
@@ -501,7 +668,7 @@ fn queue_part_sizes(queue_size: u16) -> (usize, usize, usize) {
 }
 
 #[repr(C, align(16))]
-#[derive(Clone, Debug, FromBytes)]
+#[derive(AsBytes, Clone, Debug, FromBytes)]
 pub(crate) struct Descriptor {
     addr: u64,
     len: u32,
@@ -555,10 +722,13 @@ impl Descriptor {
     }
 }
 
+/// Descriptor flags
+#[derive(AsBytes, Copy, Clone, Debug, Default, Eq, FromBytes, PartialEq)]
+#[repr(transparent)]
+struct DescFlags(u16);
+
 bitflags! {
-    /// Descriptor flags
-    #[derive(FromBytes)]
-    struct DescFlags: u16 {
+    impl DescFlags: u16 {
         const NEXT = 1;
         const WRITE = 2;
         const INDIRECT = 4;
@@ -586,7 +756,8 @@ struct UsedRing<const SIZE: usize> {
     flags: u16,
     idx: u16,
     ring: [UsedElem; SIZE],
-    avail_event: u16, // unused
+    /// Only used if `VIRTIO_F_EVENT_IDX` is negotiated.
+    avail_event: u16,
 }
 
 #[repr(C)]
@@ -647,6 +818,7 @@ pub(crate) fn fake_read_write_queue<const QUEUE_SIZE: usize>(
     handler: impl FnOnce(Vec<u8>) -> Vec<u8>,
 ) {
     use core::{ops::Deref, slice};
+    use zerocopy::LayoutVerified;
 
     let available_ring = queue_driver_area as *const AvailRing<QUEUE_SIZE>;
     let used_ring = queue_device_area as *mut UsedRing<QUEUE_SIZE>;
@@ -662,38 +834,64 @@ pub(crate) fn fake_read_write_queue<const QUEUE_SIZE: usize>(
         let head_descriptor_index = (*available_ring).ring[next_slot as usize];
         let mut descriptor = &(*descriptors)[head_descriptor_index as usize];
 
-        // Loop through all input descriptors in the chain, reading data from them.
-        let mut input = Vec::new();
-        while !descriptor.flags.contains(DescFlags::WRITE) {
-            input.extend_from_slice(slice::from_raw_parts(
-                descriptor.addr as *const u8,
-                descriptor.len as usize,
-            ));
+        let input_length;
+        let output;
+        if descriptor.flags.contains(DescFlags::INDIRECT) {
+            // The descriptor shouldn't have any other flags if it is indirect.
+            assert_eq!(descriptor.flags, DescFlags::INDIRECT);
 
-            if let Some(next) = descriptor.next() {
-                descriptor = &(*descriptors)[next as usize];
-            } else {
-                break;
+            // Loop through all input descriptors in the indirect descriptor list, reading data from
+            // them.
+            let indirect_descriptor_list: &[Descriptor] = LayoutVerified::new_slice(
+                slice::from_raw_parts(descriptor.addr as *const u8, descriptor.len as usize),
+            )
+            .unwrap()
+            .into_slice();
+            let mut input = Vec::new();
+            let mut indirect_descriptor_index = 0;
+            while indirect_descriptor_index < indirect_descriptor_list.len() {
+                let indirect_descriptor = &indirect_descriptor_list[indirect_descriptor_index];
+                if indirect_descriptor.flags.contains(DescFlags::WRITE) {
+                    break;
+                }
+
+                input.extend_from_slice(slice::from_raw_parts(
+                    indirect_descriptor.addr as *const u8,
+                    indirect_descriptor.len as usize,
+                ));
+
+                indirect_descriptor_index += 1;
             }
-        }
-        let input_length = input.len();
+            input_length = input.len();
 
-        // Let the test handle the request.
-        let output = handler(input);
+            // Let the test handle the request.
+            output = handler(input);
 
-        // Write the response to the remaining descriptors.
-        let mut remaining_output = output.deref();
-        if descriptor.flags.contains(DescFlags::WRITE) {
-            loop {
-                assert!(descriptor.flags.contains(DescFlags::WRITE));
+            // Write the response to the remaining descriptors.
+            let mut remaining_output = output.deref();
+            while indirect_descriptor_index < indirect_descriptor_list.len() {
+                let indirect_descriptor = &indirect_descriptor_list[indirect_descriptor_index];
+                assert!(indirect_descriptor.flags.contains(DescFlags::WRITE));
 
-                let length_to_write = min(remaining_output.len(), descriptor.len as usize);
+                let length_to_write = min(remaining_output.len(), indirect_descriptor.len as usize);
                 ptr::copy(
                     remaining_output.as_ptr(),
-                    descriptor.addr as *mut u8,
+                    indirect_descriptor.addr as *mut u8,
                     length_to_write,
                 );
                 remaining_output = &remaining_output[length_to_write..];
+
+                indirect_descriptor_index += 1;
+            }
+            assert_eq!(remaining_output.len(), 0);
+        } else {
+            // Loop through all input descriptors in the chain, reading data from them.
+            let mut input = Vec::new();
+            while !descriptor.flags.contains(DescFlags::WRITE) {
+                input.extend_from_slice(slice::from_raw_parts(
+                    descriptor.addr as *const u8,
+                    descriptor.len as usize,
+                ));
 
                 if let Some(next) = descriptor.next() {
                     descriptor = &(*descriptors)[next as usize];
@@ -701,8 +899,34 @@ pub(crate) fn fake_read_write_queue<const QUEUE_SIZE: usize>(
                     break;
                 }
             }
+            input_length = input.len();
+
+            // Let the test handle the request.
+            output = handler(input);
+
+            // Write the response to the remaining descriptors.
+            let mut remaining_output = output.deref();
+            if descriptor.flags.contains(DescFlags::WRITE) {
+                loop {
+                    assert!(descriptor.flags.contains(DescFlags::WRITE));
+
+                    let length_to_write = min(remaining_output.len(), descriptor.len as usize);
+                    ptr::copy(
+                        remaining_output.as_ptr(),
+                        descriptor.addr as *mut u8,
+                        length_to_write,
+                    );
+                    remaining_output = &remaining_output[length_to_write..];
+
+                    if let Some(next) = descriptor.next() {
+                        descriptor = &(*descriptors)[next as usize];
+                    } else {
+                        break;
+                    }
+                }
+            }
+            assert_eq!(remaining_output.len(), 0);
         }
-        assert_eq!(remaining_output.len(), 0);
 
         // Mark the buffer as used.
         (*used_ring).ring[next_slot as usize].id = head_descriptor_index as u32;
@@ -715,10 +939,16 @@ pub(crate) fn fake_read_write_queue<const QUEUE_SIZE: usize>(
 mod tests {
     use super::*;
     use crate::{
+        device::common::Feature,
         hal::fake::FakeHal,
-        transport::mmio::{MmioTransport, VirtIOHeader, MODERN_VERSION},
+        transport::{
+            fake::{FakeTransport, QueueStatus, State},
+            mmio::{MmioTransport, VirtIOHeader, MODERN_VERSION},
+            DeviceStatus, DeviceType,
+        },
     };
     use core::ptr::NonNull;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn invalid_queue_size() {
@@ -726,7 +956,7 @@ mod tests {
         let mut transport = unsafe { MmioTransport::new(NonNull::from(&mut header)) }.unwrap();
         // Size not a power of 2.
         assert_eq!(
-            VirtQueue::<FakeHal, 3>::new(&mut transport, 0).unwrap_err(),
+            VirtQueue::<FakeHal, 3>::new(&mut transport, 0, false, false).unwrap_err(),
             Error::InvalidParam
         );
     }
@@ -736,7 +966,7 @@ mod tests {
         let mut header = VirtIOHeader::make_fake_header(MODERN_VERSION, 1, 0, 0, 4);
         let mut transport = unsafe { MmioTransport::new(NonNull::from(&mut header)) }.unwrap();
         assert_eq!(
-            VirtQueue::<FakeHal, 8>::new(&mut transport, 0).unwrap_err(),
+            VirtQueue::<FakeHal, 8>::new(&mut transport, 0, false, false).unwrap_err(),
             Error::InvalidParam
         );
     }
@@ -745,9 +975,9 @@ mod tests {
     fn queue_already_used() {
         let mut header = VirtIOHeader::make_fake_header(MODERN_VERSION, 1, 0, 0, 4);
         let mut transport = unsafe { MmioTransport::new(NonNull::from(&mut header)) }.unwrap();
-        VirtQueue::<FakeHal, 4>::new(&mut transport, 0).unwrap();
+        VirtQueue::<FakeHal, 4>::new(&mut transport, 0, false, false).unwrap();
         assert_eq!(
-            VirtQueue::<FakeHal, 4>::new(&mut transport, 0).unwrap_err(),
+            VirtQueue::<FakeHal, 4>::new(&mut transport, 0, false, false).unwrap_err(),
             Error::AlreadyUsed
         );
     }
@@ -756,7 +986,7 @@ mod tests {
     fn add_empty() {
         let mut header = VirtIOHeader::make_fake_header(MODERN_VERSION, 1, 0, 0, 4);
         let mut transport = unsafe { MmioTransport::new(NonNull::from(&mut header)) }.unwrap();
-        let mut queue = VirtQueue::<FakeHal, 4>::new(&mut transport, 0).unwrap();
+        let mut queue = VirtQueue::<FakeHal, 4>::new(&mut transport, 0, false, false).unwrap();
         assert_eq!(
             unsafe { queue.add(&[], &mut []) }.unwrap_err(),
             Error::InvalidParam
@@ -767,7 +997,7 @@ mod tests {
     fn add_too_many() {
         let mut header = VirtIOHeader::make_fake_header(MODERN_VERSION, 1, 0, 0, 4);
         let mut transport = unsafe { MmioTransport::new(NonNull::from(&mut header)) }.unwrap();
-        let mut queue = VirtQueue::<FakeHal, 4>::new(&mut transport, 0).unwrap();
+        let mut queue = VirtQueue::<FakeHal, 4>::new(&mut transport, 0, false, false).unwrap();
         assert_eq!(queue.available_desc(), 4);
         assert_eq!(
             unsafe { queue.add(&[&[], &[], &[]], &mut [&mut [], &mut []]) }.unwrap_err(),
@@ -779,7 +1009,7 @@ mod tests {
     fn add_buffers() {
         let mut header = VirtIOHeader::make_fake_header(MODERN_VERSION, 1, 0, 0, 4);
         let mut transport = unsafe { MmioTransport::new(NonNull::from(&mut header)) }.unwrap();
-        let mut queue = VirtQueue::<FakeHal, 4>::new(&mut transport, 0).unwrap();
+        let mut queue = VirtQueue::<FakeHal, 4>::new(&mut transport, 0, false, false).unwrap();
         assert_eq!(queue.available_desc(), 4);
 
         // Add a buffer chain consisting of two device-readable parts followed by two
@@ -833,5 +1063,134 @@ mod tests {
                 DescFlags::WRITE
             );
         }
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn add_buffers_indirect() {
+        use core::ptr::slice_from_raw_parts;
+
+        let mut header = VirtIOHeader::make_fake_header(MODERN_VERSION, 1, 0, 0, 4);
+        let mut transport = unsafe { MmioTransport::new(NonNull::from(&mut header)) }.unwrap();
+        let mut queue = VirtQueue::<FakeHal, 4>::new(&mut transport, 0, true, false).unwrap();
+        assert_eq!(queue.available_desc(), 4);
+
+        // Add a buffer chain consisting of two device-readable parts followed by two
+        // device-writable parts.
+        let token = unsafe { queue.add(&[&[1, 2], &[3]], &mut [&mut [0, 0], &mut [0]]) }.unwrap();
+
+        assert_eq!(queue.available_desc(), 4);
+        assert!(!queue.can_pop());
+
+        // Safe because the various parts of the queue are properly aligned, dereferenceable and
+        // initialised, and nothing else is accessing them at the same time.
+        unsafe {
+            let indirect_descriptor_index = (*queue.avail.as_ptr()).ring[0];
+            assert_eq!(indirect_descriptor_index, token);
+            assert_eq!(
+                (*queue.desc.as_ptr())[indirect_descriptor_index as usize].len as usize,
+                4 * size_of::<Descriptor>()
+            );
+            assert_eq!(
+                (*queue.desc.as_ptr())[indirect_descriptor_index as usize].flags,
+                DescFlags::INDIRECT
+            );
+
+            let indirect_descriptors = slice_from_raw_parts(
+                (*queue.desc.as_ptr())[indirect_descriptor_index as usize].addr
+                    as *const Descriptor,
+                4,
+            );
+            assert_eq!((*indirect_descriptors)[0].len, 2);
+            assert_eq!((*indirect_descriptors)[0].flags, DescFlags::NEXT);
+            assert_eq!((*indirect_descriptors)[0].next, 1);
+            assert_eq!((*indirect_descriptors)[1].len, 1);
+            assert_eq!((*indirect_descriptors)[1].flags, DescFlags::NEXT);
+            assert_eq!((*indirect_descriptors)[1].next, 2);
+            assert_eq!((*indirect_descriptors)[2].len, 2);
+            assert_eq!(
+                (*indirect_descriptors)[2].flags,
+                DescFlags::NEXT | DescFlags::WRITE
+            );
+            assert_eq!((*indirect_descriptors)[2].next, 3);
+            assert_eq!((*indirect_descriptors)[3].len, 1);
+            assert_eq!((*indirect_descriptors)[3].flags, DescFlags::WRITE);
+        }
+    }
+
+    /// Tests that the queue notifies the device about added buffers, if it hasn't suppressed
+    /// notifications.
+    #[test]
+    fn add_notify() {
+        let mut config_space = ();
+        let state = Arc::new(Mutex::new(State {
+            queues: vec![QueueStatus::default()],
+            ..Default::default()
+        }));
+        let mut transport = FakeTransport {
+            device_type: DeviceType::Block,
+            max_queue_size: 4,
+            device_features: 0,
+            config_space: NonNull::from(&mut config_space),
+            state: state.clone(),
+        };
+        let mut queue = VirtQueue::<FakeHal, 4>::new(&mut transport, 0, false, false).unwrap();
+
+        // Add a buffer chain with a single device-readable part.
+        unsafe { queue.add(&[&[42]], &mut []) }.unwrap();
+
+        // Check that the transport would be notified.
+        assert_eq!(queue.should_notify(), true);
+
+        // SAFETY: the various parts of the queue are properly aligned, dereferenceable and
+        // initialised, and nothing else is accessing them at the same time.
+        unsafe {
+            // Suppress notifications.
+            (*queue.used.as_ptr()).flags = 0x01;
+        }
+
+        // Check that the transport would not be notified.
+        assert_eq!(queue.should_notify(), false);
+    }
+
+    /// Tests that the queue notifies the device about added buffers, if it hasn't suppressed
+    /// notifications with the `avail_event` index.
+    #[test]
+    fn add_notify_event_idx() {
+        let mut config_space = ();
+        let state = Arc::new(Mutex::new(State {
+            queues: vec![QueueStatus::default()],
+            ..Default::default()
+        }));
+        let mut transport = FakeTransport {
+            device_type: DeviceType::Block,
+            max_queue_size: 4,
+            device_features: Feature::RING_EVENT_IDX.bits(),
+            config_space: NonNull::from(&mut config_space),
+            state: state.clone(),
+        };
+        let mut queue = VirtQueue::<FakeHal, 4>::new(&mut transport, 0, false, true).unwrap();
+
+        // Add a buffer chain with a single device-readable part.
+        assert_eq!(unsafe { queue.add(&[&[42]], &mut []) }.unwrap(), 0);
+
+        // Check that the transport would be notified.
+        assert_eq!(queue.should_notify(), true);
+
+        // SAFETY: the various parts of the queue are properly aligned, dereferenceable and
+        // initialised, and nothing else is accessing them at the same time.
+        unsafe {
+            // Suppress notifications.
+            (*queue.used.as_ptr()).avail_event = 1;
+        }
+
+        // Check that the transport would not be notified.
+        assert_eq!(queue.should_notify(), false);
+
+        // Add another buffer chain.
+        assert_eq!(unsafe { queue.add(&[&[42]], &mut []) }.unwrap(), 1);
+
+        // Check that the transport should be notified again now.
+        assert_eq!(queue.should_notify(), true);
     }
 }

@@ -33,12 +33,6 @@ checksum = "dc827186963e592360843fb5ba4b973e145841266c1357f7180c43526f2e5b61"
 
 [[package]]
 name = "bitflags"
-version = "1.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
-
-[[package]]
-name = "bitflags"
 version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6776fc96284a0bb647b615056fc496d1fe1644a7ab01829818a6d91cae888b84"
@@ -114,7 +108,7 @@ dependencies = [
 name = "kernel"
 version = "0.1.0"
 dependencies = [
- "bitflags 2.3.1",
+ "bitflags",
  "buddy_system_allocator",
  "fat32",
  "hashbrown 0.14.0",
@@ -198,7 +192,7 @@ checksum = "8d5439c4ad607c3c23abf66de8c8bf57ba8adcd1f129e699851a6e43935d339d"
 name = "nix"
 version = "0.1.0"
 dependencies = [
- "bitflags 2.3.1",
+ "bitflags",
 ]
 
 [[package]]
@@ -334,11 +328,11 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
 name = "virtio-drivers"
-version = "0.4.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42299957c6f61af586fe3eae398c16ec07f33a02579fa1d41ae96156ce437029"
+checksum = "721c9c6a36ebc9bbfedb1933130f0fa6153bf1fa7c9272e4baf7f6f48dfff3bd"
 dependencies = [
- "bitflags 1.3.2",
+ "bitflags",
  "log",
  "zerocopy",
 ]

@@ -13,12 +13,14 @@ pub struct Dma<H: Hal> {
     paddr: usize,
     vaddr: NonNull<u8>,
     pages: usize,
-    _phantom: PhantomData<H>,
+    _hal: PhantomData<H>,
 }
 
 impl<H: Hal> Dma<H> {
     /// Allocates the given number of pages of physically contiguous memory to be used for DMA in
     /// the given direction.
+    ///
+    /// The pages will be zeroed.
     pub fn new(pages: usize, direction: BufferDirection) -> Result<Self> {
         let (paddr, vaddr) = H::dma_alloc(pages, direction);
         if paddr == 0 {
@@ -28,7 +30,7 @@ impl<H: Hal> Dma<H> {
             paddr,
             vaddr,
             pages,
-            _phantom: PhantomData::default(),
+            _hal: PhantomData,
         })
     }
 
@@ -67,7 +69,8 @@ impl<H: Hal> Drop for Dma<H> {
 /// Implementations of this trait must follow the "implementation safety" requirements documented
 /// for each method. Callers must follow the safety requirements documented for the unsafe methods.
 pub unsafe trait Hal {
-    /// Allocates the given number of contiguous physical pages of DMA memory for VirtIO use.
+    /// Allocates and zeroes the given number of contiguous physical pages of DMA memory for VirtIO
+    /// use.
     ///
     /// Returns both the physical address which the device can use to access the memory, and a
     /// pointer to the start of it which the driver can use to access it.
@@ -77,7 +80,7 @@ pub unsafe trait Hal {
     /// Implementations of this method must ensure that the `NonNull<u8>` returned is a
     /// [_valid_](https://doc.rust-lang.org/std/ptr/index.html#safety) pointer, aligned to
     /// [`PAGE_SIZE`], and won't alias any other allocations or references in the program until it
-    /// is deallocated by `dma_dealloc`.
+    /// is deallocated by `dma_dealloc`. The pages must be zeroed.
     fn dma_alloc(pages: usize, direction: BufferDirection) -> (PhysAddr, NonNull<u8>);
 
     /// Deallocates the given contiguous physical DMA memory pages.
@@ -115,8 +118,8 @@ pub unsafe trait Hal {
     ///
     /// # Safety
     ///
-    /// The buffer must be a valid pointer to memory which will not be accessed by any other thread
-    /// for the duration of this method call.
+    /// The buffer must be a valid pointer to a non-empty memory range which will not be accessed by
+    /// any other thread for the duration of this method call.
     unsafe fn share(buffer: NonNull<[u8]>, direction: BufferDirection) -> PhysAddr;
 
     /// Unshares the given memory range from the device and (if necessary) copies it back to the
@@ -124,9 +127,9 @@ pub unsafe trait Hal {
     ///
     /// # Safety
     ///
-    /// The buffer must be a valid pointer to memory which will not be accessed by any other thread
-    /// for the duration of this method call. The `paddr` must be the value previously returned by
-    /// the corresponding `share` call.
+    /// The buffer must be a valid pointer to a non-empty memory range which will not be accessed by
+    /// any other thread for the duration of this method call. The `paddr` must be the value
+    /// previously returned by the corresponding `share` call.
     unsafe fn unshare(paddr: PhysAddr, buffer: NonNull<[u8]>, direction: BufferDirection);
 }
 

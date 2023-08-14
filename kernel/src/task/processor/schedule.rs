@@ -5,20 +5,22 @@
 use super::{acquire_processor, Processor};
 use crate::task::{
     check_hanging,
-    initproc::BUSYBOX,
+    // initproc::BUSYBOX,
     manager::{check_futex_interupt_or_expire, fetch_task},
     recycle_child_threads_res,
     switch::__switch,
     task::TaskStatus,
-    unblock_task, TaskContext, TaskControlBlock,
+    unblock_task,
+    TaskContext,
+    TaskControlBlock,
 };
 use alloc::sync::Arc;
 use core::cell::RefMut;
 
 /// 循环调用 fetch_task 直到顺利从任务管理器中取出一个任务, 随后便准备通过任务切换的方式来执行
 pub fn run_tasks() {
-    let busybox = BUSYBOX.read();
-    drop(busybox);
+    // let busybox = BUSYBOX.read();
+    // drop(busybox);
     loop {
         let processor = acquire_processor();
 
