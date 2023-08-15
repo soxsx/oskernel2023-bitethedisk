@@ -1,5 +1,3 @@
-use core::cell::RefMut;
-
 use alloc::sync::Arc;
 use sync_cell::SyncRefCell;
 
@@ -45,8 +43,4 @@ impl Processor {
             .lock()
             .hang(sleep_time, duration, self.take_current().unwrap());
     }
-}
-
-pub fn acquire_processor() -> RefMut<'static, Processor> {
-    PROCESSORS[hartid!()].borrow_mut()
 }
