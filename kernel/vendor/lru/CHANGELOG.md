@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.11.0](https://github.com/jeromefroe/lru-rs/tree/0.11.0) - 2023-07-11
+
+- Update dependency on hashbrown to 0.14 and update MSRV to 1.64.0.
+
+## [v0.10.1](https://github.com/jeromefroe/lru-rs/tree/0.10.1) - 2023-06-29
+
+- Add `try_get_or_insert` method.
+
 ## [v0.10.0](https://github.com/jeromefroe/lru-rs/tree/0.10.0) - 2023-03-04
 
 - Remove `KeyRef` from the public API.
