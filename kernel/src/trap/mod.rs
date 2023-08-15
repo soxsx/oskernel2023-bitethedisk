@@ -2,11 +2,12 @@ mod context;
 mod handler;
 pub use context::*;
 pub use handler::*;
+use riscv::register::scause::{Interrupt, Trap};
 
 use crate::consts::TRAMPOLINE;
 use crate::task::trap_context_position;
 use crate::task::{current_task, current_user_token};
-use crate::timer::get_timeval;
+use crate::timer::{get_timeval, set_next_trigger};
 use core::arch::{asm, global_asm};
 use riscv::register::{mtvec::TrapMode, sie, stvec};
 
@@ -52,16 +53,12 @@ pub fn trap_return() -> ! {
     inner.add_stime(diff);
     inner.set_last_enter_umode(get_timeval());
 
-    // 参考 [`trap_handler`] 中的注释
-    //
-    //      if let Some(scause) = inner.trap_cause {
-    //          if scauseinner_mute() == Trap::Interrupt(Interrupt::SupervisorTimer) {
-    //              set_next_trigger();
-    //          }
-    //          inner.trap_cause = None;
-    //      }
-    //
-    // 之后考虑使能上面的代码, 并删除处理时钟中断的 trap 分支中的时间片设置操作
+    if let Some(scause) = inner.trap_cause {
+        if matches!(scause.cause(), Trap::Interrupt(Interrupt::SupervisorTimer)) {
+            set_next_trigger();
+        }
+        inner.trap_cause = None;
+    }
     let trap_addr = trap_context_position(task.pid() - task.tgid).0;
     drop(inner);
     drop(task);

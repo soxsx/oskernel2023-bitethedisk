@@ -44,6 +44,7 @@ impl PageCache {
     ) -> Result<Arc<FilePage>, Errno> {
         // trace!("[PageCache]: get page at file offset {:#x}", offset);
         trace!("[PageCache]: get page at file offset {:#x}", offset);
+        let offset = offset & !(PAGE_SIZE - 1);
         if let Some(page) = self.lookup(offset) {
             Ok(page)
         } else {

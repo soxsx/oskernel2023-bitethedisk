@@ -5,7 +5,7 @@ use hashbrown::HashMap;
 use nix::{TimeSpec, FUTEX_CLOCK_REALTIME, FUTEX_CMD_MASK, FUTEX_REQUEUE, FUTEX_WAIT, FUTEX_WAKE};
 use spin::RwLock;
 
-use crate::mm::translated_ref;
+use crate::mm::{copyin, translated_ref};
 
 use crate::return_errno;
 use crate::syscall::errno;
@@ -47,7 +47,9 @@ pub fn sys_futex(
             // val2 is a timespec
             // error!("FUTEX_WAIT");
             let time = if val2 as usize != 0 {
-                let ts = translated_ref(token, val2 as *const TimeSpec);
+                let mut ts = TimeSpec::empty();
+                // INFO: 这里改成使用 copyin 了
+                copyin(token, &mut ts, val2 as *const TimeSpec);
                 ts.into_ns()
             } else {
                 usize::MAX // inf
@@ -57,9 +59,10 @@ pub fn sys_futex(
         FUTEX_WAKE => {
             // error!("FUTEX_WAKE");
             futex_wake(uaddr as usize, val)
-        },
+        }
         FUTEX_REQUEUE => {
             // val2 is a limit
+            // error!("REQUEUE");
             futex_requeue(uaddr as usize, val, uaddr2 as usize, val2 as u32)
         }
         _ => panic!("ENOSYS"),
@@ -130,7 +133,7 @@ pub fn futex_wake(uaddr: usize, nr_wake: u32) -> Result {
         return Ok(0);
     }
     let nr_wake = nr_wake.min(waiters as u32);
-    // debug!("futex_wake: uaddr: {:x?}, nr_wake: {:x?}", uaddr, nr_wake);
+    // info!("futex_wake: uaddr: {:x?}, nr_wake: {:x?}", uaddr, nr_wake);
 
     let mut wakeup_queue = Vec::with_capacity(20);
     (0..nr_wake as usize).for_each(|_| {

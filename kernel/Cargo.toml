@@ -9,9 +9,10 @@ test = false
 bench = false
 
 [features]
-default = []
+default = ["static-busybox"]
 fu740 = []
 dev = []
+multi-harts = []
 static-busybox = []
 no-page-cache = []
 inode-drop = []

@@ -1,5 +1,6 @@
 mod address;
 mod frame_allocator;
+mod kernel_heap_allocator;
 mod kvmm;
 mod memory_set;
 mod mmap;
@@ -8,7 +9,6 @@ mod permission;
 mod shared_memory;
 mod user_buffer;
 mod vm_area;
-mod kernel_heap_allocator;
 pub use address::*;
 pub use frame_allocator::*;
 pub use kvmm::*;
@@ -51,12 +51,14 @@ pub fn translated_bytes_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<
     let mut start = VirtAddr::from(ptr as usize);
     let end = VirtAddr::from(start.0 + len);
     let mut v = Vec::new();
+    let task = current_task().unwrap();
     while start < end {
         let mut vpn = start.floor();
         let ppn = match page_table.translate(vpn) {
             Some(pte) => pte.ppn(),
             None => {
-                if current_task().unwrap().check_lazy(start) != 0 {
+                if task.check_lazy(start) != 0 {
+                    info!("hart {} check lazy failed", hartid!());
                     panic!("check lazy error");
                 }
                 page_table.translate(vpn).unwrap().ppn()

@@ -5,7 +5,6 @@
 #![feature(alloc_error_handler)]
 #![feature(slice_from_ptr_range)]
 #![feature(error_in_core)]
-
 #![allow(unused)]
 #![allow(dead_code)]
 
@@ -28,6 +27,7 @@ mod macros;
 #[macro_use]
 mod console;
 
+mod board;
 mod consts;
 mod drivers;
 mod fs;
@@ -39,7 +39,6 @@ mod syscall;
 mod task;
 mod timer;
 mod trap;
-mod board;
 
 use sbi::sbi_start_hart;
 
@@ -81,6 +80,7 @@ pub fn meow() -> ! {
     task::add_initproc();
 
     BOOTED.store(true, core::sync::atomic::Ordering::Relaxed);
+    #[cfg(feature = "multi-harts")]
     wake_other_harts_hsm();
 
     task::run_tasks();
