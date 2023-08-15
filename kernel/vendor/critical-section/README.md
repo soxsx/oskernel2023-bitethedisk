@@ -10,18 +10,18 @@ A critical section that works everywhere!
 When writing software for embedded systems, it's common to use a "critical section"
 as a basic primitive to control concurrency. A critical section is essentially a
 mutex global to the whole process, that can be acquired by only one thread at a time.
-This can be used to protect data behind mutexes, to [emulate atomics](https://github.com/embassy-rs/atomic-polyfill) in
+This can be used to protect data behind mutexes, to [emulate atomics](https://crates.io/crates/portable-atomic) in
 targets that don't support them, etc.
 
 There's a wide range of possible implementations depending on the execution environment:
-- For bare-metal single core, disabling interrupts globally.
-- For bare-metal multicore, acquiring a hardware spinlock and disabling interrupts globally.
-- For bare-metal using a RTOS, it usually provides library functions for acquiring a critical section, often named "scheduler lock" or "kernel lock".
-- For bare-metal running in non-privileged mode, usually some system call is needed.
+- For bare-metal single core, disabling interrupts in the current (only) core.
+- For bare-metal multicore, disabling interrupts in the current core and acquiring a hardware spinlock to prevent other cores from entering a critical section concurrently.
+- For bare-metal using a RTOS, using library functions for acquiring a critical section, often named "scheduler lock" or "kernel lock".
+- For bare-metal running in non-privileged mode, calling some system call is usually needed.
 - For `std` targets, acquiring a global `std::sync::Mutex`.
 
 Libraries often need to use critical sections, but there's no universal API for this in `core`. This leads
-library authors to hardcode them for their target, or at best add some `cfg`s to support a few targets.
+library authors to hard-code them for their target, or at best add some `cfg`s to support a few targets.
 This doesn't scale since there are many targets out there, and in the general case it's impossible to know
 which critical section implementation is needed from the Rust target alone. For example, the `thumbv7em-none-eabi` target
 could be cases 1-4 from the above list.
@@ -35,7 +35,25 @@ This crate solves the problem by providing this missing universal API.
 
 First, add a dependency on a crate providing a critical section implementation. Enable the `critical-section-*` Cargo feature if required by the crate.
 
-Implementations are typically provided by either architecture-support crates (`cortex-m`, `riscv`, etc), or HAL crates.
+Implementations are typically provided by either architecture-support crates, HAL crates, and OS/RTOS bindings, including:
+
+* The [`cortex-m`] crate provides an implementation for all single-core Cortex-M microcontrollers via its `critical-section-single-core` feature
+* The [`riscv`] crate provides an implementation for all single-hart RISC-V microcontrollers via its `critical-section-single-hart` feature
+* The [`msp430`] crate provides an implementation for all MSP430 microcontrollers via its `critical-section-single-core` feature
+* The [`rp2040-hal`] crate provides a multi-core-safe critical section for the RP2040 microcontroller via its `critical-section-impl` feature
+* The [`avr-device`] crate provides an implementation for all AVR microcontrollers via its `critical-section-impl` feature
+* The [`esp-hal-common`] crate provides an implementation for ESP32 microcontrollers which is used by the ESP HALs
+* The [`embassy-rp`] crate provides a multi-core-safe critical section for the RP2040 microcontroller via its `critical-section-impl` feature
+* The [`nrf-softdevice`] crate provides a critical section that's compatible with the nRF soft-device firmware via its `critical-section-impl` feature
+
+[`cortex-m`]: https://crates.io/crates/cortex-m
+[`riscv`]: https://crates.io/crates/riscv
+[`msp430`]: https://crates.io/crates/msp430
+[`rp2040-hal`]: https://crates.io/crates/rp2040-hal
+[`avr-device`]: https://crates.io/crates/avr-device
+[`esp-hal-common`]: https://crates.io/crates/esp-hal-common
+[`embassy-rp`]: https://docs.embassy.dev/embassy-rp
+[`nrf-softdevice`]: https://docs.embassy.dev/nrf-softdevice
 
 For example, for single-core Cortex-M targets, you can use:
 

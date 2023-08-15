@@ -92,7 +92,7 @@
 //! [prettyplease]: https://github.com/dtolnay/prettyplease
 
 // Quote types in rustdoc of other crates get linked to here.
-#![doc(html_root_url = "https://docs.rs/quote/1.0.29")]
+#![doc(html_root_url = "https://docs.rs/quote/1.0.32")]
 #![allow(
     clippy::doc_markdown,
     clippy::missing_errors_doc,
@@ -101,6 +101,8 @@
     // false positive https://github.com/rust-lang/rust-clippy/issues/6983
     clippy::wrong_self_convention,
 )]
+
+extern crate alloc;
 
 #[cfg(feature = "proc-macro")]
 extern crate proc_macro;

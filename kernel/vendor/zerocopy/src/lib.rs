@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// After updating the following doc comment, make sure to run the following
+// command to update `README.md` based on its contents:
+//
+//   ./generate-readme.sh > README.md
+
 //! Utilities for safe zero-copy parsing and serialization.
 //!
 //! This crate provides utilities which make it easy to perform zero-copy
@@ -41,87 +46,121 @@
 //!
 //! [simd-layout]: https://rust-lang.github.io/unsafe-code-guidelines/layout/packed-simd-vectors.html
 
-#![deny(missing_docs)]
+// Sometimes we want to use lints which were added after our MSRV.
+// `unknown_lints` is `warn` by default and we deny warnings in CI, so without
+// this attribute, any unknown lint would cause a CI failure when testing with
+// our MSRV.
+#![allow(unknown_lints)]
+#![deny(renamed_and_removed_lints)]
+#![deny(
+    anonymous_parameters,
+    deprecated_in_future,
+    illegal_floating_point_literal_pattern,
+    late_bound_lifetime_arguments,
+    missing_copy_implementations,
+    missing_debug_implementations,
+    missing_docs,
+    path_statements,
+    patterns_in_fns_without_body,
+    rust_2018_idioms,
+    trivial_numeric_casts,
+    unreachable_pub,
+    unsafe_op_in_unsafe_fn,
+    unused_extern_crates,
+    unused_qualifications,
+    variant_size_differences
+)]
+#![deny(
+    clippy::all,
+    clippy::alloc_instead_of_core,
+    clippy::arithmetic_side_effects,
+    clippy::as_underscore,
+    clippy::assertions_on_result_states,
+    clippy::as_conversions,
+    clippy::correctness,
+    clippy::dbg_macro,
+    clippy::decimal_literal_representation,
+    clippy::get_unwrap,
+    clippy::indexing_slicing,
+    clippy::missing_safety_doc,
+    clippy::obfuscated_if_else,
+    clippy::perf,
+    clippy::print_stdout,
+    clippy::std_instead_of_core,
+    clippy::style,
+    clippy::suspicious,
+    clippy::todo,
+    clippy::undocumented_unsafe_blocks,
+    clippy::unimplemented,
+    clippy::unnested_or_patterns,
+    clippy::unwrap_used,
+    clippy::use_debug
+)]
+// Only required on the v0.6.x branch due to behavior of older versions of
+// Clippy which is no longer present on the MSRV we use on the main branch.
+#![allow(clippy::vec_init_then_push)]
+#![deny(
+    rustdoc::bare_urls,
+    rustdoc::broken_intra_doc_links,
+    rustdoc::invalid_codeblock_attributes,
+    rustdoc::invalid_html_tags,
+    rustdoc::invalid_rust_codeblocks,
+    rustdoc::missing_crate_level_docs,
+    rustdoc::private_intra_doc_links
+)]
+// In test code, it makes sense to weight more heavily towards concise, readable
+// code over correct or debuggable code.
+#![cfg_attr(test, allow(
+    // In tests, you get line numbers and have access to source code, so panic
+    // messages are less important. You also often unwrap a lot, which would
+    // make expect'ing instead very verbose.
+    clippy::unwrap_used,
+    // In tests, there's no harm to "panic risks" - the worst that can happen is
+    // that your test will fail, and you'll fix it. By contrast, panic risks in
+    // production code introduce the possibly of code panicking unexpectedly "in
+    // the field".
+    clippy::arithmetic_side_effects,
+    clippy::indexing_slicing,
+))]
 #![cfg_attr(not(test), no_std)]
-#![recursion_limit = "2048"]
+#![cfg_attr(feature = "simd-nightly", feature(stdsimd))]
 
 pub mod byteorder;
+#[doc(hidden)]
+pub mod derive_util;
 
 pub use crate::byteorder::*;
 pub use zerocopy_derive::*;
 
-use core::cell::{Ref, RefMut};
-use core::cmp::Ordering;
-use core::fmt::{self, Debug, Display, Formatter};
-use core::marker::PhantomData;
-use core::mem;
-use core::ops::{Deref, DerefMut};
-use core::ptr;
-use core::slice;
+use core::{
+    cell::{Ref, RefMut},
+    cmp::Ordering,
+    fmt::{self, Debug, Display, Formatter},
+    hash::{Hash, Hasher},
+    marker::PhantomData,
+    mem::{self, ManuallyDrop, MaybeUninit},
+    num::{
+        NonZeroI128, NonZeroI16, NonZeroI32, NonZeroI64, NonZeroI8, NonZeroIsize, NonZeroU128,
+        NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize, Wrapping,
+    },
+    ops::{Deref, DerefMut},
+    ptr, slice,
+};
 
-// This is a hack to allow derives of FromBytes, AsBytes, and Unaligned to work
-// in this crate. They assume that zerocopy is linked as an extern crate, so
-// they access items from it as `zerocopy::Xxx`. This makes that still work.
+#[cfg(feature = "alloc")]
+extern crate alloc;
+#[cfg(feature = "alloc")]
+use {
+    alloc::boxed::Box,
+    alloc::vec::Vec,
+    core::{alloc::Layout, ptr::NonNull},
+};
+
+// This is a hack to allow derives of `FromBytes`, `AsBytes`, and `Unaligned` to
+// work in this crate. They assume that zerocopy is linked as an extern crate,
+// so they access items from it as `zerocopy::Xxx`. This makes that still work.
 mod zerocopy {
-    pub use crate::*;
-}
-
-// implement an unsafe trait for a range of container types
-macro_rules! impl_for_composite_types {
-    ($trait:ident) => {
-        unsafe impl<T> $trait for PhantomData<T> {
-            fn only_derive_is_allowed_to_implement_this_trait()
-            where
-                Self: Sized,
-            {
-            }
-        }
-        unsafe impl<T: $trait> $trait for [T] {
-            fn only_derive_is_allowed_to_implement_this_trait()
-            where
-                Self: Sized,
-            {
-            }
-        }
-        unsafe impl $trait for () {
-            fn only_derive_is_allowed_to_implement_this_trait()
-            where
-                Self: Sized,
-            {
-            }
-        }
-        unsafe impl<T: $trait, const N: usize> $trait for [T; N] {
-            fn only_derive_is_allowed_to_implement_this_trait()
-            where
-                Self: Sized,
-            {
-            }
-        }
-    };
-}
-
-/// Implements `$trait` for one or more `$type`s.
-macro_rules! impl_for_types {
-    ($trait:ident, $type:ty) => (
-        unsafe impl $trait for $type {
-            fn only_derive_is_allowed_to_implement_this_trait() where Self: Sized {}
-        }
-    );
-    ($trait:ident, $type:ty, $($types:ty),*) => (
-        unsafe impl $trait for $type {
-            fn only_derive_is_allowed_to_implement_this_trait() where Self: Sized {}
-        }
-        impl_for_types!($trait, $($types),*);
-    );
-}
-
-/// Implements `$trait` for all signed and unsigned primitive types.
-macro_rules! impl_for_primitives {
-    ($trait:ident) => {
-        impl_for_types!(
-            $trait, u8, i8, u16, i16, u32, i32, u64, i64, u128, i128, usize, isize, f32, f64
-        );
-    };
+    pub(crate) use crate::*;
 }
 
 /// Types for which any byte pattern is valid.
@@ -180,7 +219,7 @@ macro_rules! impl_for_primitives {
 /// Whether a struct is soundly `FromBytes` therefore solely depends on whether
 /// its fields are `FromBytes`.
 pub unsafe trait FromBytes {
-    // NOTE: The Self: Sized bound makes it so that FromBytes is still object
+    // The `Self: Sized` bound makes it so that `FromBytes` is still object
     // safe.
     #[doc(hidden)]
     fn only_derive_is_allowed_to_implement_this_trait()
@@ -229,11 +268,9 @@ pub unsafe trait FromBytes {
     where
         Self: Sized,
     {
-        unsafe {
-            // Safe because FromBytes says all bit patterns (including zeroes)
-            // are legal.
-            core::mem::zeroed()
-        }
+        // SAFETY: `FromBytes` says all bit patterns (including zeroes) are
+        // legal.
+        unsafe { mem::zeroed() }
     }
 
     /// Creates a `Box<Self>` from zeroed bytes.
@@ -254,20 +291,22 @@ pub unsafe trait FromBytes {
     /// # Panics
     ///
     /// Panics if allocation of `size_of::<Self>()` bytes fails.
-    #[cfg(any(test, feature = "alloc"))]
+    #[cfg(feature = "alloc")]
     fn new_box_zeroed() -> Box<Self>
     where
         Self: Sized,
     {
-        // If T is a ZST, then return a proper boxed instance of it. There is no
-        // allocation, but Box does require a correct dangling pointer.
+        // If `T` is a ZST, then return a proper boxed instance of it. There is
+        // no allocation, but `Box` does require a correct dangling pointer.
         let layout = Layout::new::<Self>();
         if layout.size() == 0 {
             return Box::new(Self::new_zeroed());
         }
 
+        // TODO(#61): Add a "SAFETY" comment and remove this `allow`.
+        #[allow(clippy::undocumented_unsafe_blocks)]
         unsafe {
-            let ptr = alloc::alloc::alloc_zeroed(layout) as *mut Self;
+            let ptr = alloc::alloc::alloc_zeroed(layout).cast::<Self>();
             if ptr.is_null() {
                 alloc::alloc::handle_alloc_error(layout);
             }
@@ -296,37 +335,65 @@ pub unsafe trait FromBytes {
     ///
     /// * Panics if `size_of::<Self>() * len` overflows.
     /// * Panics if allocation of `size_of::<Self>() * len` bytes fails.
-    #[cfg(any(test, feature = "alloc"))]
+    #[cfg(feature = "alloc")]
     fn new_box_slice_zeroed(len: usize) -> Box<[Self]>
     where
         Self: Sized,
     {
-        // TODO(https://fxbug.dev/80757): Use Layout::repeat() when `alloc_layout_extra` is stabilized
-        // This will intentionally panic if it overflows.
+        // TODO(#2): Use `Layout::repeat` when `alloc_layout_extra` is
+        // stabilized.
+        let layout = Layout::from_size_align(
+            mem::size_of::<Self>()
+                .checked_mul(len)
+                .expect("mem::size_of::<Self>() * len overflows `usize`"),
+            mem::align_of::<Self>(),
+        )
+        .expect("total allocation size overflows `isize`");
+
+        // TODO(#61): Add a "SAFETY" comment and remove this `allow`.
+        #[allow(clippy::undocumented_unsafe_blocks)]
         unsafe {
-            // from_size_align_unchecked() is sound because slice_len_bytes is
-            // guaranteed to be properly aligned (we just multiplied it by
-            // size_of::<T>(), which is guaranteed to be aligned).
-            let layout = Layout::from_size_align_unchecked(
-                size_of::<Self>().checked_mul(len).unwrap(),
-                align_of::<Self>(),
-            );
             if layout.size() != 0 {
-                let ptr = alloc::alloc::alloc_zeroed(layout) as *mut Self;
+                let ptr = alloc::alloc::alloc_zeroed(layout).cast::<Self>();
                 if ptr.is_null() {
                     alloc::alloc::handle_alloc_error(layout);
                 }
-                Box::from_raw(core::slice::from_raw_parts_mut(ptr, len))
+                Box::from_raw(slice::from_raw_parts_mut(ptr, len))
             } else {
-                // Box<[T]> does not allocate when T is zero-sized or when len
-                // is zero, but it does require a non-null dangling pointer for
-                // its allocation.
-                Box::from_raw(core::slice::from_raw_parts_mut(
-                    NonNull::<Self>::dangling().as_ptr(),
-                    len,
-                ))
+                // `Box<[T]>` does not allocate when `T` is zero-sized or when
+                // `len` is zero, but it does require a non-null dangling
+                // pointer for its allocation.
+                Box::from_raw(slice::from_raw_parts_mut(NonNull::<Self>::dangling().as_ptr(), len))
             }
         }
+    }
+
+    /// Creates a `Vec<Self>` from zeroed bytes.
+    ///
+    /// This function is useful for allocating large values of `Vec`s and
+    /// zero-initializing them, without ever creating a temporary instance of
+    /// `[Self; _]` (or many temporary instances of `Self`) on the stack. For
+    /// example, `u8::new_vec_zeroed(1048576)` will allocate directly on the
+    /// heap; it does not require storing intermediate values on the stack.
+    ///
+    /// On systems that use a heap implementation that supports allocating from
+    /// pre-zeroed memory, using `new_vec_zeroed` may have performance benefits.
+    ///
+    /// If `Self` is a zero-sized type, then this function will return a
+    /// `Vec<Self>` that has the correct `len`. Such a `Vec` cannot contain any
+    /// actual information, but its `len()` property will report the correct
+    /// value.
+    ///
+    /// # Panics
+    ///
+    /// * Panics if `size_of::<Self>() * len` overflows.
+    /// * Panics if allocation of `size_of::<Self>() * len` bytes fails.
+    #[cfg(feature = "alloc")]
+    fn new_vec_zeroed(len: usize) -> Vec<Self>
+    where
+        Self: Sized,
+    {
+        Self::new_box_slice_zeroed(len).into()
     }
 }
 
@@ -384,6 +451,12 @@ pub unsafe trait FromBytes {
 ///
 /// [Rust Reference]: https://doc.rust-lang.org/reference/type-layout.html
 pub unsafe trait AsBytes {
+    // The `Self: Sized` bound makes it so that this function doesn't prevent
+    // `AsBytes` from being object safe. Note that other `AsBytes` methods
+    // prevent object safety, but those provide a benefit in exchange for object
+    // safety. If at some point we remove those methods, change their type
+    // signatures, or move them out of this trait so that `AsBytes` is object
+    // safe again, it's important that this function not prevent object safety.
     #[doc(hidden)]
     fn only_derive_is_allowed_to_implement_this_trait()
     where
@@ -394,11 +467,14 @@ pub unsafe trait AsBytes {
     /// `as_bytes` provides access to the bytes of this value as an immutable
     /// byte slice.
     fn as_bytes(&self) -> &[u8] {
+        // TODO(#61): Add a "SAFETY" comment and remove this `allow`.
+        #[allow(clippy::undocumented_unsafe_blocks)]
         unsafe {
-            // NOTE: This function does not have a Self: Sized bound.
-            // size_of_val works for unsized values too.
+            // Note that this method does not have a `Self: Sized` bound;
+            // `size_of_val` works for unsized values too.
             let len = mem::size_of_val(self);
-            slice::from_raw_parts(self as *const Self as *const u8, len)
+            let slf: *const Self = self;
+            slice::from_raw_parts(slf.cast::<u8>(), len)
         }
     }
 
@@ -410,11 +486,14 @@ pub unsafe trait AsBytes {
     where
         Self: FromBytes,
     {
+        // TODO(#61): Add a "SAFETY" comment and remove this `allow`.
+        #[allow(clippy::undocumented_unsafe_blocks)]
         unsafe {
-            // NOTE: This function does not have a Self: Sized bound.
-            // size_of_val works for unsized values too.
+            // Note that this method does not have a `Self: Sized` bound;
+            // `size_of_val` works for unsized values too.
             let len = mem::size_of_val(self);
-            slice::from_raw_parts_mut(self as *mut Self as *mut u8, len)
+            let slf: *mut Self = self;
+            slice::from_raw_parts_mut(slf.cast::<u8>(), len)
         }
     }
 
@@ -436,32 +515,23 @@ pub unsafe trait AsBytes {
     /// of `bytes`. If `bytes.len() < size_of_val(self)`, it returns `None`.
     fn write_to_prefix<B: ByteSliceMut>(&self, mut bytes: B) -> Option<()> {
         let size = mem::size_of_val(self);
-        if bytes.len() < size {
-            return None;
-        }
-
-        bytes[..size].copy_from_slice(self.as_bytes());
+        bytes.get_mut(..size)?.copy_from_slice(self.as_bytes());
         Some(())
     }
 
     /// Writes a copy of `self` to the suffix of `bytes`.
     ///
-    /// `write_to_suffix` writes `self` to the last `size_of_val(self)` bytes
-    /// of `bytes`. If `bytes.len() < size_of_val(self)`, it returns `None`.
+    /// `write_to_suffix` writes `self` to the last `size_of_val(self)` bytes of
+    /// `bytes`. If `bytes.len() < size_of_val(self)`, it returns `None`.
     fn write_to_suffix<B: ByteSliceMut>(&self, mut bytes: B) -> Option<()> {
         let start = bytes.len().checked_sub(mem::size_of_val(self))?;
-        bytes[start..].copy_from_slice(self.as_bytes());
+        bytes
+            .get_mut(start..)
+            .expect("`start` should be in-bounds of `bytes`")
+            .copy_from_slice(self.as_bytes());
         Some(())
     }
 }
-
-// Special case for bool (it is not included in `impl_for_primitives!`).
-impl_for_types!(AsBytes, bool);
-
-impl_for_primitives!(FromBytes);
-impl_for_primitives!(AsBytes);
-impl_for_composite_types!(FromBytes);
-impl_for_composite_types!(AsBytes);
 
 /// Types with no alignment requirement.
 ///
@@ -477,7 +547,7 @@ impl_for_composite_types!(AsBytes);
 /// is marked as `Unaligned` which violates this contract, it may cause
 /// undefined behavior.
 pub unsafe trait Unaligned {
-    // NOTE: The Self: Sized bound makes it so that Unaligned is still object
+    // The `Self: Sized` bound makes it so that `Unaligned` is still object
     // safe.
     #[doc(hidden)]
     fn only_derive_is_allowed_to_implement_this_trait()
@@ -485,8 +555,339 @@ pub unsafe trait Unaligned {
         Self: Sized;
 }
 
-impl_for_types!(Unaligned, u8, i8);
-impl_for_composite_types!(Unaligned);
+/// Documents multiple unsafe blocks with a single safety comment.
+///
+/// Invoked as:
+///
+/// ```rust,ignore
+/// safety_comment! {
+///     // Non-doc comments come first.
+///     /// SAFETY:
+///     /// Safety comment starts on its own line.
+///     macro_1!(args);
+///     macro_2! { args };
+/// }
+/// ```
+///
+/// The macro invocations are emitted, each decorated with the following
+/// attribute: `#[allow(clippy::undocumented_unsafe_blocks)]`.
+macro_rules! safety_comment {
+    (#[doc = r" SAFETY:"] $(#[doc = $_doc:literal])* $($macro:ident!$args:tt;)*) => {
+        #[allow(clippy::undocumented_unsafe_blocks)]
+        const _: () = { $($macro!$args;)* };
+    }
+}
+
+/// Unsafely implements trait(s) for a type.
+macro_rules! unsafe_impl {
+    // Implement `$trait` for `$ty` with no bounds.
+    ($ty:ty: $trait:ty) => {
+        unsafe impl $trait for $ty { fn only_derive_is_allowed_to_implement_this_trait() {} }
+    };
+    // Implement all `$traits` for `$ty` with no bounds.
+    ($ty:ty: $($traits:ty),*) => {
+        $( unsafe_impl!($ty: $traits); )*
+    };
+    // For all `$tyvar` with no bounds, implement `$trait` for `$ty`.
+    ($tyvar:ident => $trait:ident for $ty:ty) => {
+        unsafe impl<$tyvar> $trait for $ty { fn only_derive_is_allowed_to_implement_this_trait() {} }
+    };
+    // For all `$tyvar: ?Sized` with no bounds, implement `$trait` for `$ty`.
+    ($tyvar:ident: ?Sized => $trait:ident for $ty:ty) => {
+        unsafe impl<$tyvar: ?Sized> $trait for $ty { fn only_derive_is_allowed_to_implement_this_trait() {} }
+    };
+    // For all `$tyvar: $bound`, implement `$trait` for `$ty`.
+    ($tyvar:ident: $bound:path => $trait:ident for $ty:ty) => {
+        unsafe impl<$tyvar: $bound> $trait for $ty { fn only_derive_is_allowed_to_implement_this_trait() {} }
+    };
+    // For all `$tyvar: $bound + ?Sized`, implement `$trait` for `$ty`.
+    ($tyvar:ident: ?Sized + $bound:path => $trait:ident for $ty:ty) => {
+        unsafe impl<$tyvar: ?Sized + $bound> $trait for $ty { fn only_derive_is_allowed_to_implement_this_trait() {} }
+    };
+    // For all `$tyvar: $bound` and for all `const $constvar: $constty`,
+    // implement `$trait` for `$ty`.
+    ($tyvar:ident: $bound:path, const $constvar:ident: $constty:ty => $trait:ident for $ty:ty) => {
+        unsafe impl<$tyvar: $bound, const $constvar: $constty> $trait for $ty {
+            fn only_derive_is_allowed_to_implement_this_trait() {}
+        }
+    };
+}
+
+/// Uses `align_of` to confirm that a type or set of types have alignment 1.
+///
+/// Note that `align_of<T>` requires `T: Sized`, so this macro doesn't work for
+/// unsized types.
+macro_rules! assert_unaligned {
+    ($ty:ty) => {
+        // We only compile this assertion under `cfg(test)` to avoid taking an
+        // extra non-dev dependency (and making this crate more expensive to
+        // compile for our dependents).
+        #[cfg(test)]
+        static_assertions::const_assert_eq!(core::mem::align_of::<$ty>(), 1);
+    };
+    ($($ty:ty),*) => {
+        $(assert_unaligned!($ty);)*
+    };
+}
+
+safety_comment! {
+    /// SAFETY:
+    /// Per the reference [1], "the unit tuple (`()`) ... is guaranteed as a
+    /// zero-sized type to have a size of 0 and an alignment of 1."
+    /// - `FromBytes`: There is only one possible sequence of 0 bytes, and `()`
+    ///   is inhabited.
+    /// - `AsBytes`: Since `()` has size 0, it contains no padding bytes.
+    /// - `Unaligned`: `()` has alignment 1.
+    ///
+    /// [1] https://doc.rust-lang.org/reference/type-layout.html#tuple-layout
+    unsafe_impl!((): FromBytes, AsBytes, Unaligned);
+    assert_unaligned!(());
+}
+
+safety_comment! {
+    /// SAFETY:
+    /// - `FromBytes`: all bit patterns are valid for integers [1]
+    /// - `AsBytes`: integers have no padding bytes [1]
+    /// - `Unaligned` (`u8` and `i8` only): The reference [2] specifies the size
+    ///   of `u8` and `i8` as 1 byte. We also know that:
+    ///   - Alignment is >= 1
+    ///   - Size is an integer multiple of alignment
+    ///   - The only value >= 1 for which 1 is an integer multiple is 1
+    ///   Therefore, the only possible alignment for `u8` and `i8` is 1.
+    ///
+    /// [1] TODO(https://github.com/rust-lang/reference/issues/1291): Once the
+    ///     reference explicitly guarantees these properties, cite it.
+    /// [2] https://doc.rust-lang.org/reference/type-layout.html#primitive-data-layout
+    unsafe_impl!(u8: FromBytes, AsBytes, Unaligned);
+    unsafe_impl!(i8: FromBytes, AsBytes, Unaligned);
+    assert_unaligned!(u8, i8);
+    unsafe_impl!(u16: FromBytes, AsBytes);
+    unsafe_impl!(i16: FromBytes, AsBytes);
+    unsafe_impl!(u32: FromBytes, AsBytes);
+    unsafe_impl!(i32: FromBytes, AsBytes);
+    unsafe_impl!(u64: FromBytes, AsBytes);
+    unsafe_impl!(i64: FromBytes, AsBytes);
+    unsafe_impl!(u128: FromBytes, AsBytes);
+    unsafe_impl!(i128: FromBytes, AsBytes);
+    unsafe_impl!(usize: FromBytes, AsBytes);
+    unsafe_impl!(isize: FromBytes, AsBytes);
+}
+
+safety_comment! {
+    /// SAFETY:
+    /// - `FromBytes`: the `{f32,f64}::from_bits` constructors' documentation
+    ///   [1,2] states that they are currently equivalent to `transmute`. [3]
+    /// - `AsBytes`: the `{f32,f64}::to_bits` methods' documentation [4,5]
+    ///   states that they are currently equivalent to `transmute`. [3]
+    ///
+    /// TODO: Make these arguments more precisely in terms of the documentation.
+    ///
+    /// [1] https://doc.rust-lang.org/nightly/std/primitive.f32.html#method.from_bits
+    /// [2] https://doc.rust-lang.org/nightly/std/primitive.f64.html#method.from_bits
+    /// [3] TODO(https://github.com/rust-lang/reference/issues/1291): Once the
+    ///     reference explicitly guarantees these properties, cite it.
+    /// [4] https://doc.rust-lang.org/nightly/std/primitive.f32.html#method.to_bits
+    /// [5] https://doc.rust-lang.org/nightly/std/primitive.f64.html#method.to_bits
+    unsafe_impl!(f32: FromBytes, AsBytes);
+    unsafe_impl!(f64: FromBytes, AsBytes);
+}
+
+safety_comment! {
+    /// SAFETY:
+    /// - `AsBytes`: Per the reference [1], `bool` always has a size of 1 with
+    ///   valid bit patterns 0x01 and 0x00, so the only byte of the bool is
+    ///   always initialized
+    /// - `Unaligned`: Per the reference [1], "[a]n object with the boolean type
+    ///   has a size and alignment of 1 each."
+    ///
+    /// [1] https://doc.rust-lang.org/reference/types/boolean.html
+    unsafe_impl!(bool: AsBytes, Unaligned);
+    assert_unaligned!(bool);
+}
+safety_comment! {
+    /// SAFETY:
+    /// - `AsBytes`: `char` is represented as a 32-bit unsigned word (`u32`)
+    ///   [1], which is `AsBytes`. Note that unlike `u32`, not all bit patterns
+    ///   are valid for `char`.
+    ///
+    /// [1] https://doc.rust-lang.org/reference/types/textual.html
+    unsafe_impl!(char: AsBytes);
+}
+safety_comment! {
+    /// SAFETY:
+    /// - `AsBytes`, `Unaligned`: Per the reference [1], `str` has the same
+    ///   layout as `[u8]`, and `[u8]` is `AsBytes` and `Unaligned`.
+    ///
+    /// Note that we don't `assert_unaligned!(str)` because `assert_unaligned!`
+    /// uses `align_of`, which only works for `Sized` types.
+    ///
+    /// [1] https://doc.rust-lang.org/reference/type-layout.html#str-layout
+    unsafe_impl!(str: AsBytes, Unaligned);
+}
+
+safety_comment! {
+    // `NonZeroXxx` is `AsBytes`, but not `FromBytes`.
+    //
+    /// SAFETY:
+    /// - `AsBytes`: `NonZeroXxx` has the same layout as its associated
+    ///    primitive. Since it is the same size, this guarantees it has no
+    ///    padding - integers have no padding, and there's no room for padding
+    ///    if it can represent all of the same values except 0.
+    /// - `Unaligned`: `NonZeroU8` and `NonZeroI8` document that
+    ///   `Option<NonZeroU8>` and `Option<NonZeroI8>` both have size 1. [1] [2]
+    ///   This is worded in a way that makes it unclear whether it's meant as a
+    ///   guarantee, but given the purpose of those types, it's virtually
+    ///   unthinkable that that would ever change. `Option` cannot be smaller
+    ///   than its contained type, which implies that, and `NonZeroX8` are of
+    ///   size 1 or 0. `NonZeroX8` can represent multiple states, so they cannot
+    ///   be 0 bytes, which means that they must be 1 byte. The only valid
+    ///   alignment for a 1-byte type is 1.
+    ///
+    /// [1] https://doc.rust-lang.org/stable/std/num/struct.NonZeroU8.html
+    /// [2] https://doc.rust-lang.org/stable/std/num/struct.NonZeroI8.html
+    /// TODO(https://github.com/rust-lang/rust/pull/104082): Cite documentation
+    /// that layout is the same as primitive layout.
+    unsafe_impl!(NonZeroU8: AsBytes, Unaligned);
+    unsafe_impl!(NonZeroI8: AsBytes, Unaligned);
+    assert_unaligned!(NonZeroU8, NonZeroI8);
+    unsafe_impl!(NonZeroU16: AsBytes);
+    unsafe_impl!(NonZeroI16: AsBytes);
+    unsafe_impl!(NonZeroU32: AsBytes);
+    unsafe_impl!(NonZeroI32: AsBytes);
+    unsafe_impl!(NonZeroU64: AsBytes);
+    unsafe_impl!(NonZeroI64: AsBytes);
+    unsafe_impl!(NonZeroU128: AsBytes);
+    unsafe_impl!(NonZeroI128: AsBytes);
+    unsafe_impl!(NonZeroUsize: AsBytes);
+    unsafe_impl!(NonZeroIsize: AsBytes);
+}
+safety_comment! {
+    /// SAFETY:
+    /// - `FromBytes`, `AsBytes`: The Rust compiler reuses `0` value to
+    ///   represent `None`, so `size_of::<Option<NonZeroXxx>>() ==
+    ///   size_of::<xxx>()`; see `NonZeroXxx` documentation.
+    /// - `Unaligned`: `NonZeroU8` and `NonZeroI8` document that
+    ///   `Option<NonZeroU8>` and `Option<NonZeroI8>` both have size 1. [1] [2]
+    ///   This is worded in a way that makes it unclear whether it's meant as a
+    ///   guarantee, but given the purpose of those types, it's virtually
+    ///   unthinkable that that would ever change. The only valid alignment for
+    ///   a 1-byte type is 1.
+    ///
+    /// [1] https://doc.rust-lang.org/stable/std/num/struct.NonZeroU8.html
+    /// [2] https://doc.rust-lang.org/stable/std/num/struct.NonZeroI8.html
+    ///
+    /// TODO(https://github.com/rust-lang/rust/pull/104082): Cite documentation
+    /// for layout guarantees.
+    unsafe_impl!(Option<NonZeroU8>: FromBytes, AsBytes, Unaligned);
+    unsafe_impl!(Option<NonZeroI8>: FromBytes, AsBytes, Unaligned);
+    assert_unaligned!(Option<NonZeroU8>, Option<NonZeroI8>);
+    unsafe_impl!(Option<NonZeroU16>: FromBytes, AsBytes);
+    unsafe_impl!(Option<NonZeroI16>: FromBytes, AsBytes);
+    unsafe_impl!(Option<NonZeroU32>: FromBytes, AsBytes);
+    unsafe_impl!(Option<NonZeroI32>: FromBytes, AsBytes);
+    unsafe_impl!(Option<NonZeroU64>: FromBytes, AsBytes);
+    unsafe_impl!(Option<NonZeroI64>: FromBytes, AsBytes);
+    unsafe_impl!(Option<NonZeroU128>: FromBytes, AsBytes);
+    unsafe_impl!(Option<NonZeroI128>: FromBytes, AsBytes);
+    unsafe_impl!(Option<NonZeroUsize>: FromBytes, AsBytes);
+    unsafe_impl!(Option<NonZeroIsize>: FromBytes, AsBytes);
+}
+
+safety_comment! {
+    /// SAFETY:
+    /// For all `T`, `PhantomData<T>` has size 0 and alignment 1. [1]
+    /// - `FromBytes`: There is only one possible sequence of 0 bytes, and
+    ///   `PhantomData` is inhabited.
+    /// - `AsBytes`: Since `PhantomData` has size 0, it contains no padding
+    ///   bytes.
+    /// - `Unaligned`: Per the preceding reference, `PhantomData` has alignment
+    ///   1.
+    ///
+    /// [1] https://doc.rust-lang.org/std/marker/struct.PhantomData.html#layout-1
+    unsafe_impl!(T: ?Sized => FromBytes for PhantomData<T>);
+    unsafe_impl!(T: ?Sized => AsBytes for PhantomData<T>);
+    unsafe_impl!(T: ?Sized => Unaligned for PhantomData<T>);
+    assert_unaligned!(PhantomData<()>, PhantomData<u8>, PhantomData<u64>);
+}
+safety_comment! {
+    /// SAFETY:
+    /// `Wrapping<T>` is guaranteed by its docs [1] to have the same layout as
+    /// `T`. Also, `Wrapping<T>` is `#[repr(transparent)]`, and has a single
+    /// field, which is `pub`. Per the reference [2], this means that the
+    /// `#[repr(transparent)]` attribute is "considered part of the public ABI".
+    ///
+    /// [1] https://doc.rust-lang.org/nightly/core/num/struct.Wrapping.html#layout-1
+    /// [2] https://doc.rust-lang.org/nomicon/other-reprs.html#reprtransparent
+    unsafe_impl!(T: FromBytes => FromBytes for Wrapping<T>);
+    unsafe_impl!(T: AsBytes => AsBytes for Wrapping<T>);
+    unsafe_impl!(T: Unaligned => Unaligned for Wrapping<T>);
+    assert_unaligned!(Wrapping<()>, Wrapping<u8>);
+}
+safety_comment! {
+    // `MaybeUninit<T>` is `FromBytes`, but never `AsBytes` since it may contain
+    // uninitialized bytes.
+    //
+    /// SAFETY:
+    /// - `FromBytes`: `MaybeUninit<T>` has no restrictions on its contents.
+    /// - `Unaligned`: `MaybeUninit<T>` is guaranteed by its documentation [1]
+    ///   to have the same alignment as `T`.
+    ///
+    /// [1] https://doc.rust-lang.org/nightly/core/mem/union.MaybeUninit.html#layout-1
+    unsafe_impl!(T => FromBytes for MaybeUninit<T>);
+    unsafe_impl!(T: Unaligned => Unaligned for MaybeUninit<T>);
+    assert_unaligned!(MaybeUninit<()>, MaybeUninit<u8>);
+}
+safety_comment! {
+    /// SAFETY:
+    /// `ManuallyDrop` has the same layout as `T`, and accessing the inner value
+    /// is safe (meaning that it's unsound to leave the inner value
+    /// uninitialized while exposing the `ManuallyDrop` to safe code).
+    /// - `FromBytes`: Since it has the same layout as `T`, any valid `T` is a
+    ///   valid `ManuallyDrop<T>`. Since `T: FromBytes`, any sequence of bytes
+    ///   is a valid `T`, and thus a valid `ManuallyDrop<T>`.
+    /// - `AsBytes`: Since it has the same layout as `T`, and since it's unsound
+    ///   to let safe code access a `ManuallyDrop` whose inner value is
+    ///   uninitialized, safe code can only ever access a `ManuallyDrop` whose
+    ///   contents are a valid `T`. Since `T: AsBytes`, this means that safe
+    ///   code can only ever access a `ManuallyDrop` with all initialized bytes.
+    /// - `Unaligned`: `ManuallyDrop` has the same layout (and thus alignment)
+    ///   as `T`, and `T: Unaligned` guarantees that that alignment is 1.
+    unsafe_impl!(T: ?Sized + FromBytes => FromBytes for ManuallyDrop<T>);
+    unsafe_impl!(T: ?Sized + AsBytes => AsBytes for ManuallyDrop<T>);
+    unsafe_impl!(T: ?Sized + Unaligned => Unaligned for ManuallyDrop<T>);
+    assert_unaligned!(ManuallyDrop<()>, ManuallyDrop<u8>);
+}
+safety_comment! {
+    /// SAFETY:
+    /// Per the reference [1]:
+    ///
+    ///   An array of `[T; N]` has a size of `size_of::<T>() * N` and the same
+    ///   alignment of `T`. Arrays are laid out so that the zero-based `nth`
+    ///   element of the array is offset from the start of the array by `n *
+    ///   size_of::<T>()` bytes.
+    ///
+    ///   ...
+    ///
+    ///   Slices have the same layout as the section of the array they slice.
+    ///
+    /// In other words, the layout of a `[T]` or `[T; N]` is a sequence of `T`s
+    /// laid out back-to-back with no bytes in between. Therefore, `[T]` or `[T;
+    /// N]` are `FromBytes` and `AsBytes` if `T` is (respectively). Furthermore,
+    /// since an array/slice has "the same alignment of `T`", `[T]` and `[T; N]`
+    /// are `Unaligned` if `T` is.
+    ///
+    /// Note that we don't `assert_unaligned!` for slice types because
+    /// `assert_unaligned!` uses `align_of`, which only works for `Sized` types.
+    ///
+    /// [1] https://doc.rust-lang.org/reference/type-layout.html#array-layout
+    unsafe_impl!(T: FromBytes, const N: usize => FromBytes for [T; N]);
+    unsafe_impl!(T: AsBytes, const N: usize => AsBytes for [T; N]);
+    unsafe_impl!(T: Unaligned, const N: usize => Unaligned for [T; N]);
+    assert_unaligned!([(); 0], [(); 1], [u8; 0], [u8; 1]);
+    unsafe_impl!(T: FromBytes => FromBytes for [T]);
+    unsafe_impl!(T: AsBytes => AsBytes for [T]);
+    unsafe_impl!(T: Unaligned => Unaligned for [T]);
+}
 
 // SIMD support
 //
@@ -559,15 +960,20 @@ mod simd {
     /// `$arch` is both the name of the defined module and the name of the
     /// module in `core::arch`, and `$typ` is the list of items from that module
     /// to implement `FromBytes` and `AsBytes` for.
+    #[allow(unused_macros)] // `allow(unused_macros)` is needed because some
+                            // target/feature combinations don't emit any impls
+                            // and thus don't use this macro.
     macro_rules! simd_arch_mod {
         ($arch:ident, $($typ:ident),*) => {
             mod $arch {
                 use core::arch::$arch::{$($typ),*};
 
                 use crate::*;
-
-                impl_for_types!(FromBytes, $($typ),*);
-                impl_for_types!(AsBytes, $($typ),*);
+                safety_comment! {
+                    /// SAFETY:
+                    /// See comment on module definition for justification.
+                    $( unsafe_impl!($typ: FromBytes, AsBytes); )*
+                }
             }
         };
     }
@@ -594,7 +1000,7 @@ mod simd {
         vector_signed_long,
         vector_unsigned_long
     );
-    #[cfg(all(feature = "simd-nightly", target_arch = "aarch64"))]
+    #[cfg(target_arch = "aarch64")]
     #[rustfmt::skip]
     simd_arch_mod!(
         aarch64, float32x2_t, float32x4_t, float64x1_t, float64x2_t, int8x8_t, int8x8x2_t,
@@ -607,31 +1013,50 @@ mod simd {
     );
     #[cfg(all(feature = "simd-nightly", target_arch = "arm"))]
     #[rustfmt::skip]
-    simd_arch_mod!(
-        arm, float32x2_t, float32x4_t, int8x4_t, int8x8_t, int8x8x2_t, int8x8x3_t, int8x8x4_t,
-        int8x16_t, int16x2_t, int16x4_t, int16x8_t, int32x2_t, int32x4_t, int64x1_t, int64x2_t,
-        poly8x8_t, poly8x8x2_t, poly8x8x3_t, poly8x8x4_t, poly8x16_t, poly16x4_t, poly16x8_t,
-        poly64x1_t, poly64x2_t, uint8x4_t, uint8x8_t, uint8x8x2_t, uint8x8x3_t, uint8x8x4_t,
-        uint8x16_t, uint16x2_t, uint16x4_t, uint16x8_t, uint32x2_t, uint32x4_t, uint64x1_t,
-        uint64x2_t
-    );
+    simd_arch_mod!(arm, int8x4_t, uint8x4_t);
 }
 
 /// A type with no alignment requirement.
 ///
-/// A `Unalign` wraps a `T`, removing any alignment requirement. `Unalign<T>`
-/// has the same size and ABI as `T`, but not necessarily the same alignment.
-/// This is useful if a type with an alignment requirement needs to be read from
-/// a chunk of memory which provides no alignment guarantees.
+/// An `Unalign` wraps a `T`, removing any alignment requirement. `Unalign<T>`
+/// has the same size and bit validity as `T`, but not necessarily the same
+/// alignment [or ABI]. This is useful if a type with an alignment requirement
+/// needs to be read from a chunk of memory which provides no alignment
+/// guarantees.
 ///
 /// Since `Unalign` has no alignment requirement, the inner `T` may not be
-/// properly aligned in memory, and so `Unalign` provides no way of getting a
-/// reference to the inner `T`. Instead, the `T` may only be obtained by value
-/// (see [`get`] and [`into_inner`]).
+/// properly aligned in memory. There are five ways to access the inner `T`:
+/// - by value, using [`get`] or [`into_inner`]
+/// - by reference inside of a callback, using [`update`]
+/// - fallibly by reference, using [`try_deref`] or [`try_deref_mut`]; these can
+///   fail if the `Unalign` does not satisfy `T`'s alignment requirement at
+///   runtime
+/// - unsafely by reference, using [`deref_unchecked`] or
+///   [`deref_mut_unchecked`]; it is the caller's responsibility to ensure that
+///   the `Unalign` satisfies `T`'s alignment requirement
+/// - (where `T: Unaligned`) infallibly by reference, using [`Deref::deref`] or
+///   [`DerefMut::deref_mut`]
 ///
+/// [or ABI]: https://github.com/google/zerocopy/issues/164
 /// [`get`]: Unalign::get
 /// [`into_inner`]: Unalign::into_inner
-#[derive(FromBytes, Unaligned, Copy)]
+/// [`update`]: Unalign::update
+/// [`try_deref`]: Unalign::try_deref
+/// [`try_deref_mut`]: Unalign::try_deref_mut
+/// [`deref_unchecked`]: Unalign::deref_unchecked
+/// [`deref_mut_unchecked`]: Unalign::deref_mut_unchecked
+// NOTE: This type is sound to use with types that need to be dropped. The
+// reason is that the compiler-generated drop code automatically moves all
+// values to aligned memory slots before dropping them in-place. This is not
+// well-documented, but it's hinted at in places like [1] and [2]. However, this
+// also means that `T` must be `Sized`; unless something changes, we can never
+// support unsized `T`. [3]
+//
+// [1] https://github.com/rust-lang/rust/issues/54148#issuecomment-420529646
+// [2] https://github.com/google/zerocopy/pull/126#discussion_r1018512323
+// [3] https://github.com/google/zerocopy/issues/209
+#[allow(missing_debug_implementations)]
+#[derive(FromBytes, Unaligned, Default, Copy)]
 #[repr(C, packed)]
 pub struct Unalign<T>(T);
 
@@ -646,14 +1071,108 @@ impl<T: Copy> Clone for Unalign<T> {
 
 impl<T> Unalign<T> {
     /// Constructs a new `Unalign`.
-    pub fn new(val: T) -> Unalign<T> {
+    pub const fn new(val: T) -> Unalign<T> {
         Unalign(val)
     }
 
     /// Consumes `self`, returning the inner `T`.
-    pub fn into_inner(self) -> T {
-        let Unalign(val) = self;
-        val
+    pub const fn into_inner(self) -> T {
+        // Use this instead of `mem::transmute` since the latter can't tell
+        // that `Unalign<T>` and `T` have the same size.
+        #[repr(C)]
+        union Transmute<T> {
+            u: ManuallyDrop<Unalign<T>>,
+            t: ManuallyDrop<T>,
+        }
+
+        // SAFETY: Since `Unalign` is `#[repr(C, packed)]`, it has the same
+        // layout as `T`. `ManuallyDrop<U>` is guaranteed to have the same
+        // layout as `U`, and so `ManuallyDrop<Unalign<T>>` has the same layout
+        // as `ManuallyDrop<T>`. Since `Transmute<T>` is `#[repr(C)]`, its `t`
+        // and `u` fields both start at the same offset (namely, 0) within the
+        // union.
+        //
+        // We do this instead of just destructuring in order to prevent
+        // `Unalign`'s `Drop::drop` from being run, since dropping is not
+        // supported in `const fn`s.
+        //
+        // TODO(https://github.com/rust-lang/rust/issues/73255): Destructure
+        // instead of using unsafe.
+        unsafe { ManuallyDrop::into_inner(Transmute { u: ManuallyDrop::new(self) }.t) }
+    }
+
+    /// Attempts to return a reference to the wrapped `T`, failing if `self` is
+    /// not properly aligned.
+    ///
+    /// If `self` does not satisfy `mem::align_of::<T>()`, then it is unsound to
+    /// return a reference to the wrapped `T`, and `try_deref` returns `None`.
+    ///
+    /// If `T: Unaligned`, then `Unalign<T>` implements [`Deref`], and callers
+    /// may prefer [`Deref::deref`], which is infallible.
+    pub fn try_deref(&self) -> Option<&T> {
+        if !aligned_to::<_, T>(self) {
+            return None;
+        }
+
+        // SAFETY: `deref_unchecked`'s safety requirement is that `self` is
+        // aligned to `align_of::<T>()`, which we just checked.
+        unsafe { Some(self.deref_unchecked()) }
+    }
+
+    /// Attempts to return a mutable reference to the wrapped `T`, failing if
+    /// `self` is not properly aligned.
+    ///
+    /// If `self` does not satisfy `mem::align_of::<T>()`, then it is unsound to
+    /// return a reference to the wrapped `T`, and `try_deref_mut` returns
+    /// `None`.
+    ///
+    /// If `T: Unaligned`, then `Unalign<T>` implements [`DerefMut`], and
+    /// callers may prefer [`DerefMut::deref_mut`], which is infallible.
+    pub fn try_deref_mut(&mut self) -> Option<&mut T> {
+        if !aligned_to::<_, T>(&*self) {
+            return None;
+        }
+
+        // SAFETY: `deref_mut_unchecked`'s safety requirement is that `self` is
+        // aligned to `align_of::<T>()`, which we just checked.
+        unsafe { Some(self.deref_mut_unchecked()) }
+    }
+
+    /// Returns a reference to the wrapped `T` without checking alignment.
+    ///
+    /// If `T: Unaligned`, then `Unalign<T>` implements[ `Deref`], and callers
+    /// may prefer [`Deref::deref`], which is safe.
+    ///
+    /// # Safety
+    ///
+    /// If `self` does not satisfy `mem::align_of::<T>()`, then
+    /// `self.deref_unchecked()` may cause undefined behavior.
+    pub const unsafe fn deref_unchecked(&self) -> &T {
+        // SAFETY: `self.get_ptr()` returns a raw pointer to a valid `T` at the
+        // same memory location as `self`. It has no alignment guarantee, but
+        // the caller has promised that `self` is properly aligned, so we know
+        // that the pointer itself is aligned, and thus that it is sound to
+        // create a reference to a `T` at this memory location.
+        unsafe { &*self.get_ptr() }
+    }
+
+    /// Returns a mutable reference to the wrapped `T` without checking
+    /// alignment.
+    ///
+    /// If `T: Unaligned`, then `Unalign<T>` implements[ `DerefMut`], and
+    /// callers may prefer [`DerefMut::deref_mut`], which is safe.
+    ///
+    /// # Safety
+    ///
+    /// If `self` does not satisfy `mem::align_of::<T>()`, then
+    /// `self.deref_mut_unchecked()` may cause undefined behavior.
+    pub unsafe fn deref_mut_unchecked(&mut self) -> &mut T {
+        // SAFETY: `self.get_mut_ptr()` returns a raw pointer to a valid `T` at
+        // the same memory location as `self`. It has no alignment guarantee,
+        // but the caller has promised that `self` is properly aligned, so we
+        // know that the pointer itself is aligned, and thus that it is sound to
+        // create a reference to a `T` at this memory location.
+        unsafe { &mut *self.get_mut_ptr() }
     }
 
     /// Gets an unaligned raw pointer to the inner `T`.
@@ -665,12 +1184,12 @@ impl<T> Unalign<T> {
     /// those pointers to be aligned, so calling those functions with the result
     /// of `get_ptr` will be undefined behavior if alignment is not guaranteed
     /// using some out-of-band mechanism. In general, the only functions which
-    /// are safe to call with this pointer are which that are explicitly
+    /// are safe to call with this pointer are those which are explicitly
     /// documented as being sound to use with an unaligned pointer, such as
     /// [`read_unaligned`].
     ///
     /// [`read_unaligned`]: core::ptr::read_unaligned
-    pub fn get_ptr(&self) -> *const T {
+    pub const fn get_ptr(&self) -> *const T {
         ptr::addr_of!(self.0)
     }
 
@@ -688,29 +1207,152 @@ impl<T> Unalign<T> {
     /// [`read_unaligned`].
     ///
     /// [`read_unaligned`]: core::ptr::read_unaligned
+    // TODO(https://github.com/rust-lang/rust/issues/57349): Make this `const`.
     pub fn get_mut_ptr(&mut self) -> *mut T {
         ptr::addr_of_mut!(self.0)
+    }
+
+    /// Sets the inner `T`, dropping the previous value.
+    // TODO(https://github.com/rust-lang/rust/issues/57349): Make this `const`.
+    pub fn set(&mut self, t: T) {
+        *self = Unalign::new(t);
+    }
+
+    /// Updates the inner `T` by calling a function on it.
+    ///
+    /// For large types, this method may be expensive, as it requires copying
+    /// `2 * size_of::<T>()` bytes. \[1\]
+    ///
+    /// \[1\] Since the inner `T` may not be aligned, it would not be sound to
+    /// invoke `f` on it directly. Instead, `update` moves it into a
+    /// properly-aligned location in the local stack frame, calls `f` on it, and
+    /// then moves it back to its original location in `self`.
+    pub fn update<O, F: FnOnce(&mut T) -> O>(&mut self, f: F) -> O {
+        // On drop, this moves `copy` out of itself and uses `ptr::write` to
+        // overwrite `slf`.
+        struct WriteBackOnDrop<T> {
+            copy: ManuallyDrop<T>,
+            slf: *mut Unalign<T>,
+        }
+
+        impl<T> Drop for WriteBackOnDrop<T> {
+            fn drop(&mut self) {
+                // SAFETY: See inline comments.
+                unsafe {
+                    // SAFETY: We never use `copy` again as required by
+                    // `ManuallyDrop::take`.
+                    let copy = ManuallyDrop::take(&mut self.copy);
+                    // SAFETY: `slf` is the raw pointer value of `self`. We know
+                    // it is valid for writes and properly aligned because
+                    // `self` is a mutable reference, which guarantees both of
+                    // these properties.
+                    ptr::write(self.slf, Unalign::new(copy));
+                }
+            }
+        }
+
+        // SAFETY: We know that `self` is valid for reads, properly aligned, and
+        // points to an initialized `Unalign<T>` because it is a mutable
+        // reference, which guarantees all of these properties.
+        //
+        // Since `T: !Copy`, it would be unsound in the general case to allow
+        // both the original `Unalign<T>` and the copy to be used by safe code.
+        // We guarantee that the copy is used to overwrite the original in the
+        // `Drop::drop` impl of `WriteBackOnDrop`. So long as this `drop` is
+        // called before any other safe code executes, soundness is upheld.
+        // While this method can terminate in two ways (by returning normally or
+        // by unwinding due to a panic in `f`), in both cases, `write_back` is
+        // dropped - and its `drop` called - before any other safe code can
+        // execute.
+        let copy = unsafe { ptr::read(self) }.into_inner();
+        let mut write_back = WriteBackOnDrop { copy: ManuallyDrop::new(copy), slf: self };
+
+        let ret = f(&mut write_back.copy);
+
+        drop(write_back);
+        ret
     }
 }
 
 impl<T: Copy> Unalign<T> {
     /// Gets a copy of the inner `T`.
+    // TODO(https://github.com/rust-lang/rust/issues/57349): Make this `const`.
     pub fn get(&self) -> T {
         let Unalign(val) = *self;
         val
     }
 }
 
-// SAFETY: Since `T: AsBytes`, we know that it's safe to construct a `&[u8]`
-// from an aligned `&T`. Since `&[u8]` itself has no alignment requirements, it
-// must also be safe to construct a `&[u8]` from a `&T` at any address. Since
-// `Unalign<T>` is `#[repr(packed)]`, everything about its layout except for its
-// alignment is the same as `T`'s layout.
-unsafe impl<T: AsBytes> AsBytes for Unalign<T> {
-    fn only_derive_is_allowed_to_implement_this_trait()
+safety_comment! {
+    /// SAFETY:
+    /// Since `T: AsBytes`, we know that it's safe to construct a `&[u8]` from
+    /// an aligned `&T`. Since `&[u8]` itself has no alignment requirements, it
+    /// must also be safe to construct a `&[u8]` from a `&T` at any address.
+    /// Since `Unalign<T>` is `#[repr(C, packed)]`, everything about its layout
+    /// except for its alignment is the same as `T`'s layout.
+    unsafe_impl!(T: AsBytes => AsBytes for Unalign<T>);
+}
+
+impl<T: Unaligned> Deref for Unalign<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        // SAFETY: `deref_unchecked`'s safety requirement is that `self` is
+        // aligned to `align_of::<T>()`. `T: Unaligned` guarantees that
+        // `align_of::<T>() == 1`, and all pointers are one-aligned because all
+        // addresses are divisible by 1.
+        unsafe { self.deref_unchecked() }
+    }
+}
+
+impl<T: Unaligned> DerefMut for Unalign<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        // SAFETY: `deref_mut_unchecked`'s safety requirement is that `self` is
+        // aligned to `align_of::<T>()`. `T: Unaligned` guarantees that
+        // `align_of::<T>() == 1`, and all pointers are one-aligned because all
+        // addresses are divisible by 1.
+        unsafe { self.deref_mut_unchecked() }
+    }
+}
+
+impl<T: Unaligned + PartialOrd> PartialOrd<Unalign<T>> for Unalign<T> {
+    fn partial_cmp(&self, other: &Unalign<T>) -> Option<Ordering> {
+        PartialOrd::partial_cmp(self.deref(), other.deref())
+    }
+}
+
+impl<T: Unaligned + Ord> Ord for Unalign<T> {
+    fn cmp(&self, other: &Unalign<T>) -> Ordering {
+        Ord::cmp(self.deref(), other.deref())
+    }
+}
+
+impl<T: Unaligned + PartialEq> PartialEq<Unalign<T>> for Unalign<T> {
+    fn eq(&self, other: &Unalign<T>) -> bool {
+        PartialEq::eq(self.deref(), other.deref())
+    }
+}
+
+impl<T: Unaligned + Eq> Eq for Unalign<T> {}
+
+impl<T: Unaligned + Hash> Hash for Unalign<T> {
+    fn hash<H>(&self, state: &mut H)
     where
-        Self: Sized,
+        H: Hasher,
     {
+        self.deref().hash(state);
+    }
+}
+
+impl<T: Unaligned + Debug> Debug for Unalign<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Debug::fmt(self.deref(), f)
+    }
+}
+
+impl<T: Unaligned + Display> Display for Unalign<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(self.deref(), f)
     }
 }
 
@@ -742,15 +1384,15 @@ macro_rules! transmute {
             // This branch, though never taken, ensures that the type of `e` is
             // `AsBytes` and that the type of this macro invocation expression
             // is `FromBytes`.
-            fn transmute<T: $crate::AsBytes, U: $crate::FromBytes>(_t: T) -> U {
+            const fn transmute<T: $crate::AsBytes, U: $crate::FromBytes>(_t: T) -> U {
                 unreachable!()
             }
             transmute(e)
         } else {
-            // `core::mem::transmute` ensures that the type of `e` and the type
-            // of this macro invocation expression have the same size. We know
-            // this transmute is safe thanks to the `AsBytes` and `FromBytes`
-            // bounds enforced by the `false` branch.
+            // SAFETY: `core::mem::transmute` ensures that the type of `e` and
+            // the type of this macro invocation expression have the same size.
+            // We know this transmute is safe thanks to the `AsBytes` and
+            // `FromBytes` bounds enforced by the `false` branch.
             //
             // We use `$crate::__real_transmute` because we know it will always
             // be available for crates which are using the 2015 edition of Rust.
@@ -759,6 +1401,11 @@ macro_rules! transmute {
             // were to use `core::mem::transmute`, this macro would not work in
             // `std` contexts in which `core` was not manually imported. This is
             // not a problem for 2018 edition crates.
+            //
+            // This `allow` is only required on the v0.6.x branch due to
+            // behavior of older versions of Clippy which is no longer present
+            // on the MSRV we use on the main branch.
+            #[allow(clippy::undocumented_unsafe_blocks)]
             unsafe { $crate::__real_transmute(e) }
         }
     }}
@@ -768,7 +1415,7 @@ macro_rules! transmute {
 /// be reinterpreted as another type.
 ///
 /// `LayoutVerified` is a byte slice reference (`&[u8]`, `&mut [u8]`,
-/// `Ref<[u8]>`, `RefMut<[u8]>`, etc) with the invaraint that the slice's length
+/// `Ref<[u8]>`, `RefMut<[u8]>`, etc) with the invariant that the slice's length
 /// and alignment are each greater than or equal to the length and alignment of
 /// `T`. Using this invariant, it implements `Deref` for `T` so long as `T:
 /// FromBytes` and `DerefMut` so long as `T: FromBytes + AsBytes`.
@@ -826,7 +1473,7 @@ where
     /// either of these checks fail, it returns `None`.
     #[inline]
     pub fn new(bytes: B) -> Option<LayoutVerified<B, T>> {
-        if bytes.len() != mem::size_of::<T>() || !aligned_to(bytes.deref(), mem::align_of::<T>()) {
+        if bytes.len() != mem::size_of::<T>() || !aligned_to::<_, T>(bytes.deref()) {
             return None;
         }
         Some(LayoutVerified(bytes, PhantomData))
@@ -841,7 +1488,7 @@ where
     /// alignment checks fail, it returns `None`.
     #[inline]
     pub fn new_from_prefix(bytes: B) -> Option<(LayoutVerified<B, T>, B)> {
-        if bytes.len() < mem::size_of::<T>() || !aligned_to(bytes.deref(), mem::align_of::<T>()) {
+        if bytes.len() < mem::size_of::<T>() || !aligned_to::<_, T>(bytes.deref()) {
             return None;
         }
         let (bytes, suffix) = bytes.split_at(mem::size_of::<T>());
@@ -859,11 +1506,9 @@ where
     #[inline]
     pub fn new_from_suffix(bytes: B) -> Option<(B, LayoutVerified<B, T>)> {
         let bytes_len = bytes.len();
-        if bytes_len < mem::size_of::<T>() {
-            return None;
-        }
-        let (prefix, bytes) = bytes.split_at(bytes_len - mem::size_of::<T>());
-        if !aligned_to(bytes.deref(), mem::align_of::<T>()) {
+        let split_at = bytes_len.checked_sub(mem::size_of::<T>())?;
+        let (prefix, bytes) = bytes.split_at(split_at);
+        if !aligned_to::<_, T>(bytes.deref()) {
             return None;
         }
         Some((prefix, LayoutVerified(bytes, PhantomData)))
@@ -886,10 +1531,11 @@ where
     /// `new_slice` panics if `T` is a zero-sized type.
     #[inline]
     pub fn new_slice(bytes: B) -> Option<LayoutVerified<B, [T]>> {
-        assert_ne!(mem::size_of::<T>(), 0);
-        if bytes.len() % mem::size_of::<T>() != 0
-            || !aligned_to(bytes.deref(), mem::align_of::<T>())
-        {
+        let remainder = bytes
+            .len()
+            .checked_rem(mem::size_of::<T>())
+            .expect("LayoutVerified::new_slice called on a zero-sized type");
+        if remainder != 0 || !aligned_to::<_, T>(bytes.deref()) {
             return None;
         }
         Some(LayoutVerified(bytes, PhantomData))
@@ -953,9 +1599,7 @@ fn map_zeroed<B: ByteSliceMut, T: ?Sized>(
 ) -> Option<LayoutVerified<B, T>> {
     match opt {
         Some(mut lv) => {
-            for b in lv.0.iter_mut() {
-                *b = 0;
-            }
+            lv.0.fill(0);
             Some(lv)
         }
         None => None,
@@ -967,9 +1611,7 @@ fn map_prefix_tuple_zeroed<B: ByteSliceMut, T: ?Sized>(
 ) -> Option<(LayoutVerified<B, T>, B)> {
     match opt {
         Some((mut lv, rest)) => {
-            for b in lv.0.iter_mut() {
-                *b = 0;
-            }
+            lv.0.fill(0);
             Some((lv, rest))
         }
         None => None,
@@ -1156,10 +1798,8 @@ where
     #[inline]
     pub fn new_unaligned_from_suffix(bytes: B) -> Option<(B, LayoutVerified<B, T>)> {
         let bytes_len = bytes.len();
-        if bytes_len < mem::size_of::<T>() {
-            return None;
-        }
-        let (prefix, bytes) = bytes.split_at(bytes_len - mem::size_of::<T>());
+        let split_at = bytes_len.checked_sub(mem::size_of::<T>())?;
+        let (prefix, bytes) = bytes.split_at(split_at);
         Some((prefix, LayoutVerified(bytes, PhantomData)))
     }
 }
@@ -1181,8 +1821,11 @@ where
     /// `new_slice` panics if `T` is a zero-sized type.
     #[inline]
     pub fn new_slice_unaligned(bytes: B) -> Option<LayoutVerified<B, [T]>> {
-        assert_ne!(mem::size_of::<T>(), 0);
-        if bytes.len() % mem::size_of::<T>() != 0 {
+        let remainder = bytes
+            .len()
+            .checked_rem(mem::size_of::<T>())
+            .expect("LayoutVerified::new_slice_unaligned called on a zero-sized type");
+        if remainder != 0 {
             return None;
         }
         Some(LayoutVerified(bytes, PhantomData))
@@ -1387,12 +2030,12 @@ where
     /// `into_ref` consumes the `LayoutVerified`, and returns a reference to
     /// `T`.
     pub fn into_ref(self) -> &'a T {
-        // NOTE: This is safe because `B` is guaranteed to live for the lifetime
-        // `'a`, meaning that a) the returned reference cannot outlive the `B`
-        // from which `self` was constructed and, b) no mutable methods on that
-        // `B` can be called during the lifetime of the returned reference. See
-        // the documentation on `deref_helper` for what invariants we are
-        // required to uphold.
+        // SAFETY: This is sound because `B` is guaranteed to live for the
+        // lifetime `'a`, meaning that a) the returned reference cannot outlive
+        // the `B` from which `self` was constructed and, b) no mutable methods
+        // on that `B` can be called during the lifetime of the returned
+        // reference. See the documentation on `deref_helper` for what
+        // invariants we are required to uphold.
         unsafe { self.deref_helper() }
     }
 }
@@ -1407,12 +2050,12 @@ where
     /// `into_mut` consumes the `LayoutVerified`, and returns a mutable
     /// reference to `T`.
     pub fn into_mut(mut self) -> &'a mut T {
-        // NOTE: This is safe because `B` is guaranteed to live for the lifetime
-        // `'a`, meaning that a) the returned reference cannot outlive the `B`
-        // from which `self` was constructed and, b) no other methods - mutable
-        // or immutable - on that `B` can be called during the lifetime of the
-        // returned reference. See the documentation on `deref_mut_helper` for
-        // what invariants we are required to uphold.
+        // SAFETY: This is sound because `B` is guaranteed to live for the
+        // lifetime `'a`, meaning that a) the returned reference cannot outlive
+        // the `B` from which `self` was constructed and, b) no other methods -
+        // mutable or immutable - on that `B` can be called during the lifetime
+        // of the returned reference. See the documentation on
+        // `deref_mut_helper` for what invariants we are required to uphold.
         unsafe { self.deref_mut_helper() }
     }
 }
@@ -1427,12 +2070,12 @@ where
     /// `into_slice` consumes the `LayoutVerified`, and returns a reference to
     /// `[T]`.
     pub fn into_slice(self) -> &'a [T] {
-        // NOTE: This is safe because `B` is guaranteed to live for the lifetime
-        // `'a`, meaning that a) the returned reference cannot outlive the `B`
-        // from which `self` was constructed and, b) no mutable methods on that
-        // `B` can be called during the lifetime of the returned reference. See
-        // the documentation on `deref_slice_helper` for what invariants we are
-        // required to uphold.
+        // SAFETY: This is sound because `B` is guaranteed to live for the
+        // lifetime `'a`, meaning that a) the returned reference cannot outlive
+        // the `B` from which `self` was constructed and, b) no mutable methods
+        // on that `B` can be called during the lifetime of the returned
+        // reference. See the documentation on `deref_slice_helper` for what
+        // invariants we are required to uphold.
         unsafe { self.deref_slice_helper() }
     }
 }
@@ -1447,12 +2090,13 @@ where
     /// `into_mut_slice` consumes the `LayoutVerified`, and returns a mutable
     /// reference to `[T]`.
     pub fn into_mut_slice(mut self) -> &'a mut [T] {
-        // NOTE: This is safe because `B` is guaranteed to live for the lifetime
-        // `'a`, meaning that a) the returned reference cannot outlive the `B`
-        // from which `self` was constructed and, b) no other methods - mutable
-        // or immutable - on that `B` can be called during the lifetime of the
-        // returned reference. See the documentation on `deref_mut_slice_helper`
-        // for what invariants we are required to uphold.
+        // SAFETY: This is sound because `B` is guaranteed to live for the
+        // lifetime `'a`, meaning that a) the returned reference cannot outlive
+        // the `B` from which `self` was constructed and, b) no other methods -
+        // mutable or immutable - on that `B` can be called during the lifetime
+        // of the returned reference. See the documentation on
+        // `deref_mut_slice_helper` for what invariants we are required to
+        // uphold.
         unsafe { self.deref_mut_slice_helper() }
     }
 }
@@ -1474,7 +2118,11 @@ where
     /// and no mutable references to the same memory may be constructed during
     /// `'a`.
     unsafe fn deref_helper<'a>(&self) -> &'a T {
-        &*(self.0.as_ptr() as *const T)
+        // TODO(#61): Add a "SAFETY" comment and remove this `allow`.
+        #[allow(clippy::undocumented_unsafe_blocks)]
+        unsafe {
+            &*self.0.as_ptr().cast::<T>()
+        }
     }
 }
 
@@ -1495,7 +2143,11 @@ where
     /// and no other references - mutable or immutable - to the same memory may
     /// be constructed during `'a`.
     unsafe fn deref_mut_helper<'a>(&mut self) -> &'a mut T {
-        &mut *(self.0.as_mut_ptr() as *mut T)
+        // TODO(#61): Add a "SAFETY" comment and remove this `allow`.
+        #[allow(clippy::undocumented_unsafe_blocks)]
+        unsafe {
+            &mut *self.0.as_mut_ptr().cast::<T>()
+        }
     }
 }
 
@@ -1513,9 +2165,18 @@ where
         let len = self.0.len();
         let elem_size = mem::size_of::<T>();
         debug_assert_ne!(elem_size, 0);
-        debug_assert_eq!(len % elem_size, 0);
-        let elems = len / elem_size;
-        slice::from_raw_parts(self.0.as_ptr() as *const T, elems)
+        // `LayoutVerified<_, [T]>` maintains the invariant that `size_of::<T>()
+        // > 0`. Thus, neither the mod nor division operations here can panic.
+        #[allow(clippy::arithmetic_side_effects)]
+        let elems = {
+            debug_assert_eq!(len % elem_size, 0);
+            len / elem_size
+        };
+        // TODO(#61): Add a "SAFETY" comment and remove this `allow`.
+        #[allow(clippy::undocumented_unsafe_blocks)]
+        unsafe {
+            slice::from_raw_parts(self.0.as_ptr().cast::<T>(), elems)
+        }
     }
 }
 
@@ -1534,14 +2195,87 @@ where
         let len = self.0.len();
         let elem_size = mem::size_of::<T>();
         debug_assert_ne!(elem_size, 0);
-        debug_assert_eq!(len % elem_size, 0);
-        let elems = len / elem_size;
-        slice::from_raw_parts_mut(self.0.as_mut_ptr() as *mut T, elems)
+        // `LayoutVerified<_, [T]>` maintains the invariant that `size_of::<T>()
+        // > 0`. Thus, neither the mod nor division operations here can panic.
+        #[allow(clippy::arithmetic_side_effects)]
+        let elems = {
+            debug_assert_eq!(len % elem_size, 0);
+            len / elem_size
+        };
+        // TODO(#61): Add a "SAFETY" comment and remove this `allow`.
+        #[allow(clippy::undocumented_unsafe_blocks)]
+        unsafe {
+            slice::from_raw_parts_mut(self.0.as_mut_ptr().cast::<T>(), elems)
+        }
     }
 }
 
-fn aligned_to(bytes: &[u8], align: usize) -> bool {
-    (bytes as *const _ as *const () as usize) % align == 0
+trait AsAddress {
+    fn addr(self) -> usize;
+}
+
+impl<'a, T: ?Sized> AsAddress for &'a T {
+    #[inline(always)]
+    fn addr(self) -> usize {
+        #![allow(clippy::needless_return)]
+
+        let ptr: *const T = self;
+        // TODO(https://github.com/rust-lang/rust/issues/95228): Use `.addr()`
+        // instead of `as usize` once it's stable, and get rid of this `allow`.
+        // Currently, `as usize` is the only way to accomplish this.
+        #[allow(clippy::as_conversions)]
+        return ptr.cast::<()>() as usize;
+    }
+}
+
+impl<'a, T: ?Sized> AsAddress for &'a mut T {
+    #[inline(always)]
+    fn addr(self) -> usize {
+        #![allow(clippy::needless_return)]
+
+        let ptr: *mut T = self;
+        // TODO(https://github.com/rust-lang/rust/issues/95228): Use `.addr()`
+        // instead of `as usize` once it's stable, and get rid of this `allow`.
+        // Currently, `as usize` is the only way to accomplish this.
+        #[allow(clippy::as_conversions)]
+        return ptr.cast::<()>() as usize;
+    }
+}
+
+impl<T: ?Sized> AsAddress for *const T {
+    #[inline(always)]
+    fn addr(self) -> usize {
+        #![allow(clippy::needless_return)]
+
+        // TODO(https://github.com/rust-lang/rust/issues/95228): Use `.addr()`
+        // instead of `as usize` once it's stable, and get rid of this `allow`.
+        // Currently, `as usize` is the only way to accomplish this.
+        #[allow(clippy::as_conversions)]
+        return self.cast::<()>() as usize;
+    }
+}
+
+impl<T: ?Sized> AsAddress for *mut T {
+    #[inline(always)]
+    fn addr(self) -> usize {
+        #![allow(clippy::needless_return)]
+
+        // TODO(https://github.com/rust-lang/rust/issues/95228): Use `.addr()`
+        // instead of `as usize` once it's stable, and get rid of this `allow`.
+        // Currently, `as usize` is the only way to accomplish this.
+        #[allow(clippy::as_conversions)]
+        return self.cast::<()>() as usize;
+    }
+}
+
+/// Is `t` aligned to `mem::align_of::<U>()`?
+#[inline(always)]
+fn aligned_to<T: AsAddress, U>(t: T) -> bool {
+    // `mem::align_of::<U>()` is guaranteed to return a non-zero value, which in
+    // turn guarantees that this mod operation will not panic.
+    #[allow(clippy::arithmetic_side_effects)]
+    let remainder = t.addr() % mem::align_of::<U>();
+    remainder == 0
 }
 
 impl<B, T> LayoutVerified<B, T>
@@ -1580,7 +2314,7 @@ where
         // `self.0` is at least `size_of::<T>()` bytes long, and that it is at
         // least as aligned as `align_of::<T>()`. Because `T: FromBytes`, it is
         // sound to interpret these bytes as a `T`.
-        unsafe { ptr::read(self.0.as_ptr() as *const T) }
+        unsafe { ptr::read(self.0.as_ptr().cast::<T>()) }
     }
 }
 
@@ -1597,7 +2331,7 @@ where
         // least as aligned as `align_of::<T>()`. Writing `t` to the buffer will
         // allow all of the bytes of `t` to be accessed as a `[u8]`, but because
         // `T: AsBytes`, we know this is sound.
-        unsafe { ptr::write(self.0.as_mut_ptr() as *mut T, t) }
+        unsafe { ptr::write(self.0.as_mut_ptr().cast::<T>(), t) }
     }
 }
 
@@ -1609,7 +2343,7 @@ where
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        // SAFETY: This is safe because the lifetime of `self` is the same as
+        // SAFETY: This is sound because the lifetime of `self` is the same as
         // the lifetime of the return value, meaning that a) the returned
         // reference cannot outlive `self` and, b) no mutable methods on `self`
         // can be called during the lifetime of the returned reference. See the
@@ -1626,7 +2360,7 @@ where
 {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        // SAFETY: This is safe because the lifetime of `self` is the same as
+        // SAFETY: This is sound because the lifetime of `self` is the same as
         // the lifetime of the return value, meaning that a) the returned
         // reference cannot outlive `self` and, b) no other methods on `self`
         // can be called during the lifetime of the returned reference. See the
@@ -1644,7 +2378,7 @@ where
     type Target = [T];
     #[inline]
     fn deref(&self) -> &[T] {
-        // SAFETY: This is safe because the lifetime of `self` is the same as
+        // SAFETY: This is sound because the lifetime of `self` is the same as
         // the lifetime of the return value, meaning that a) the returned
         // reference cannot outlive `self` and, b) no mutable methods on `self`
         // can be called during the lifetime of the returned reference. See the
@@ -1661,7 +2395,7 @@ where
 {
     #[inline]
     fn deref_mut(&mut self) -> &mut [T] {
-        // SAFETY: This is safe because the lifetime of `self` is the same as
+        // SAFETY: This is sound because the lifetime of `self` is the same as
         // the lifetime of the return value, meaning that a) the returned
         // reference cannot outlive `self` and, b) no other methods on `self`
         // can be called during the lifetime of the returned reference. See the
@@ -1827,6 +2561,7 @@ mod sealed {
 // unsafe code. Thus, we seal them and implement it only for known-good
 // reference types. For the same reason, they're unsafe traits.
 
+#[allow(clippy::missing_safety_doc)] // TODO(fxbug.dev/99068)
 /// A mutable or immutable reference to a byte slice.
 ///
 /// `ByteSlice` abstracts over the mutability of a byte slice reference, and is
@@ -1838,11 +2573,14 @@ mod sealed {
 /// method would involve reallocation, and `split_at` must be a very cheap
 /// operation in order for the utilities in this crate to perform as designed.
 ///
-/// [`Vec<u8>`]: std::vec::Vec
+/// [`Vec<u8>`]: alloc::vec::Vec
 /// [`split_at`]: crate::ByteSlice::split_at
 pub unsafe trait ByteSlice: Deref<Target = [u8]> + Sized + self::sealed::Sealed {
     /// Gets a raw pointer to the first byte in the slice.
-    fn as_ptr(&self) -> *const u8;
+    #[inline]
+    fn as_ptr(&self) -> *const u8 {
+        <[u8]>::as_ptr(self)
+    }
 
     /// Splits the slice at the midpoint.
     ///
@@ -1854,6 +2592,7 @@ pub unsafe trait ByteSlice: Deref<Target = [u8]> + Sized + self::sealed::Sealed 
     fn split_at(self, mid: usize) -> (Self, Self);
 }
 
+#[allow(clippy::missing_safety_doc)] // TODO(fxbug.dev/99068)
 /// A mutable reference to a byte slice.
 ///
 /// `ByteSliceMut` abstracts over various ways of storing a mutable reference to
@@ -1861,62 +2600,61 @@ pub unsafe trait ByteSlice: Deref<Target = [u8]> + Sized + self::sealed::Sealed 
 /// `RefMut<[u8]>`.
 pub unsafe trait ByteSliceMut: ByteSlice + DerefMut {
     /// Gets a mutable raw pointer to the first byte in the slice.
-    fn as_mut_ptr(&mut self) -> *mut u8;
+    #[inline]
+    fn as_mut_ptr(&mut self) -> *mut u8 {
+        <[u8]>::as_mut_ptr(self)
+    }
 }
 
+// TODO(#61): Add a "SAFETY" comment and remove this `allow`.
+#[allow(clippy::undocumented_unsafe_blocks)]
 unsafe impl<'a> ByteSlice for &'a [u8] {
-    fn as_ptr(&self) -> *const u8 {
-        <[u8]>::as_ptr(self)
-    }
+    #[inline]
     fn split_at(self, mid: usize) -> (Self, Self) {
         <[u8]>::split_at(self, mid)
     }
 }
+
+// TODO(#61): Add a "SAFETY" comment and remove this `allow`.
+#[allow(clippy::undocumented_unsafe_blocks)]
 unsafe impl<'a> ByteSlice for &'a mut [u8] {
-    fn as_ptr(&self) -> *const u8 {
-        <[u8]>::as_ptr(self)
-    }
+    #[inline]
     fn split_at(self, mid: usize) -> (Self, Self) {
         <[u8]>::split_at_mut(self, mid)
     }
 }
+
+// TODO(#61): Add a "SAFETY" comment and remove this `allow`.
+#[allow(clippy::undocumented_unsafe_blocks)]
 unsafe impl<'a> ByteSlice for Ref<'a, [u8]> {
-    fn as_ptr(&self) -> *const u8 {
-        <[u8]>::as_ptr(self)
-    }
+    #[inline]
     fn split_at(self, mid: usize) -> (Self, Self) {
         Ref::map_split(self, |slice| <[u8]>::split_at(slice, mid))
     }
 }
+
+// TODO(#61): Add a "SAFETY" comment and remove this `allow`.
+#[allow(clippy::undocumented_unsafe_blocks)]
 unsafe impl<'a> ByteSlice for RefMut<'a, [u8]> {
-    fn as_ptr(&self) -> *const u8 {
-        <[u8]>::as_ptr(self)
-    }
+    #[inline]
     fn split_at(self, mid: usize) -> (Self, Self) {
         RefMut::map_split(self, |slice| <[u8]>::split_at_mut(slice, mid))
     }
 }
 
-unsafe impl<'a> ByteSliceMut for &'a mut [u8] {
-    fn as_mut_ptr(&mut self) -> *mut u8 {
-        <[u8]>::as_mut_ptr(self)
-    }
-}
-unsafe impl<'a> ByteSliceMut for RefMut<'a, [u8]> {
-    fn as_mut_ptr(&mut self) -> *mut u8 {
-        <[u8]>::as_mut_ptr(self)
-    }
-}
+// TODO(#61): Add a "SAFETY" comment and remove this `allow`.
+#[allow(clippy::undocumented_unsafe_blocks)]
+unsafe impl<'a> ByteSliceMut for &'a mut [u8] {}
 
-#[cfg(any(test, feature = "alloc"))]
+// TODO(#61): Add a "SAFETY" comment and remove this `allow`.
+#[allow(clippy::undocumented_unsafe_blocks)]
+unsafe impl<'a> ByteSliceMut for RefMut<'a, [u8]> {}
+
+#[cfg(feature = "alloc")]
 mod alloc_support {
-    pub(crate) extern crate alloc;
-    pub(crate) use super::*;
-    pub(crate) use alloc::alloc::Layout;
-    pub(crate) use alloc::boxed::Box;
-    pub(crate) use alloc::vec::Vec;
-    pub(crate) use core::mem::{align_of, size_of};
-    pub(crate) use core::ptr::NonNull;
+    use alloc::vec::Vec;
+
+    use super::*;
 
     /// Extends a `Vec<T>` by pushing `additional` new items onto the end of the
     /// vector. The new items are initialized with zeroes.
@@ -1938,24 +2676,246 @@ mod alloc_support {
     pub fn insert_vec_zeroed<T: FromBytes>(v: &mut Vec<T>, position: usize, additional: usize) {
         assert!(position <= v.len());
         v.reserve(additional);
-        // The reserve() call guarantees that these cannot overflow:
+        // SAFETY: The `reserve` call guarantees that these cannot overflow:
         // * `ptr.add(position)`
         // * `position + additional`
         // * `v.len() + additional`
         //
         // `v.len() - position` cannot overflow because we asserted that
-        // position <= v.len().
+        // `position <= v.len()`.
         unsafe {
             // This is a potentially overlapping copy.
             let ptr = v.as_mut_ptr();
+            #[allow(clippy::arithmetic_side_effects)]
             ptr.add(position).copy_to(ptr.add(position + additional), v.len() - position);
             ptr.add(position).write_bytes(0, additional);
+            #[allow(clippy::arithmetic_side_effects)]
             v.set_len(v.len() + additional);
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn test_extend_vec_zeroed() {
+            // Test extending when there is an existing allocation.
+            let mut v: Vec<u64> = Vec::with_capacity(3);
+            v.push(100);
+            v.push(200);
+            v.push(300);
+            extend_vec_zeroed(&mut v, 3);
+            assert_eq!(v.len(), 6);
+            assert_eq!(&*v, &[100, 200, 300, 0, 0, 0]);
+            drop(v);
+
+            // Test extending when there is no existing allocation.
+            let mut v: Vec<u64> = Vec::new();
+            extend_vec_zeroed(&mut v, 3);
+            assert_eq!(v.len(), 3);
+            assert_eq!(&*v, &[0, 0, 0]);
+            drop(v);
+        }
+
+        #[test]
+        fn test_extend_vec_zeroed_zst() {
+            // Test extending when there is an existing (fake) allocation.
+            let mut v: Vec<()> = Vec::with_capacity(3);
+            v.push(());
+            v.push(());
+            v.push(());
+            extend_vec_zeroed(&mut v, 3);
+            assert_eq!(v.len(), 6);
+            assert_eq!(&*v, &[(), (), (), (), (), ()]);
+            drop(v);
+
+            // Test extending when there is no existing (fake) allocation.
+            let mut v: Vec<()> = Vec::new();
+            extend_vec_zeroed(&mut v, 3);
+            assert_eq!(&*v, &[(), (), ()]);
+            drop(v);
+        }
+
+        #[test]
+        fn test_insert_vec_zeroed() {
+            // Insert at start (no existing allocation).
+            let mut v: Vec<u64> = Vec::new();
+            insert_vec_zeroed(&mut v, 0, 2);
+            assert_eq!(v.len(), 2);
+            assert_eq!(&*v, &[0, 0]);
+            drop(v);
+
+            // Insert at start.
+            let mut v: Vec<u64> = Vec::with_capacity(3);
+            v.push(100);
+            v.push(200);
+            v.push(300);
+            insert_vec_zeroed(&mut v, 0, 2);
+            assert_eq!(v.len(), 5);
+            assert_eq!(&*v, &[0, 0, 100, 200, 300]);
+            drop(v);
+
+            // Insert at middle.
+            let mut v: Vec<u64> = Vec::with_capacity(3);
+            v.push(100);
+            v.push(200);
+            v.push(300);
+            insert_vec_zeroed(&mut v, 1, 1);
+            assert_eq!(v.len(), 4);
+            assert_eq!(&*v, &[100, 0, 200, 300]);
+            drop(v);
+
+            // Insert at end.
+            let mut v: Vec<u64> = Vec::with_capacity(3);
+            v.push(100);
+            v.push(200);
+            v.push(300);
+            insert_vec_zeroed(&mut v, 3, 1);
+            assert_eq!(v.len(), 4);
+            assert_eq!(&*v, &[100, 200, 300, 0]);
+            drop(v);
+        }
+
+        #[test]
+        fn test_insert_vec_zeroed_zst() {
+            // Insert at start (no existing fake allocation).
+            let mut v: Vec<()> = Vec::new();
+            insert_vec_zeroed(&mut v, 0, 2);
+            assert_eq!(v.len(), 2);
+            assert_eq!(&*v, &[(), ()]);
+            drop(v);
+
+            // Insert at start.
+            let mut v: Vec<()> = Vec::with_capacity(3);
+            v.push(());
+            v.push(());
+            v.push(());
+            insert_vec_zeroed(&mut v, 0, 2);
+            assert_eq!(v.len(), 5);
+            assert_eq!(&*v, &[(), (), (), (), ()]);
+            drop(v);
+
+            // Insert at middle.
+            let mut v: Vec<()> = Vec::with_capacity(3);
+            v.push(());
+            v.push(());
+            v.push(());
+            insert_vec_zeroed(&mut v, 1, 1);
+            assert_eq!(v.len(), 4);
+            assert_eq!(&*v, &[(), (), (), ()]);
+            drop(v);
+
+            // Insert at end.
+            let mut v: Vec<()> = Vec::with_capacity(3);
+            v.push(());
+            v.push(());
+            v.push(());
+            insert_vec_zeroed(&mut v, 3, 1);
+            assert_eq!(v.len(), 4);
+            assert_eq!(&*v, &[(), (), (), ()]);
+            drop(v);
+        }
+
+        #[test]
+        fn test_new_box_zeroed() {
+            assert_eq!(*u64::new_box_zeroed(), 0);
+        }
+
+        #[test]
+        fn test_new_box_zeroed_array() {
+            drop(<[u32; 0x1000]>::new_box_zeroed());
+        }
+
+        #[test]
+        fn test_new_box_zeroed_zst() {
+            // This test exists in order to exercise unsafe code, especially
+            // when running under Miri.
+            #[allow(clippy::unit_cmp)]
+            {
+                assert_eq!(*<()>::new_box_zeroed(), ());
+            }
+        }
+
+        #[test]
+        fn test_new_box_slice_zeroed() {
+            let mut s: Box<[u64]> = u64::new_box_slice_zeroed(3);
+            assert_eq!(s.len(), 3);
+            assert_eq!(&*s, &[0, 0, 0]);
+            s[1] = 3;
+            assert_eq!(&*s, &[0, 3, 0]);
+        }
+
+        #[test]
+        fn test_new_box_slice_zeroed_empty() {
+            let s: Box<[u64]> = u64::new_box_slice_zeroed(0);
+            assert_eq!(s.len(), 0);
+        }
+
+        #[test]
+        fn test_new_box_slice_zeroed_zst() {
+            let mut s: Box<[()]> = <()>::new_box_slice_zeroed(3);
+            assert_eq!(s.len(), 3);
+            assert!(s.get(10).is_none());
+            // This test exists in order to exercise unsafe code, especially
+            // when running under Miri.
+            #[allow(clippy::unit_cmp)]
+            {
+                assert_eq!(s[1], ());
+            }
+            s[2] = ();
+        }
+
+        #[test]
+        fn test_new_box_slice_zeroed_zst_empty() {
+            let s: Box<[()]> = <()>::new_box_slice_zeroed(0);
+            assert_eq!(s.len(), 0);
+        }
+
+        #[test]
+        #[should_panic(expected = "mem::size_of::<Self>() * len overflows `usize`")]
+        fn test_new_box_slice_zeroed_panics_mul_overflow() {
+            let _ = u16::new_box_slice_zeroed(usize::MAX);
+        }
+
+        // This test fails on stable <= 1.64.0, but succeeds on 1.65.0-beta.2
+        // (2022-09-13). In particular, on stable <= 1.64.0,
+        // `new_box_slice_zeroed` attempts to perform the allocation (which of
+        // course fails). `Layout::from_size_align` should be returning an error
+        // due to `isize` overflow, but it doesn't. I (joshlf) haven't
+        // investigated enough to confirm, but my guess is that this was a bug
+        // that was fixed recently.
+        //
+        // Triggering the bug requires calling `FromBytes::new_box_slice_zeroed`
+        // with an allocation which overflows `isize`, and all that happens is
+        // that the program panics due to a failed allocation. Even on 32-bit
+        // platforms, this requires a 2GB allocation. On 64-bit platforms, this
+        // requires a 2^63-byte allocation. In both cases, even a slightly
+        // smaller allocation that didn't trigger this bug would likely
+        // (absolutely certainly in the case of 64-bit platforms) fail to
+        // allocate in exactly the same way regardless.
+        //
+        // Given how minor the impact is, and given that the bug seems fixed in
+        // 1.65.0, I've chosen to just release the code as-is and disable the
+        // test on buggy toolchains. Once our MSRV is at or above 1.65.0, we can
+        // remove this conditional compilation (and this comment) entirely.
+        #[rustversion::since(1.65.0)]
+        #[test]
+        #[should_panic(expected = "total allocation size overflows `isize`: LayoutError")]
+        fn test_new_box_slice_zeroed_panics_isize_overflow() {
+            // TODO: Move this to the top of the module once this test is
+            // compiled unconditionally. Right now, it causes an unused import
+            // warning (which in CI becomes an error) on versions prior to
+            // 1.65.0.
+            use core::convert::TryFrom as _;
+
+            let max = usize::try_from(isize::MAX).unwrap();
+            let _ = u16::new_box_slice_zeroed((max / mem::size_of::<u16>()) + 1);
         }
     }
 }
 
-#[cfg(any(test, feature = "alloc"))]
+#[cfg(feature = "alloc")]
 #[doc(inline)]
 pub use alloc_support::*;
 
@@ -1963,27 +2923,183 @@ pub use alloc_support::*;
 mod tests {
     #![allow(clippy::unreadable_literal)]
 
-    use core::ops::Deref;
+    use core::{ops::Deref, panic::AssertUnwindSafe};
+
+    use static_assertions::assert_impl_all;
 
     use super::*;
 
-    // B should be [u8; N]. T will require that the entire structure is aligned
-    // to the alignment of T.
+    /// A `T` which is aligned to at least `align_of::<A>()`.
     #[derive(Default)]
-    struct AlignedBuffer<T, B> {
-        buf: B,
-        _t: T,
+    struct Align<T, A> {
+        t: T,
+        _a: [A; 0],
     }
 
-    impl<T, B: Default> AlignedBuffer<T, B> {
-        fn clear_buf(&mut self) {
-            self.buf = B::default();
+    impl<T: Default, A> Align<T, A> {
+        fn set_default(&mut self) {
+            self.t = T::default();
         }
     }
 
-    // convert a u64 to bytes using this platform's endianness
-    fn u64_to_bytes(u: u64) -> [u8; 8] {
-        unsafe { ptr::read(&u as *const u64 as *const [u8; 8]) }
+    impl<T, A> Align<T, A> {
+        const fn new(t: T) -> Align<T, A> {
+            Align { t, _a: [] }
+        }
+    }
+
+    /// A `T` which is guaranteed not to satisfy `align_of::<A>()`.
+    ///
+    /// It must be the case that `align_of::<T>() < align_of::<A>()` in order
+    /// fot this type to work properly.
+    #[repr(C)]
+    struct ForceUnalign<T, A> {
+        // The outer struct is aligned to `A`, and, thanks to `repr(C)`, `t` is
+        // placed at the minimum offset that guarantees its alignment. If
+        // `align_of::<T>() < align_of::<A>()`, then that offset will be
+        // guaranteed *not* to satisfy `align_of::<A>()`.
+        _u: u8,
+        t: T,
+        _a: [A; 0],
+    }
+
+    impl<T, A> ForceUnalign<T, A> {
+        const fn new(t: T) -> ForceUnalign<T, A> {
+            ForceUnalign { _u: 0, t, _a: [] }
+        }
+    }
+
+    // A `u64` with alignment 8.
+    //
+    // Though `u64` has alignment 8 on some platforms, it's not guaranteed.
+    // By contrast, `AU64` is guaranteed to have alignment 8.
+    #[derive(FromBytes, AsBytes, Eq, PartialEq, Ord, PartialOrd, Default, Debug, Copy, Clone)]
+    #[repr(C, align(8))]
+    struct AU64(u64);
+
+    impl Display for AU64 {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            Display::fmt(&self.0, f)
+        }
+    }
+
+    // Converts an `AU64` to bytes using this platform's endianness.
+    fn au64_to_bytes(u: AU64) -> [u8; 8] {
+        transmute!(u)
+    }
+
+    // An unsized type.
+    //
+    // This is used to test the custom derives of our traits. The `[u8]` type
+    // gets a hand-rolled impl, so it doesn't exercise our custom derives.
+    #[derive(Debug, Eq, PartialEq, FromBytes, AsBytes, Unaligned)]
+    #[repr(transparent)]
+    struct Unsized([u8]);
+
+    impl Unsized {
+        fn from_mut_slice(slc: &mut [u8]) -> &mut Unsized {
+            // SAFETY: This *probably* sound - since the layouts of `[u8]` and
+            // `Unsized` are the same, so are the layouts of `&mut [u8]` and
+            // `&mut Unsized`. [1] Even if it turns out that this isn't actually
+            // guaranteed by the language spec, we can just change this since
+            // it's in test code.
+            //
+            // [1] https://github.com/rust-lang/unsafe-code-guidelines/issues/375
+            unsafe { mem::transmute(slc) }
+        }
+    }
+
+    #[test]
+    fn test_object_safety() {
+        fn _takes_from_bytes(_: &dyn FromBytes) {}
+        fn _takes_unaligned(_: &dyn Unaligned) {}
+    }
+
+    #[test]
+    fn test_unalign() {
+        // Test methods that don't depend on alignment.
+        let mut u = Unalign::new(AU64(123));
+        assert_eq!(u.get(), AU64(123));
+        assert_eq!(u.into_inner(), AU64(123));
+        assert_eq!(u.get_ptr(), <*const _>::cast::<AU64>(&u));
+        assert_eq!(u.get_mut_ptr(), <*mut _>::cast::<AU64>(&mut u));
+        u.set(AU64(321));
+        assert_eq!(u.get(), AU64(321));
+
+        // Test methods that depend on alignment (when alignment is satisfied).
+        let mut u: Align<_, AU64> = Align::new(Unalign::new(AU64(123)));
+        assert_eq!(u.t.try_deref(), Some(&AU64(123)));
+        assert_eq!(u.t.try_deref_mut(), Some(&mut AU64(123)));
+        // SAFETY: The `Align<_, AU64>` guarantees proper alignment.
+        assert_eq!(unsafe { u.t.deref_unchecked() }, &AU64(123));
+        // SAFETY: The `Align<_, AU64>` guarantees proper alignment.
+        assert_eq!(unsafe { u.t.deref_mut_unchecked() }, &mut AU64(123));
+        *u.t.try_deref_mut().unwrap() = AU64(321);
+        assert_eq!(u.t.get(), AU64(321));
+
+        // Test methods that depend on alignment (when alignment is not
+        // satisfied).
+        let mut u: ForceUnalign<_, AU64> = ForceUnalign::new(Unalign::new(AU64(123)));
+        assert_eq!(u.t.try_deref(), None);
+        assert_eq!(u.t.try_deref_mut(), None);
+
+        // Test methods that depend on `T: Unaligned`.
+        let mut u = Unalign::new(123u8);
+        assert_eq!(u.try_deref(), Some(&123));
+        assert_eq!(u.try_deref_mut(), Some(&mut 123));
+        assert_eq!(u.deref(), &123);
+        assert_eq!(u.deref_mut(), &mut 123);
+        *u = 21;
+        assert_eq!(u.get(), 21);
+
+        // Test that some `Unalign` functions and methods are `const`.
+        const _UNALIGN: Unalign<u64> = Unalign::new(0);
+        const _UNALIGN_PTR: *const u64 = _UNALIGN.get_ptr();
+        const _U64: u64 = _UNALIGN.into_inner();
+        // Make sure all code is considered "used".
+        //
+        // TODO(https://github.com/rust-lang/rust/issues/104084): Remove this
+        // attribute.
+        #[allow(dead_code)]
+        const _: () = {
+            let x: Align<_, AU64> = Align::new(Unalign::new(AU64(123)));
+            // Make sure that `deref_unchecked` is `const`.
+            //
+            // SAFETY: The `Align<_, AU64>` guarantees proper alignment.
+            let au64 = unsafe { x.t.deref_unchecked() };
+            match au64 {
+                AU64(123) => {}
+                _ => unreachable!(),
+            }
+        };
+    }
+
+    #[test]
+    fn test_unalign_update() {
+        let mut u = Unalign::new(AU64(123));
+        u.update(|a| a.0 += 1);
+        assert_eq!(u.get(), AU64(124));
+
+        // Test that, even if the callback panics, the original is still
+        // correctly overwritten. Use a `Box` so that Miri is more likely to
+        // catch any unsoundness (which would likely result in two `Box`es for
+        // the same heap object, which is the sort of thing that Miri would
+        // probably catch).
+        let mut u = Unalign::new(Box::new(AU64(123)));
+        let res = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            u.update(|a| {
+                a.0 += 1;
+                panic!();
+            })
+        }));
+        // Only required on the v0.6.x branch due to behavior of older versions
+        // of Clippy which is no longer present on the MSRV we use on the main
+        // branch.
+        #[allow(clippy::assertions_on_result_states)]
+        {
+            assert!(res.is_err());
+        }
+        assert_eq!(u.into_inner(), Box::new(AU64(124)));
     }
 
     #[test]
@@ -1994,7 +3110,7 @@ mod tests {
         #[cfg(target_endian = "little")]
         const VAL_BYTES: [u8; 8] = VAL.to_le_bytes();
 
-        // Test FromBytes::{read_from, read_from_prefix, read_from_suffix}
+        // Test `FromBytes::{read_from, read_from_prefix, read_from_suffix}`.
 
         assert_eq!(u64::read_from(&VAL_BYTES[..]), Some(VAL));
         // The first 8 bytes are from `VAL_BYTES` and the second 8 bytes are all
@@ -2008,7 +3124,7 @@ mod tests {
         assert_eq!(u64::read_from_prefix(&bytes_with_suffix[..]), Some(0));
         assert_eq!(u64::read_from_suffix(&bytes_with_suffix[..]), Some(VAL));
 
-        // Test AsBytes::{write_to, write_to_prefix, write_to_suffix}
+        // Test `AsBytes::{write_to, write_to_prefix, write_to_suffix}`.
 
         let mut bytes = [0u8; 8];
         assert_eq!(VAL.write_to(&mut bytes[..]), Some(()));
@@ -2044,17 +3160,23 @@ mod tests {
             }
         }
         let _: () = transmute!(PanicOnDrop(()));
+
+        // Test that `transmute!` is legal in a const context.
+        const ARRAY_OF_U8S: [u8; 8] = [0u8, 1, 2, 3, 4, 5, 6, 7];
+        const ARRAY_OF_ARRAYS: [[u8; 2]; 4] = [[0, 1], [2, 3], [4, 5], [6, 7]];
+        const X: [[u8; 2]; 4] = transmute!(ARRAY_OF_U8S);
+        assert_eq!(X, ARRAY_OF_ARRAYS);
     }
 
     #[test]
     fn test_address() {
-        // test that the Deref and DerefMut implementations return a reference
-        // which points to the right region of memory
+        // Test that the `Deref` and `DerefMut` implementations return a
+        // reference which points to the right region of memory.
 
         let buf = [0];
         let lv = LayoutVerified::<_, u8>::new(&buf[..]).unwrap();
         let buf_ptr = buf.as_ptr();
-        let deref_ptr = lv.deref() as *const u8;
+        let deref_ptr: *const u8 = lv.deref();
         assert_eq!(buf_ptr, deref_ptr);
 
         let buf = [0];
@@ -2064,70 +3186,70 @@ mod tests {
         assert_eq!(buf_ptr, deref_ptr);
     }
 
-    // verify that values written to a LayoutVerified are properly shared
+    // Verify that values written to a `LayoutVerified` are properly shared
     // between the typed and untyped representations, that reads via `deref` and
     // `read` behave the same, and that writes via `deref_mut` and `write`
-    // behave the same
-    fn test_new_helper<'a>(mut lv: LayoutVerified<&'a mut [u8], u64>) {
+    // behave the same.
+    fn test_new_helper(mut lv: LayoutVerified<&mut [u8], AU64>) {
         // assert that the value starts at 0
-        assert_eq!(*lv, 0);
-        assert_eq!(lv.read(), 0);
+        assert_eq!(*lv, AU64(0));
+        assert_eq!(lv.read(), AU64(0));
 
-        // assert that values written to the typed value are reflected in the
-        // byte slice
-        const VAL1: u64 = 0xFF00FF00FF00FF00;
+        // Assert that values written to the typed value are reflected in the
+        // byte slice.
+        const VAL1: AU64 = AU64(0xFF00FF00FF00FF00);
         *lv = VAL1;
-        assert_eq!(lv.bytes(), &u64_to_bytes(VAL1));
-        *lv = 0;
+        assert_eq!(lv.bytes(), &au64_to_bytes(VAL1));
+        *lv = AU64(0);
         lv.write(VAL1);
-        assert_eq!(lv.bytes(), &u64_to_bytes(VAL1));
+        assert_eq!(lv.bytes(), &au64_to_bytes(VAL1));
 
-        // assert that values written to the byte slice are reflected in the
-        // typed value
-        const VAL2: u64 = !VAL1; // different from VAL1
-        lv.bytes_mut().copy_from_slice(&u64_to_bytes(VAL2)[..]);
+        // Assert that values written to the byte slice are reflected in the
+        // typed value.
+        const VAL2: AU64 = AU64(!VAL1.0); // different from `VAL1`
+        lv.bytes_mut().copy_from_slice(&au64_to_bytes(VAL2)[..]);
         assert_eq!(*lv, VAL2);
         assert_eq!(lv.read(), VAL2);
     }
 
-    // verify that values written to a LayoutVerified are properly shared
+    // Verify that values written to a `LayoutVerified` are properly shared
     // between the typed and untyped representations; pass a value with
-    // `typed_len` `u64`s backed by an array of `typed_len * 8` bytes.
-    fn test_new_helper_slice<'a>(mut lv: LayoutVerified<&'a mut [u8], [u64]>, typed_len: usize) {
-        // assert that the value starts out zeroed
-        assert_eq!(&*lv, vec![0; typed_len].as_slice());
+    // `typed_len` `AU64`s backed by an array of `typed_len * 8` bytes.
+    fn test_new_helper_slice(mut lv: LayoutVerified<&mut [u8], [AU64]>, typed_len: usize) {
+        // Assert that the value starts out zeroed.
+        assert_eq!(&*lv, vec![AU64(0); typed_len].as_slice());
 
-        // check the backing storage is the exact same slice
+        // Check the backing storage is the exact same slice.
         let untyped_len = typed_len * 8;
         assert_eq!(lv.bytes().len(), untyped_len);
-        assert_eq!(lv.bytes().as_ptr(), lv.as_ptr() as *const u8);
+        assert_eq!(lv.bytes().as_ptr(), lv.as_ptr().cast::<u8>());
 
-        // assert that values written to the typed value are reflected in the
-        // byte slice
-        const VAL1: u64 = 0xFF00FF00FF00FF00;
+        // Assert that values written to the typed value are reflected in the
+        // byte slice.
+        const VAL1: AU64 = AU64(0xFF00FF00FF00FF00);
         for typed in &mut *lv {
             *typed = VAL1;
         }
-        assert_eq!(lv.bytes(), VAL1.to_ne_bytes().repeat(typed_len).as_slice());
+        assert_eq!(lv.bytes(), VAL1.0.to_ne_bytes().repeat(typed_len).as_slice());
 
-        // assert that values written to the byte slice are reflected in the
-        // typed value
-        const VAL2: u64 = !VAL1; // different from VAL1
-        lv.bytes_mut().copy_from_slice(&VAL2.to_ne_bytes().repeat(typed_len));
+        // Assert that values written to the byte slice are reflected in the
+        // typed value.
+        const VAL2: AU64 = AU64(!VAL1.0); // different from VAL1
+        lv.bytes_mut().copy_from_slice(&VAL2.0.to_ne_bytes().repeat(typed_len));
         assert!(lv.iter().copied().all(|x| x == VAL2));
     }
 
-    // verify that values written to a LayoutVerified are properly shared
+    // Verify that values written to a `LayoutVerified` are properly shared
     // between the typed and untyped representations, that reads via `deref` and
     // `read` behave the same, and that writes via `deref_mut` and `write`
-    // behave the same
-    fn test_new_helper_unaligned<'a>(mut lv: LayoutVerified<&'a mut [u8], [u8; 8]>) {
+    // behave the same.
+    fn test_new_helper_unaligned(mut lv: LayoutVerified<&mut [u8], [u8; 8]>) {
         // assert that the value starts at 0
         assert_eq!(*lv, [0; 8]);
         assert_eq!(lv.read(), [0; 8]);
 
-        // assert that values written to the typed value are reflected in the
-        // byte slice
+        // Assert that values written to the typed value are reflected in the
+        // byte slice.
         const VAL1: [u8; 8] = [0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00];
         *lv = VAL1;
         assert_eq!(lv.bytes(), &VAL1);
@@ -2135,35 +3257,35 @@ mod tests {
         lv.write(VAL1);
         assert_eq!(lv.bytes(), &VAL1);
 
-        // assert that values written to the byte slice are reflected in the
-        // typed value
+        // Assert that values written to the byte slice are reflected in the
+        // typed value.
         const VAL2: [u8; 8] = [0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF]; // different from VAL1
         lv.bytes_mut().copy_from_slice(&VAL2[..]);
         assert_eq!(*lv, VAL2);
         assert_eq!(lv.read(), VAL2);
     }
 
-    // verify that values written to a LayoutVerified are properly shared
-    // between the typed and untyped representations; pass a value with
-    // `len` `u8`s backed by an array of `len` bytes.
-    fn test_new_helper_slice_unaligned<'a>(mut lv: LayoutVerified<&'a mut [u8], [u8]>, len: usize) {
-        // assert that the value starts out zeroed
+    // Verify that values written to a `LayoutVerified` are properly shared
+    // between the typed and untyped representations; pass a value with `len`
+    // `u8`s backed by an array of `len` bytes.
+    fn test_new_helper_slice_unaligned(mut lv: LayoutVerified<&mut [u8], [u8]>, len: usize) {
+        // Assert that the value starts out zeroed.
         assert_eq!(&*lv, vec![0u8; len].as_slice());
 
-        // check the backing storage is the exact same slice
+        // Check the backing storage is the exact same slice.
         assert_eq!(lv.bytes().len(), len);
         assert_eq!(lv.bytes().as_ptr(), lv.as_ptr());
 
-        // assert that values written to the typed value are reflected in the
-        // byte slice
+        // Assert that values written to the typed value are reflected in the
+        // byte slice.
         let mut expected_bytes = [0xFF, 0x00].iter().copied().cycle().take(len).collect::<Vec<_>>();
         lv.copy_from_slice(&expected_bytes);
         assert_eq!(lv.bytes(), expected_bytes.as_slice());
 
-        // assert that values written to the byte slice are reflected in the
-        // typed value
+        // Assert that values written to the byte slice are reflected in the
+        // typed value.
         for byte in &mut expected_bytes {
-            *byte = !*byte; // different from expected_len
+            *byte = !*byte; // different from `expected_len`
         }
         lv.bytes_mut().copy_from_slice(&expected_bytes);
         assert_eq!(&*lv, expected_bytes.as_slice());
@@ -2172,83 +3294,83 @@ mod tests {
     #[test]
     fn test_new_aligned_sized() {
         // Test that a properly-aligned, properly-sized buffer works for new,
-        // new_from_preifx, and new_from_suffix, and that new_from_prefix and
+        // new_from_prefix, and new_from_suffix, and that new_from_prefix and
         // new_from_suffix return empty slices. Test that a properly-aligned
         // buffer whose length is a multiple of the element size works for
         // new_slice. Test that xxx_zeroed behaves the same, and zeroes the
         // memory.
 
-        // a buffer with an alignment of 8
-        let mut buf = AlignedBuffer::<u64, [u8; 8]>::default();
-        // buf.buf should be aligned to 8, so this should always succeed
-        test_new_helper(LayoutVerified::<_, u64>::new(&mut buf.buf[..]).unwrap());
-        buf.buf = [0xFFu8; 8];
-        test_new_helper(LayoutVerified::<_, u64>::new_zeroed(&mut buf.buf[..]).unwrap());
+        // A buffer with an alignment of 8.
+        let mut buf = Align::<[u8; 8], AU64>::default();
+        // `buf.t` should be aligned to 8, so this should always succeed.
+        test_new_helper(LayoutVerified::<_, AU64>::new(&mut buf.t[..]).unwrap());
+        buf.t = [0xFFu8; 8];
+        test_new_helper(LayoutVerified::<_, AU64>::new_zeroed(&mut buf.t[..]).unwrap());
         {
-            // in a block so that lv and suffix don't live too long
-            buf.clear_buf();
-            let (lv, suffix) = LayoutVerified::<_, u64>::new_from_prefix(&mut buf.buf[..]).unwrap();
+            // In a block so that `lv` and `suffix` don't live too long.
+            buf.set_default();
+            let (lv, suffix) = LayoutVerified::<_, AU64>::new_from_prefix(&mut buf.t[..]).unwrap();
             assert!(suffix.is_empty());
             test_new_helper(lv);
         }
         {
-            buf.buf = [0xFFu8; 8];
+            buf.t = [0xFFu8; 8];
             let (lv, suffix) =
-                LayoutVerified::<_, u64>::new_from_prefix_zeroed(&mut buf.buf[..]).unwrap();
+                LayoutVerified::<_, AU64>::new_from_prefix_zeroed(&mut buf.t[..]).unwrap();
             assert!(suffix.is_empty());
             test_new_helper(lv);
         }
         {
-            buf.clear_buf();
-            let (prefix, lv) = LayoutVerified::<_, u64>::new_from_suffix(&mut buf.buf[..]).unwrap();
+            buf.set_default();
+            let (prefix, lv) = LayoutVerified::<_, AU64>::new_from_suffix(&mut buf.t[..]).unwrap();
             assert!(prefix.is_empty());
             test_new_helper(lv);
         }
         {
-            buf.buf = [0xFFu8; 8];
+            buf.t = [0xFFu8; 8];
             let (prefix, lv) =
-                LayoutVerified::<_, u64>::new_from_suffix_zeroed(&mut buf.buf[..]).unwrap();
+                LayoutVerified::<_, AU64>::new_from_suffix_zeroed(&mut buf.t[..]).unwrap();
             assert!(prefix.is_empty());
             test_new_helper(lv);
         }
 
-        // a buffer with alignment 8 and length 16
-        let mut buf = AlignedBuffer::<u64, [u8; 16]>::default();
-        // buf.buf should be aligned to 8 and have a length which is a multiple
-        // of size_of::<u64>(), so this should always succeed
-        test_new_helper_slice(LayoutVerified::<_, [u64]>::new_slice(&mut buf.buf[..]).unwrap(), 2);
-        buf.buf = [0xFFu8; 16];
+        // A buffer with alignment 8 and length 16.
+        let mut buf = Align::<[u8; 16], AU64>::default();
+        // `buf.t` should be aligned to 8 and have a length which is a multiple
+        // of `size_of::<AU64>()`, so this should always succeed.
+        test_new_helper_slice(LayoutVerified::<_, [AU64]>::new_slice(&mut buf.t[..]).unwrap(), 2);
+        buf.t = [0xFFu8; 16];
         test_new_helper_slice(
-            LayoutVerified::<_, [u64]>::new_slice_zeroed(&mut buf.buf[..]).unwrap(),
+            LayoutVerified::<_, [AU64]>::new_slice_zeroed(&mut buf.t[..]).unwrap(),
             2,
         );
 
         {
-            buf.clear_buf();
+            buf.set_default();
             let (lv, suffix) =
-                LayoutVerified::<_, [u64]>::new_slice_from_prefix(&mut buf.buf[..], 1).unwrap();
+                LayoutVerified::<_, [AU64]>::new_slice_from_prefix(&mut buf.t[..], 1).unwrap();
             assert_eq!(suffix, [0; 8]);
             test_new_helper_slice(lv, 1);
         }
         {
-            buf.buf = [0xFFu8; 16];
+            buf.t = [0xFFu8; 16];
             let (lv, suffix) =
-                LayoutVerified::<_, [u64]>::new_slice_from_prefix_zeroed(&mut buf.buf[..], 1)
+                LayoutVerified::<_, [AU64]>::new_slice_from_prefix_zeroed(&mut buf.t[..], 1)
                     .unwrap();
             assert_eq!(suffix, [0xFF; 8]);
             test_new_helper_slice(lv, 1);
         }
         {
-            buf.clear_buf();
+            buf.set_default();
             let (prefix, lv) =
-                LayoutVerified::<_, [u64]>::new_slice_from_suffix(&mut buf.buf[..], 1).unwrap();
+                LayoutVerified::<_, [AU64]>::new_slice_from_suffix(&mut buf.t[..], 1).unwrap();
             assert_eq!(prefix, [0; 8]);
             test_new_helper_slice(lv, 1);
         }
         {
-            buf.buf = [0xFFu8; 16];
+            buf.t = [0xFFu8; 16];
             let (prefix, lv) =
-                LayoutVerified::<_, [u64]>::new_slice_from_suffix_zeroed(&mut buf.buf[..], 1)
+                LayoutVerified::<_, [AU64]>::new_slice_from_suffix_zeroed(&mut buf.t[..], 1)
                     .unwrap();
             assert_eq!(prefix, [0xFF; 8]);
             test_new_helper_slice(lv, 1);
@@ -2258,12 +3380,12 @@ mod tests {
     #[test]
     fn test_new_unaligned_sized() {
         // Test that an unaligned, properly-sized buffer works for
-        // new_unaligned, new_unaligned_from_prefix, and
-        // new_unaligned_from_suffix, and that new_unaligned_from_prefix
-        // new_unaligned_from_suffix return empty slices. Test that an unaligned
-        // buffer whose length is a multiple of the element size works for
-        // new_slice. Test that xxx_zeroed behaves the same, and zeroes the
-        // memory.
+        // `new_unaligned`, `new_unaligned_from_prefix`, and
+        // `new_unaligned_from_suffix`, and that `new_unaligned_from_prefix`
+        // `new_unaligned_from_suffix` return empty slices. Test that an
+        // unaligned buffer whose length is a multiple of the element size works
+        // for `new_slice`. Test that `xxx_zeroed` behaves the same, and zeroes
+        // the memory.
 
         let mut buf = [0u8; 8];
         test_new_helper_unaligned(
@@ -2274,7 +3396,7 @@ mod tests {
             LayoutVerified::<_, [u8; 8]>::new_unaligned_zeroed(&mut buf[..]).unwrap(),
         );
         {
-            // in a block so that lv and suffix don't live too long
+            // In a block so that `lv` and `suffix` don't live too long.
             buf = [0u8; 8];
             let (lv, suffix) =
                 LayoutVerified::<_, [u8; 8]>::new_unaligned_from_prefix(&mut buf[..]).unwrap();
@@ -2306,8 +3428,8 @@ mod tests {
         }
 
         let mut buf = [0u8; 16];
-        // buf.buf should be aligned to 8 and have a length which is a multiple
-        // of size_of::<u64>(), so this should always succeed
+        // `buf.t` should be aligned to 8 and have a length which is a multiple
+        // of `size_of::AU64>()`, so this should always succeed.
         test_new_helper_slice_unaligned(
             LayoutVerified::<_, [u8]>::new_slice_unaligned(&mut buf[..]).unwrap(),
             16,
@@ -2355,40 +3477,40 @@ mod tests {
     #[test]
     fn test_new_oversized() {
         // Test that a properly-aligned, overly-sized buffer works for
-        // new_from_prefix and new_from_suffix, and that they return the
-        // remainder and prefix of the slice respectively. Test that xxx_zeroed
-        // behaves the same, and zeroes the memory.
+        // `new_from_prefix` and `new_from_suffix`, and that they return the
+        // remainder and prefix of the slice respectively. Test that
+        // `xxx_zeroed` behaves the same, and zeroes the memory.
 
-        let mut buf = AlignedBuffer::<u64, [u8; 16]>::default();
+        let mut buf = Align::<[u8; 16], AU64>::default();
         {
-            // in a block so that lv and suffix don't live too long
-            // buf.buf should be aligned to 8, so this should always succeed
-            let (lv, suffix) = LayoutVerified::<_, u64>::new_from_prefix(&mut buf.buf[..]).unwrap();
+            // In a block so that `lv` and `suffix` don't live too long.
+            // `buf.t` should be aligned to 8, so this should always succeed.
+            let (lv, suffix) = LayoutVerified::<_, AU64>::new_from_prefix(&mut buf.t[..]).unwrap();
             assert_eq!(suffix.len(), 8);
             test_new_helper(lv);
         }
         {
-            buf.buf = [0xFFu8; 16];
-            // buf.buf should be aligned to 8, so this should always succeed
+            buf.t = [0xFFu8; 16];
+            // `buf.t` should be aligned to 8, so this should always succeed.
             let (lv, suffix) =
-                LayoutVerified::<_, u64>::new_from_prefix_zeroed(&mut buf.buf[..]).unwrap();
-            // assert that the suffix wasn't zeroed
+                LayoutVerified::<_, AU64>::new_from_prefix_zeroed(&mut buf.t[..]).unwrap();
+            // Assert that the suffix wasn't zeroed.
             assert_eq!(suffix, &[0xFFu8; 8]);
             test_new_helper(lv);
         }
         {
-            buf.clear_buf();
-            // buf.buf should be aligned to 8, so this should always succeed
-            let (prefix, lv) = LayoutVerified::<_, u64>::new_from_suffix(&mut buf.buf[..]).unwrap();
+            buf.set_default();
+            // `buf.t` should be aligned to 8, so this should always succeed.
+            let (prefix, lv) = LayoutVerified::<_, AU64>::new_from_suffix(&mut buf.t[..]).unwrap();
             assert_eq!(prefix.len(), 8);
             test_new_helper(lv);
         }
         {
-            buf.buf = [0xFFu8; 16];
-            // buf.buf should be aligned to 8, so this should always succeed
+            buf.t = [0xFFu8; 16];
+            // `buf.t` should be aligned to 8, so this should always succeed.
             let (prefix, lv) =
-                LayoutVerified::<_, u64>::new_from_suffix_zeroed(&mut buf.buf[..]).unwrap();
-            // assert that the prefix wasn't zeroed
+                LayoutVerified::<_, AU64>::new_from_suffix_zeroed(&mut buf.t[..]).unwrap();
+            // Assert that the prefix wasn't zeroed.
             assert_eq!(prefix, &[0xFFu8; 8]);
             test_new_helper(lv);
         }
@@ -2397,13 +3519,13 @@ mod tests {
     #[test]
     fn test_new_unaligned_oversized() {
         // Test than an unaligned, overly-sized buffer works for
-        // new_unaligned_from_prefix and new_unaligned_from_suffix, and that
+        // `new_unaligned_from_prefix` and `new_unaligned_from_suffix`, and that
         // they return the remainder and prefix of the slice respectively. Test
-        // that xxx_zeroed behaves the same, and zeroes the memory.
+        // that `xxx_zeroed` behaves the same, and zeroes the memory.
 
         let mut buf = [0u8; 16];
         {
-            // in a block so that lv and suffix don't live too long
+            // In a block so that `lv` and `suffix` don't live too long.
             let (lv, suffix) =
                 LayoutVerified::<_, [u8; 8]>::new_unaligned_from_prefix(&mut buf[..]).unwrap();
             assert_eq!(suffix.len(), 8);
@@ -2414,7 +3536,7 @@ mod tests {
             let (lv, suffix) =
                 LayoutVerified::<_, [u8; 8]>::new_unaligned_from_prefix_zeroed(&mut buf[..])
                     .unwrap();
-            // assert that the suffix wasn't zeroed
+            // Assert that the suffix wasn't zeroed.
             assert_eq!(suffix, &[0xFF; 8]);
             test_new_helper_unaligned(lv);
         }
@@ -2430,7 +3552,7 @@ mod tests {
             let (prefix, lv) =
                 LayoutVerified::<_, [u8; 8]>::new_unaligned_from_suffix_zeroed(&mut buf[..])
                     .unwrap();
-            // assert that the prefix wasn't zeroed
+            // Assert that the prefix wasn't zeroed.
             assert_eq!(prefix, &[0xFF; 8]);
             test_new_helper_unaligned(lv);
         }
@@ -2439,146 +3561,150 @@ mod tests {
     #[test]
     #[allow(clippy::cognitive_complexity)]
     fn test_new_error() {
-        // fail because the buffer is too large
+        // Fail because the buffer is too large.
 
-        // a buffer with an alignment of 8
-        let mut buf = AlignedBuffer::<u64, [u8; 16]>::default();
-        // buf.buf should be aligned to 8, so only the length check should fail
-        assert!(LayoutVerified::<_, u64>::new(&buf.buf[..]).is_none());
-        assert!(LayoutVerified::<_, u64>::new_zeroed(&mut buf.buf[..]).is_none());
-        assert!(LayoutVerified::<_, [u8; 8]>::new_unaligned(&buf.buf[..]).is_none());
-        assert!(LayoutVerified::<_, [u8; 8]>::new_unaligned_zeroed(&mut buf.buf[..]).is_none());
+        // A buffer with an alignment of 8.
+        let mut buf = Align::<[u8; 16], AU64>::default();
+        // `buf.t` should be aligned to 8, so only the length check should fail.
+        assert!(LayoutVerified::<_, AU64>::new(&buf.t[..]).is_none());
+        assert!(LayoutVerified::<_, AU64>::new_zeroed(&mut buf.t[..]).is_none());
+        assert!(LayoutVerified::<_, [u8; 8]>::new_unaligned(&buf.t[..]).is_none());
+        assert!(LayoutVerified::<_, [u8; 8]>::new_unaligned_zeroed(&mut buf.t[..]).is_none());
 
-        // fail because the buffer is too small
+        // Fail because the buffer is too small.
 
-        // a buffer with an alignment of 8
-        let mut buf = AlignedBuffer::<u64, [u8; 4]>::default();
-        // buf.buf should be aligned to 8, so only the length check should fail
-        assert!(LayoutVerified::<_, u64>::new(&buf.buf[..]).is_none());
-        assert!(LayoutVerified::<_, u64>::new_zeroed(&mut buf.buf[..]).is_none());
-        assert!(LayoutVerified::<_, [u8; 8]>::new_unaligned(&buf.buf[..]).is_none());
-        assert!(LayoutVerified::<_, [u8; 8]>::new_unaligned_zeroed(&mut buf.buf[..]).is_none());
-        assert!(LayoutVerified::<_, u64>::new_from_prefix(&buf.buf[..]).is_none());
-        assert!(LayoutVerified::<_, u64>::new_from_prefix_zeroed(&mut buf.buf[..]).is_none());
-        assert!(LayoutVerified::<_, u64>::new_from_suffix(&buf.buf[..]).is_none());
-        assert!(LayoutVerified::<_, u64>::new_from_suffix_zeroed(&mut buf.buf[..]).is_none());
-        assert!(LayoutVerified::<_, [u8; 8]>::new_unaligned_from_prefix(&buf.buf[..]).is_none());
-        assert!(LayoutVerified::<_, [u8; 8]>::new_unaligned_from_prefix_zeroed(&mut buf.buf[..])
+        // A buffer with an alignment of 8.
+        let mut buf = Align::<[u8; 4], AU64>::default();
+        // `buf.t` should be aligned to 8, so only the length check should fail.
+        assert!(LayoutVerified::<_, AU64>::new(&buf.t[..]).is_none());
+        assert!(LayoutVerified::<_, AU64>::new_zeroed(&mut buf.t[..]).is_none());
+        assert!(LayoutVerified::<_, [u8; 8]>::new_unaligned(&buf.t[..]).is_none());
+        assert!(LayoutVerified::<_, [u8; 8]>::new_unaligned_zeroed(&mut buf.t[..]).is_none());
+        assert!(LayoutVerified::<_, AU64>::new_from_prefix(&buf.t[..]).is_none());
+        assert!(LayoutVerified::<_, AU64>::new_from_prefix_zeroed(&mut buf.t[..]).is_none());
+        assert!(LayoutVerified::<_, AU64>::new_from_suffix(&buf.t[..]).is_none());
+        assert!(LayoutVerified::<_, AU64>::new_from_suffix_zeroed(&mut buf.t[..]).is_none());
+        assert!(LayoutVerified::<_, [u8; 8]>::new_unaligned_from_prefix(&buf.t[..]).is_none());
+        assert!(LayoutVerified::<_, [u8; 8]>::new_unaligned_from_prefix_zeroed(&mut buf.t[..])
             .is_none());
-        assert!(LayoutVerified::<_, [u8; 8]>::new_unaligned_from_suffix(&buf.buf[..]).is_none());
-        assert!(LayoutVerified::<_, [u8; 8]>::new_unaligned_from_suffix_zeroed(&mut buf.buf[..])
+        assert!(LayoutVerified::<_, [u8; 8]>::new_unaligned_from_suffix(&buf.t[..]).is_none());
+        assert!(LayoutVerified::<_, [u8; 8]>::new_unaligned_from_suffix_zeroed(&mut buf.t[..])
             .is_none());
 
-        // fail because the length is not a multiple of the element size
+        // Fail because the length is not a multiple of the element size.
 
-        let mut buf = AlignedBuffer::<u64, [u8; 12]>::default();
-        // buf.buf has length 12, but element size is 8
-        assert!(LayoutVerified::<_, [u64]>::new_slice(&buf.buf[..]).is_none());
-        assert!(LayoutVerified::<_, [u64]>::new_slice_zeroed(&mut buf.buf[..]).is_none());
-        assert!(LayoutVerified::<_, [[u8; 8]]>::new_slice_unaligned(&buf.buf[..]).is_none());
+        let mut buf = Align::<[u8; 12], AU64>::default();
+        // `buf.t` has length 12, but element size is 8.
+        assert!(LayoutVerified::<_, [AU64]>::new_slice(&buf.t[..]).is_none());
+        assert!(LayoutVerified::<_, [AU64]>::new_slice_zeroed(&mut buf.t[..]).is_none());
+        assert!(LayoutVerified::<_, [[u8; 8]]>::new_slice_unaligned(&buf.t[..]).is_none());
         assert!(
-            LayoutVerified::<_, [[u8; 8]]>::new_slice_unaligned_zeroed(&mut buf.buf[..]).is_none()
+            LayoutVerified::<_, [[u8; 8]]>::new_slice_unaligned_zeroed(&mut buf.t[..]).is_none()
         );
 
-        // fail beacuse the buffer is too short.
-        let mut buf = AlignedBuffer::<u64, [u8; 12]>::default();
-        // buf.buf has length 12, but the element size is 8 (and we're expecting two of them).
-        assert!(LayoutVerified::<_, [u64]>::new_slice_from_prefix(&buf.buf[..], 2).is_none());
+        // Fail because the buffer is too short.
+        let mut buf = Align::<[u8; 12], AU64>::default();
+        // `buf.t` has length 12, but the element size is 8 (and we're expecting
+        // two of them).
+        assert!(LayoutVerified::<_, [AU64]>::new_slice_from_prefix(&buf.t[..], 2).is_none());
         assert!(
-            LayoutVerified::<_, [u64]>::new_slice_from_prefix_zeroed(&mut buf.buf[..], 2).is_none()
+            LayoutVerified::<_, [AU64]>::new_slice_from_prefix_zeroed(&mut buf.t[..], 2).is_none()
         );
-        assert!(LayoutVerified::<_, [u64]>::new_slice_from_suffix(&buf.buf[..], 2).is_none());
+        assert!(LayoutVerified::<_, [AU64]>::new_slice_from_suffix(&buf.t[..], 2).is_none());
         assert!(
-            LayoutVerified::<_, [u64]>::new_slice_from_suffix_zeroed(&mut buf.buf[..], 2).is_none()
+            LayoutVerified::<_, [AU64]>::new_slice_from_suffix_zeroed(&mut buf.t[..], 2).is_none()
         );
-        assert!(LayoutVerified::<_, [[u8; 8]]>::new_slice_unaligned_from_prefix(&buf.buf[..], 2)
+        assert!(LayoutVerified::<_, [[u8; 8]]>::new_slice_unaligned_from_prefix(&buf.t[..], 2)
             .is_none());
         assert!(LayoutVerified::<_, [[u8; 8]]>::new_slice_unaligned_from_prefix_zeroed(
-            &mut buf.buf[..],
+            &mut buf.t[..],
             2
         )
         .is_none());
-        assert!(LayoutVerified::<_, [[u8; 8]]>::new_slice_unaligned_from_suffix(&buf.buf[..], 2)
+        assert!(LayoutVerified::<_, [[u8; 8]]>::new_slice_unaligned_from_suffix(&buf.t[..], 2)
             .is_none());
         assert!(LayoutVerified::<_, [[u8; 8]]>::new_slice_unaligned_from_suffix_zeroed(
-            &mut buf.buf[..],
+            &mut buf.t[..],
             2
         )
         .is_none());
 
-        // fail because the alignment is insufficient
+        // Fail because the alignment is insufficient.
 
-        // a buffer with an alignment of 8
-        let mut buf = AlignedBuffer::<u64, [u8; 12]>::default();
-        // slicing from 4, we get a buffer with size 8 (so the length check
-        // should succeed) but an alignment of only 4, which is insufficient
-        assert!(LayoutVerified::<_, u64>::new(&buf.buf[4..]).is_none());
-        assert!(LayoutVerified::<_, u64>::new_zeroed(&mut buf.buf[4..]).is_none());
-        assert!(LayoutVerified::<_, u64>::new_from_prefix(&buf.buf[4..]).is_none());
-        assert!(LayoutVerified::<_, u64>::new_from_prefix_zeroed(&mut buf.buf[4..]).is_none());
-        assert!(LayoutVerified::<_, [u64]>::new_slice(&buf.buf[4..]).is_none());
-        assert!(LayoutVerified::<_, [u64]>::new_slice_zeroed(&mut buf.buf[4..]).is_none());
-        assert!(LayoutVerified::<_, [u64]>::new_slice_from_prefix(&buf.buf[4..], 1).is_none());
-        assert!(LayoutVerified::<_, [u64]>::new_slice_from_prefix_zeroed(&mut buf.buf[4..], 1)
-            .is_none());
-        assert!(LayoutVerified::<_, [u64]>::new_slice_from_suffix(&buf.buf[4..], 1).is_none());
-        assert!(LayoutVerified::<_, [u64]>::new_slice_from_suffix_zeroed(&mut buf.buf[4..], 1)
-            .is_none());
-        // slicing from 4 should be unnecessary because new_from_suffix[_zeroed]
-        // use the suffix of the slice
-        assert!(LayoutVerified::<_, u64>::new_from_suffix(&buf.buf[..]).is_none());
-        assert!(LayoutVerified::<_, u64>::new_from_suffix_zeroed(&mut buf.buf[..]).is_none());
+        // A buffer with an alignment of 8. An odd buffer size is chosen so that
+        // the last byte of the buffer has odd alignment.
+        let mut buf = Align::<[u8; 13], AU64>::default();
+        // Slicing from 1, we get a buffer with size 12 (so the length check
+        // should succeed) but an alignment of only 1, which is insufficient.
+        assert!(LayoutVerified::<_, AU64>::new(&buf.t[1..]).is_none());
+        assert!(LayoutVerified::<_, AU64>::new_zeroed(&mut buf.t[1..]).is_none());
+        assert!(LayoutVerified::<_, AU64>::new_from_prefix(&buf.t[1..]).is_none());
+        assert!(LayoutVerified::<_, AU64>::new_from_prefix_zeroed(&mut buf.t[1..]).is_none());
+        assert!(LayoutVerified::<_, [AU64]>::new_slice(&buf.t[1..]).is_none());
+        assert!(LayoutVerified::<_, [AU64]>::new_slice_zeroed(&mut buf.t[1..]).is_none());
+        assert!(LayoutVerified::<_, [AU64]>::new_slice_from_prefix(&buf.t[1..], 1).is_none());
+        assert!(
+            LayoutVerified::<_, [AU64]>::new_slice_from_prefix_zeroed(&mut buf.t[1..], 1).is_none()
+        );
+        assert!(LayoutVerified::<_, [AU64]>::new_slice_from_suffix(&buf.t[1..], 1).is_none());
+        assert!(
+            LayoutVerified::<_, [AU64]>::new_slice_from_suffix_zeroed(&mut buf.t[1..], 1).is_none()
+        );
+        // Slicing is unnecessary here because `new_from_suffix[_zeroed]` use
+        // the suffix of the slice, which has odd alignment.
+        assert!(LayoutVerified::<_, AU64>::new_from_suffix(&buf.t[..]).is_none());
+        assert!(LayoutVerified::<_, AU64>::new_from_suffix_zeroed(&mut buf.t[..]).is_none());
 
-        // fail due to arithmetic overflow
+        // Fail due to arithmetic overflow.
 
-        let mut buf = AlignedBuffer::<u64, [u8; 16]>::default();
-        let unreasonable_len = std::usize::MAX / mem::size_of::<u64>() + 1;
-        assert!(LayoutVerified::<_, [u64]>::new_slice_from_prefix(&buf.buf[..], unreasonable_len)
+        let mut buf = Align::<[u8; 16], AU64>::default();
+        let unreasonable_len = usize::MAX / mem::size_of::<AU64>() + 1;
+        assert!(LayoutVerified::<_, [AU64]>::new_slice_from_prefix(&buf.t[..], unreasonable_len)
             .is_none());
-        assert!(LayoutVerified::<_, [u64]>::new_slice_from_prefix_zeroed(
-            &mut buf.buf[..],
+        assert!(LayoutVerified::<_, [AU64]>::new_slice_from_prefix_zeroed(
+            &mut buf.t[..],
             unreasonable_len
         )
         .is_none());
-        assert!(LayoutVerified::<_, [u64]>::new_slice_from_suffix(&buf.buf[..], unreasonable_len)
+        assert!(LayoutVerified::<_, [AU64]>::new_slice_from_suffix(&buf.t[..], unreasonable_len)
             .is_none());
-        assert!(LayoutVerified::<_, [u64]>::new_slice_from_suffix_zeroed(
-            &mut buf.buf[..],
+        assert!(LayoutVerified::<_, [AU64]>::new_slice_from_suffix_zeroed(
+            &mut buf.t[..],
             unreasonable_len
         )
         .is_none());
         assert!(LayoutVerified::<_, [[u8; 8]]>::new_slice_unaligned_from_prefix(
-            &buf.buf[..],
+            &buf.t[..],
             unreasonable_len
         )
         .is_none());
         assert!(LayoutVerified::<_, [[u8; 8]]>::new_slice_unaligned_from_prefix_zeroed(
-            &mut buf.buf[..],
+            &mut buf.t[..],
             unreasonable_len
         )
         .is_none());
         assert!(LayoutVerified::<_, [[u8; 8]]>::new_slice_unaligned_from_suffix(
-            &buf.buf[..],
+            &buf.t[..],
             unreasonable_len
         )
         .is_none());
         assert!(LayoutVerified::<_, [[u8; 8]]>::new_slice_unaligned_from_suffix_zeroed(
-            &mut buf.buf[..],
+            &mut buf.t[..],
             unreasonable_len
         )
         .is_none());
     }
 
-    // Tests for ensuring that, if a ZST is passed into a slice-like function, we always
-    // panic. Since these tests need to be separate per-function, and they tend to take
-    // up a lot of space, we generate them using a macro in a submodule instead. The
-    // submodule ensures that we can just re-use the name of the function under test for
-    // the name of the test itself.
+    // Tests for ensuring that, if a ZST is passed into a slice-like function,
+    // we always panic. Since these tests need to be separate per-function, and
+    // they tend to take up a lot of space, we generate them using a macro in a
+    // submodule instead. The submodule ensures that we can just re-use the name
+    // of the function under test for the name of the test itself.
     mod test_zst_panics {
         macro_rules! zst_test {
-            ($name:ident($($tt:tt)*)) => {
+            ($name:ident($($tt:tt)*), $constructor_in_panic_msg:tt) => {
                 #[test]
-                #[should_panic = "assertion failed"]
+                #[should_panic = concat!("LayoutVerified::", $constructor_in_panic_msg, " called on a zero-sized type")]
                 fn $name() {
                     let mut buffer = [0u8];
                     let lv = $crate::LayoutVerified::<_, [()]>::$name(&mut buffer[..], $($tt)*);
@@ -2586,52 +3712,116 @@ mod tests {
                 }
             }
         }
-        zst_test!(new_slice());
-        zst_test!(new_slice_zeroed());
-        zst_test!(new_slice_from_prefix(1));
-        zst_test!(new_slice_from_prefix_zeroed(1));
-        zst_test!(new_slice_from_suffix(1));
-        zst_test!(new_slice_from_suffix_zeroed(1));
-        zst_test!(new_slice_unaligned());
-        zst_test!(new_slice_unaligned_zeroed());
-        zst_test!(new_slice_unaligned_from_prefix(1));
-        zst_test!(new_slice_unaligned_from_prefix_zeroed(1));
-        zst_test!(new_slice_unaligned_from_suffix(1));
-        zst_test!(new_slice_unaligned_from_suffix_zeroed(1));
+        zst_test!(new_slice(), "new_slice");
+        zst_test!(new_slice_zeroed(), "new_slice");
+        zst_test!(new_slice_from_prefix(1), "new_slice");
+        zst_test!(new_slice_from_prefix_zeroed(1), "new_slice");
+        zst_test!(new_slice_from_suffix(1), "new_slice");
+        zst_test!(new_slice_from_suffix_zeroed(1), "new_slice");
+        zst_test!(new_slice_unaligned(), "new_slice_unaligned");
+        zst_test!(new_slice_unaligned_zeroed(), "new_slice_unaligned");
+        zst_test!(new_slice_unaligned_from_prefix(1), "new_slice_unaligned");
+        zst_test!(new_slice_unaligned_from_prefix_zeroed(1), "new_slice_unaligned");
+        zst_test!(new_slice_unaligned_from_suffix(1), "new_slice_unaligned");
+        zst_test!(new_slice_unaligned_from_suffix_zeroed(1), "new_slice_unaligned");
     }
 
     #[test]
     fn test_as_bytes_methods() {
+        /// Run a series of tests by calling `AsBytes` methods on `t`.
+        ///
+        /// `bytes` is the expected byte sequence returned from `t.as_bytes()`
+        /// before `t` has been modified. `post_mutation` is the expected
+        /// sequence returned from `t.as_bytes()` after `t.as_bytes_mut()[0]`
+        /// has had its bits flipped (by applying `^= 0xFF`).
+        ///
+        /// `N` is the size of `t` in bytes.
+        fn test<const N: usize, T: FromBytes + AsBytes + Debug + Eq + ?Sized>(
+            t: &mut T,
+            bytes: &[u8],
+            post_mutation: &T,
+        ) {
+            // Test that we can access the underlying bytes, and that we get the
+            // right bytes and the right number of bytes.
+            assert_eq!(t.as_bytes(), bytes);
+
+            // Test that changes to the underlying byte slices are reflected in
+            // the original object.
+            t.as_bytes_mut()[0] ^= 0xFF;
+            assert_eq!(t, post_mutation);
+            t.as_bytes_mut()[0] ^= 0xFF;
+
+            // `write_to` rejects slices that are too small or too large.
+            assert_eq!(t.write_to(&mut vec![0; N - 1][..]), None);
+            assert_eq!(t.write_to(&mut vec![0; N + 1][..]), None);
+
+            // `write_to` works as expected.
+            let mut bytes = [0; N];
+            assert_eq!(t.write_to(&mut bytes[..]), Some(()));
+            assert_eq!(bytes, t.as_bytes());
+
+            // `write_to_prefix` rejects slices that are too small.
+            assert_eq!(t.write_to_prefix(&mut vec![0; N - 1][..]), None);
+
+            // `write_to_prefix` works with exact-sized slices.
+            let mut bytes = [0; N];
+            assert_eq!(t.write_to_prefix(&mut bytes[..]), Some(()));
+            assert_eq!(bytes, t.as_bytes());
+
+            // `write_to_prefix` works with too-large slices, and any bytes past
+            // the prefix aren't modified.
+            let mut too_many_bytes = vec![0; N + 1];
+            too_many_bytes[N] = 123;
+            assert_eq!(t.write_to_prefix(&mut too_many_bytes[..]), Some(()));
+            assert_eq!(&too_many_bytes[..N], t.as_bytes());
+            assert_eq!(too_many_bytes[N], 123);
+
+            // `write_to_suffix` rejects slices that are too small.
+            assert_eq!(t.write_to_suffix(&mut vec![0; N - 1][..]), None);
+
+            // `write_to_suffix` works with exact-sized slices.
+            let mut bytes = [0; N];
+            assert_eq!(t.write_to_suffix(&mut bytes[..]), Some(()));
+            assert_eq!(bytes, t.as_bytes());
+
+            // `write_to_suffix` works with too-large slices, and any bytes
+            // before the suffix aren't modified.
+            let mut too_many_bytes = vec![0; N + 1];
+            too_many_bytes[0] = 123;
+            assert_eq!(t.write_to_suffix(&mut too_many_bytes[..]), Some(()));
+            assert_eq!(&too_many_bytes[1..], t.as_bytes());
+            assert_eq!(too_many_bytes[0], 123);
+        }
+
         #[derive(Debug, Eq, PartialEq, FromBytes, AsBytes)]
         #[repr(C)]
         struct Foo {
             a: u32,
-            b: u32,
+            b: Wrapping<u32>,
+            c: Option<NonZeroU32>,
         }
 
-        let mut foo = Foo { a: 1, b: 2 };
-        // Test that we can access the underlying bytes, and that we get the
-        // right bytes and the right number of bytes.
-        assert_eq!(foo.as_bytes(), [1, 0, 0, 0, 2, 0, 0, 0]);
-        // Test that changes to the underlying byte slices are reflected in the
-        // original object.
-        foo.as_bytes_mut()[0] = 3;
-        assert_eq!(foo, Foo { a: 3, b: 2 });
-
-        // Do the same tests for a slice, which ensures that this logic works
-        // for unsized types as well.
-        let foo = &mut [Foo { a: 1, b: 2 }, Foo { a: 3, b: 4 }];
-        assert_eq!(foo.as_bytes(), [1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0]);
-        foo.as_bytes_mut()[8] = 5;
-        assert_eq!(foo, &mut [Foo { a: 1, b: 2 }, Foo { a: 5, b: 4 }]);
+        let expected_bytes: Vec<u8> = if cfg!(target_endian = "little") {
+            vec![1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]
+        } else {
+            vec![0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 0]
+        };
+        let post_mutation_expected_a =
+            if cfg!(target_endian = "little") { 0x00_00_00_FE } else { 0xFF_00_00_01 };
+        test::<12, _>(
+            &mut Foo { a: 1, b: Wrapping(2), c: None },
+            expected_bytes.as_bytes(),
+            &Foo { a: post_mutation_expected_a, b: Wrapping(2), c: None },
+        );
+        test::<3, _>(
+            Unsized::from_mut_slice(&mut [1, 2, 3]),
+            &[1, 2, 3],
+            Unsized::from_mut_slice(&mut [0xFE, 2, 3]),
+        );
     }
 
     #[test]
     fn test_array() {
-        // This is a hack, as per above in `test_as_bytes_methods`.
-        mod zerocopy {
-            pub use crate::*;
-        }
         #[derive(FromBytes, AsBytes)]
         #[repr(C)]
         struct Foo {
@@ -2645,209 +3835,172 @@ mod tests {
 
     #[test]
     fn test_display_debug() {
-        let buf = AlignedBuffer::<u64, [u8; 8]>::default();
-        let lv = LayoutVerified::<_, u64>::new(&buf.buf[..]).unwrap();
+        let buf = Align::<[u8; 8], u64>::default();
+        let lv = LayoutVerified::<_, u64>::new(&buf.t[..]).unwrap();
         assert_eq!(format!("{}", lv), "0");
         assert_eq!(format!("{:?}", lv), "LayoutVerified(0)");
 
-        let buf = AlignedBuffer::<u64, [u8; 8]>::default();
-        let lv = LayoutVerified::<_, [u64]>::new_slice(&buf.buf[..]).unwrap();
+        let buf = Align::<[u8; 8], u64>::default();
+        let lv = LayoutVerified::<_, [u64]>::new_slice(&buf.t[..]).unwrap();
         assert_eq!(format!("{:?}", lv), "LayoutVerified([0])");
     }
 
     #[test]
     fn test_eq() {
-        let buf = [0u8; 8];
-        let lv1 = LayoutVerified::<_, u64>::new(&buf[..]).unwrap();
-        let lv2 = LayoutVerified::<_, u64>::new(&buf[..]).unwrap();
+        let buf1 = 0_u64;
+        let lv1 = LayoutVerified::<_, u64>::new(buf1.as_bytes()).unwrap();
+        let buf2 = 0_u64;
+        let lv2 = LayoutVerified::<_, u64>::new(buf2.as_bytes()).unwrap();
         assert_eq!(lv1, lv2);
     }
 
     #[test]
     fn test_ne() {
-        let buf1 = [0u8; 8];
-        let lv1 = LayoutVerified::<_, u64>::new(&buf1[..]).unwrap();
-        let buf2 = [1u8; 8];
-        let lv2 = LayoutVerified::<_, u64>::new(&buf2[..]).unwrap();
+        let buf1 = 0_u64;
+        let lv1 = LayoutVerified::<_, u64>::new(buf1.as_bytes()).unwrap();
+        let buf2 = 1_u64;
+        let lv2 = LayoutVerified::<_, u64>::new(buf2.as_bytes()).unwrap();
         assert_ne!(lv1, lv2);
     }
 
     #[test]
     fn test_ord() {
-        let buf1 = [0u8; 8];
-        let lv1 = LayoutVerified::<_, u64>::new(&buf1[..]).unwrap();
-        let buf2 = [1u8; 8];
-        let lv2 = LayoutVerified::<_, u64>::new(&buf2[..]).unwrap();
+        let buf1 = 0_u64;
+        let lv1 = LayoutVerified::<_, u64>::new(buf1.as_bytes()).unwrap();
+        let buf2 = 1_u64;
+        let lv2 = LayoutVerified::<_, u64>::new(buf2.as_bytes()).unwrap();
         assert!(lv1 < lv2);
     }
 
     #[test]
     fn test_new_zeroed() {
         assert_eq!(u64::new_zeroed(), 0);
-        assert_eq!(<()>::new_zeroed(), ());
+        // This test exists in order to exercise unsafe code, especially when
+        // running under Miri.
+        #[allow(clippy::unit_cmp)]
+        {
+            assert_eq!(<()>::new_zeroed(), ());
+        }
     }
 
     #[test]
-    fn test_new_box_zeroed() {
-        assert_eq!(*u64::new_box_zeroed(), 0);
+    fn test_transparent_packed_generic_struct() {
+        #[derive(AsBytes, FromBytes, Unaligned)]
+        #[repr(transparent)]
+        struct Foo<T> {
+            _t: T,
+            _phantom: PhantomData<()>,
+        }
+
+        assert_impl_all!(Foo<u32>: FromBytes);
+        assert_impl_all!(Foo<f32>: AsBytes);
+        assert_impl_all!(Foo<u8>: Unaligned);
+
+        #[derive(AsBytes, FromBytes, Unaligned)]
+        #[repr(packed)]
+        struct Bar<T, U> {
+            _t: T,
+            _u: U,
+        }
+
+        assert_impl_all!(Bar<u8, AU64>: FromBytes, AsBytes, Unaligned);
     }
 
     #[test]
-    fn test_new_box_zeroed_array() {
-        drop(<[u32; 0x1000]>::new_box_zeroed());
-    }
+    fn test_impls() {
+        // Asserts that `$ty` implements any `$trait` and doesn't implement any
+        // `!$trait`. Note that all `$trait`s must come before any `!$trait`s.
+        macro_rules! assert_impls {
+            ($ty:ty: $trait:ident) => {
+                #[allow(dead_code)]
+                const _: () = { static_assertions::assert_impl_all!($ty: $trait); };
+            };
+            ($ty:ty: !$trait:ident) => {
+                #[allow(dead_code)]
+                const _: () = { static_assertions::assert_not_impl_any!($ty: $trait); };
+            };
+            ($ty:ty: $($trait:ident),* $(,)? $(!$negative_trait:ident),*) => {
+                $(
+                    assert_impls!($ty: $trait);
+                )*
 
-    #[test]
-    fn test_new_box_zeroed_zst() {
-        assert_eq!(*<()>::new_box_zeroed(), ());
-    }
+                $(
+                    assert_impls!($ty: !$negative_trait);
+                )*
+            };
+        }
 
-    #[test]
-    fn test_new_box_slice_zeroed() {
-        let mut s: Box<[u64]> = u64::new_box_slice_zeroed(3);
-        assert_eq!(s.len(), 3);
-        assert_eq!(&*s, &[0, 0, 0]);
-        s[1] = 3;
-        assert_eq!(&*s, &[0, 3, 0]);
-    }
+        assert_impls!((): FromBytes, AsBytes, Unaligned);
+        assert_impls!(u8: FromBytes, AsBytes, Unaligned);
+        assert_impls!(i8: FromBytes, AsBytes, Unaligned);
+        assert_impls!(u16: FromBytes, AsBytes, !Unaligned);
+        assert_impls!(i16: FromBytes, AsBytes, !Unaligned);
+        assert_impls!(u32: FromBytes, AsBytes, !Unaligned);
+        assert_impls!(i32: FromBytes, AsBytes, !Unaligned);
+        assert_impls!(u64: FromBytes, AsBytes, !Unaligned);
+        assert_impls!(i64: FromBytes, AsBytes, !Unaligned);
+        assert_impls!(u128: FromBytes, AsBytes, !Unaligned);
+        assert_impls!(i128: FromBytes, AsBytes, !Unaligned);
+        assert_impls!(usize: FromBytes, AsBytes, !Unaligned);
+        assert_impls!(isize: FromBytes, AsBytes, !Unaligned);
+        assert_impls!(f32: FromBytes, AsBytes, !Unaligned);
+        assert_impls!(f64: FromBytes, AsBytes, !Unaligned);
 
-    #[test]
-    fn test_new_box_slice_zeroed_empty() {
-        let s: Box<[u64]> = u64::new_box_slice_zeroed(0);
-        assert_eq!(s.len(), 0);
-    }
+        assert_impls!(bool: AsBytes, Unaligned, !FromBytes);
+        assert_impls!(char: AsBytes, !FromBytes, !Unaligned);
+        assert_impls!(str: AsBytes, Unaligned, !FromBytes);
 
-    #[test]
-    fn test_new_box_slice_zeroed_zst() {
-        let mut s: Box<[()]> = <()>::new_box_slice_zeroed(3);
-        assert_eq!(s.len(), 3);
-        assert!(s.get(10).is_none());
-        assert_eq!(s[1], ());
-        s[2] = ();
-    }
+        assert_impls!(NonZeroU8: AsBytes, Unaligned, !FromBytes);
+        assert_impls!(NonZeroI8: AsBytes, Unaligned, !FromBytes);
+        assert_impls!(NonZeroU16: AsBytes, !FromBytes, !Unaligned);
+        assert_impls!(NonZeroI16: AsBytes, !FromBytes, !Unaligned);
+        assert_impls!(NonZeroU32: AsBytes, !FromBytes, !Unaligned);
+        assert_impls!(NonZeroI32: AsBytes, !FromBytes, !Unaligned);
+        assert_impls!(NonZeroU64: AsBytes, !FromBytes, !Unaligned);
+        assert_impls!(NonZeroI64: AsBytes, !FromBytes, !Unaligned);
+        assert_impls!(NonZeroU128: AsBytes, !FromBytes, !Unaligned);
+        assert_impls!(NonZeroI128: AsBytes, !FromBytes, !Unaligned);
+        assert_impls!(NonZeroUsize: AsBytes, !FromBytes, !Unaligned);
+        assert_impls!(NonZeroIsize: AsBytes, !FromBytes, !Unaligned);
 
-    #[test]
-    fn test_new_box_slice_zeroed_zst_empty() {
-        let s: Box<[()]> = <()>::new_box_slice_zeroed(0);
-        assert_eq!(s.len(), 0);
-    }
+        assert_impls!(Option<NonZeroU8>: FromBytes, AsBytes, Unaligned);
+        assert_impls!(Option<NonZeroI8>: FromBytes, AsBytes, Unaligned);
+        assert_impls!(Option<NonZeroU16>: FromBytes, AsBytes, !Unaligned);
+        assert_impls!(Option<NonZeroI16>: FromBytes, AsBytes, !Unaligned);
+        assert_impls!(Option<NonZeroU32>: FromBytes, AsBytes, !Unaligned);
+        assert_impls!(Option<NonZeroI32>: FromBytes, AsBytes, !Unaligned);
+        assert_impls!(Option<NonZeroU64>: FromBytes, AsBytes, !Unaligned);
+        assert_impls!(Option<NonZeroI64>: FromBytes, AsBytes, !Unaligned);
+        assert_impls!(Option<NonZeroU128>: FromBytes, AsBytes, !Unaligned);
+        assert_impls!(Option<NonZeroI128>: FromBytes, AsBytes, !Unaligned);
+        assert_impls!(Option<NonZeroUsize>: FromBytes, AsBytes, !Unaligned);
+        assert_impls!(Option<NonZeroIsize>: FromBytes, AsBytes, !Unaligned);
 
-    #[test]
-    fn test_extend_vec_zeroed() {
-        // test extending when there is an existing allocation
-        let mut v: Vec<u64> = Vec::with_capacity(3);
-        v.push(100);
-        v.push(200);
-        v.push(300);
-        extend_vec_zeroed(&mut v, 3);
-        assert_eq!(v.len(), 6);
-        assert_eq!(&*v, &[100, 200, 300, 0, 0, 0]);
-        drop(v);
+        // Implements none of the ZC traits.
+        struct NotZerocopy;
 
-        // test extending when there is no existing allocation
-        let mut v: Vec<u64> = Vec::new();
-        extend_vec_zeroed(&mut v, 3);
-        assert_eq!(v.len(), 3);
-        assert_eq!(&*v, &[0, 0, 0]);
-        drop(v);
-    }
+        assert_impls!(PhantomData<NotZerocopy>: FromBytes, AsBytes, Unaligned);
+        assert_impls!(PhantomData<[u8]>: FromBytes, AsBytes, Unaligned);
 
-    #[test]
-    fn test_extend_vec_zeroed_zst() {
-        // test extending when there is an existing (fake) allocation
-        let mut v: Vec<()> = Vec::with_capacity(3);
-        v.push(());
-        v.push(());
-        v.push(());
-        extend_vec_zeroed(&mut v, 3);
-        assert_eq!(v.len(), 6);
-        assert_eq!(&*v, &[(), (), (), (), (), ()]);
-        drop(v);
+        assert_impls!(ManuallyDrop<u8>: FromBytes, AsBytes, Unaligned);
+        assert_impls!(ManuallyDrop<[u8]>: FromBytes, AsBytes, Unaligned);
+        assert_impls!(ManuallyDrop<NotZerocopy>: !FromBytes, !AsBytes, !Unaligned);
+        assert_impls!(ManuallyDrop<[NotZerocopy]>: !FromBytes, !AsBytes, !Unaligned);
 
-        // test extending when there is no existing (fake) allocation
-        let mut v: Vec<()> = Vec::new();
-        extend_vec_zeroed(&mut v, 3);
-        assert_eq!(&*v, &[(), (), ()]);
-        drop(v);
-    }
+        assert_impls!(MaybeUninit<u8>: FromBytes, Unaligned, !AsBytes);
+        assert_impls!(MaybeUninit<NotZerocopy>: FromBytes, !AsBytes, !Unaligned);
 
-    #[test]
-    fn test_insert_vec_zeroed() {
-        // insert at start (no existing allocation)
-        let mut v: Vec<u64> = Vec::new();
-        insert_vec_zeroed(&mut v, 0, 2);
-        assert_eq!(v.len(), 2);
-        assert_eq!(&*v, &[0, 0]);
-        drop(v);
+        assert_impls!(Wrapping<u8>: FromBytes, AsBytes, Unaligned);
+        assert_impls!(Wrapping<NotZerocopy>: !FromBytes, !AsBytes, !Unaligned);
 
-        // insert at start
-        let mut v: Vec<u64> = Vec::with_capacity(3);
-        v.push(100);
-        v.push(200);
-        v.push(300);
-        insert_vec_zeroed(&mut v, 0, 2);
-        assert_eq!(v.len(), 5);
-        assert_eq!(&*v, &[0, 0, 100, 200, 300]);
-        drop(v);
+        assert_impls!(Unalign<u8>: FromBytes, AsBytes, Unaligned);
+        assert_impls!(Unalign<NotZerocopy>: Unaligned, !FromBytes, !AsBytes);
 
-        // insert at middle
-        let mut v: Vec<u64> = Vec::with_capacity(3);
-        v.push(100);
-        v.push(200);
-        v.push(300);
-        insert_vec_zeroed(&mut v, 1, 1);
-        assert_eq!(v.len(), 4);
-        assert_eq!(&*v, &[100, 0, 200, 300]);
-        drop(v);
-
-        // insert at end
-        let mut v: Vec<u64> = Vec::with_capacity(3);
-        v.push(100);
-        v.push(200);
-        v.push(300);
-        insert_vec_zeroed(&mut v, 3, 1);
-        assert_eq!(v.len(), 4);
-        assert_eq!(&*v, &[100, 200, 300, 0]);
-        drop(v);
-    }
-
-    #[test]
-    fn test_insert_vec_zeroed_zst() {
-        // insert at start (no existing fake allocation)
-        let mut v: Vec<()> = Vec::new();
-        insert_vec_zeroed(&mut v, 0, 2);
-        assert_eq!(v.len(), 2);
-        assert_eq!(&*v, &[(), ()]);
-        drop(v);
-
-        // insert at start
-        let mut v: Vec<()> = Vec::with_capacity(3);
-        v.push(());
-        v.push(());
-        v.push(());
-        insert_vec_zeroed(&mut v, 0, 2);
-        assert_eq!(v.len(), 5);
-        assert_eq!(&*v, &[(), (), (), (), ()]);
-        drop(v);
-
-        // insert at middle
-        let mut v: Vec<()> = Vec::with_capacity(3);
-        v.push(());
-        v.push(());
-        v.push(());
-        insert_vec_zeroed(&mut v, 1, 1);
-        assert_eq!(v.len(), 4);
-        assert_eq!(&*v, &[(), (), (), ()]);
-        drop(v);
-
-        // insert at end
-        let mut v: Vec<()> = Vec::with_capacity(3);
-        v.push(());
-        v.push(());
-        v.push(());
-        insert_vec_zeroed(&mut v, 3, 1);
-        assert_eq!(v.len(), 4);
-        assert_eq!(&*v, &[(), (), (), ()]);
-        drop(v);
+        assert_impls!([u8]: FromBytes, AsBytes, Unaligned);
+        assert_impls!([NotZerocopy]: !FromBytes, !AsBytes, !Unaligned);
+        assert_impls!([u8; 0]: FromBytes, AsBytes, Unaligned);
+        assert_impls!([NotZerocopy; 0]: !FromBytes, !AsBytes, !Unaligned);
+        assert_impls!([u8; 1]: FromBytes, AsBytes, Unaligned);
+        assert_impls!([NotZerocopy; 1]: !FromBytes, !AsBytes, !Unaligned);
     }
 }

@@ -4,18 +4,7 @@
 
 #![allow(warnings)]
 
-use zerocopy::Unaligned;
-
-struct IsUnaligned<T: Unaligned>(T);
-
-// Fail compilation if `$ty: !Unaligned`.
-macro_rules! is_unaligned {
-    ($ty:ty) => {
-        const _: () = {
-            let _: IsUnaligned<$ty>;
-        };
-    };
-}
+use {static_assertions::assert_impl_all, zerocopy::Unaligned};
 
 // An enum is `Unaligned` if:
 // - No `repr(align(N > 1))`
@@ -27,7 +16,7 @@ enum Foo {
     A,
 }
 
-is_unaligned!(Foo);
+assert_impl_all!(Foo: Unaligned);
 
 #[derive(Unaligned)]
 #[repr(i8)]
@@ -35,7 +24,7 @@ enum Bar {
     A,
 }
 
-is_unaligned!(Bar);
+assert_impl_all!(Bar: Unaligned);
 
 #[derive(Unaligned)]
 #[repr(u8, align(1))]
@@ -43,7 +32,7 @@ enum Baz {
     A,
 }
 
-is_unaligned!(Baz);
+assert_impl_all!(Baz: Unaligned);
 
 #[derive(Unaligned)]
 #[repr(i8, align(1))]
@@ -51,4 +40,4 @@ enum Blah {
     B,
 }
 
-is_unaligned!(Blah);
+assert_impl_all!(Blah: Unaligned);

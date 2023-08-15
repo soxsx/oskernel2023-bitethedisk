@@ -10,13 +10,14 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2018"
+edition = "2021"
+rust-version = "1.61.0"
 name = "zerocopy-derive"
-version = "0.3.2"
+version = "0.6.3"
 authors = ["Joshua Liebow-Feeser <joshlf@google.com>"]
 exclude = [".*"]
 description = "Custom derive for traits from the zerocopy crate"
-license-file = "LICENSE"
+license = "BSD-2-Clause"
 repository = "https://github.com/google/zerocopy"
 
 [lib]
@@ -29,11 +30,14 @@ version = "1.0.1"
 version = "1.0.10"
 
 [dependencies.syn]
-version = "1.0.5"
+version = "2"
 features = ["visit"]
 
 [dev-dependencies.rustversion]
 version = "1.0"
 
+[dev-dependencies.static_assertions]
+version = "1.1"
+
 [dev-dependencies.trybuild]
-version = "1.0"
+version = "=1.0.80"

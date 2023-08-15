@@ -2,6 +2,26 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+//! Derive macros for [zerocopy]'s traits.
+//!
+//! [zerocopy]: https://docs.rs/zerocopy
+
+// Sometimes we want to use lints which were added after our MSRV.
+// `unknown_lints` is `warn` by default and we deny warnings in CI, so without
+// this attribute, any unknown lint would cause a CI failure when testing with
+// our MSRV.
+#![allow(unknown_lints)]
+#![deny(renamed_and_removed_lints)]
+#![deny(clippy::all, clippy::missing_safety_doc)]
+#![deny(
+    rustdoc::bare_urls,
+    rustdoc::broken_intra_doc_links,
+    rustdoc::invalid_codeblock_attributes,
+    rustdoc::invalid_html_tags,
+    rustdoc::invalid_rust_codeblocks,
+    rustdoc::missing_crate_level_docs,
+    rustdoc::private_intra_doc_links
+)]
 #![recursion_limit = "128"]
 
 mod ext;
@@ -175,16 +195,31 @@ fn derive_from_bytes_union(ast: &DeriveInput, unn: &DataUnion) -> proc_macro2::T
 // - `repr(packed)`
 
 fn derive_as_bytes_struct(ast: &DeriveInput, strct: &DataStruct) -> proc_macro2::TokenStream {
-    // TODO(#10): Support type parameters.
-    if !ast.generics.params.is_empty() {
-        return Error::new(Span::call_site(), "unsupported on types with type parameters")
-            .to_compile_error();
+    let reprs = try_or_print!(STRUCT_UNION_AS_BYTES_CFG.validate_reprs(ast));
+    let is_transparent = reprs.contains(&StructRepr::Transparent);
+    let is_packed = reprs.contains(&StructRepr::Packed);
+
+    // TODO(#10): Support type parameters for non-transparent, non-packed
+    // structs.
+    if !ast.generics.params.is_empty() && !is_transparent && !is_packed {
+        return Error::new(
+            Span::call_site(),
+            "unsupported on generic structs that are not repr(transparent) or repr(packed)",
+        )
+        .to_compile_error();
     }
 
-    let reprs = try_or_print!(STRUCT_UNION_AS_BYTES_CFG.validate_reprs(ast));
+    // We don't need a padding check if the struct is repr(transparent) or
+    // repr(packed).
+    // - repr(transparent): The layout and ABI of the whole struct is the same
+    //   as its only non-ZST field (meaning there's no padding outside of that
+    //   field) and we require that field to be `AsBytes` (meaning there's no
+    //   padding in that field).
+    // - repr(packed): Any inter-field padding bytes are removed, meaning that
+    //   any padding bytes would need to come from the fields, all of which
+    //   we require to be `AsBytes` (meaning they don't have any padding).
     let padding_check =
-        if reprs.contains(&StructRepr::Packed) { PaddingCheck::None } else { PaddingCheck::Struct };
-
+        if is_transparent || is_packed { PaddingCheck::None } else { PaddingCheck::Struct };
     impl_block(ast, strct, "AsBytes", true, padding_check)
 }
 
@@ -416,31 +451,9 @@ fn impl_block<D: DataExt>(
     // `T::Foo: !FromBytes`. It would not be sound for us to accept a type with
     // a `T::Foo` field as `FromBytes` simply because `T: FromBytes`.
     //
-    // While there's no getting around this requirement for us, it does have
-    // some pretty serious downsides that are worth calling out:
-    //
-    // 1. You lose the ability to have fields of generic type with reduced visibility.
-    //
-    //     #[derive(Unaligned)]
-    //     #[repr(C)]
-    //     pub struct Public<T>(Private<T>);
-    //
-    //     #[derive(Unaligned)]
-    //     #[repr(C)]
-    //     struct Private<T>(T);
-    //
-    //
-    //     warning: private type `Private<T>` in public interface (error E0446)
-    //      --> src/main.rs:6:10
-    //       |
-    //     6 | #[derive(Unaligned)]
-    //       |          ^^^^^^^^^
-    //       |
-    //       = note: #[warn(private_in_public)] on by default
-    //       = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
-    //       = note: for more information, see issue #34537 <https://github.com/rust-lang/rust/issues/34537>
-    //
-    // 2. When lifetimes are involved, the trait solver ties itself in knots.
+    // While there's no getting around this requirement for us, it does have the
+    // pretty serious downside that, when lifetimes are involved, the trait
+    // solver ties itself in knots:
     //
     //     #[derive(Unaligned)]
     //     #[repr(C)]
@@ -538,57 +551,70 @@ fn impl_block<D: DataExt>(
         GenericParam::Const(cnst) => quote!(#cnst),
     });
 
-    let trait_bound_body = if require_trait_bound {
-        let implements_type_ident =
-            Ident::new(format!("Implements{}", trait_ident).as_str(), Span::call_site());
-        let implements_type_tokens = quote!(#implements_type_ident);
-        let types = non_type_param_field_types.map(|ty| quote!(#implements_type_tokens<#ty>));
-        quote!(
-            // A type with a type parameter that must implement `#trait_ident`.
-            struct #implements_type_ident<F: ?Sized + zerocopy::#trait_ident>(::core::marker::PhantomData<F>);
-            // For each field type, an instantiation that won't type check if
-            // that type doesn't implement `#trait_ident`.
-            #(let _: #types;)*
-        )
+    if require_trait_bound {
+        for ty in non_type_param_field_types {
+            where_clause.predicates.push(parse_quote!(#ty: zerocopy::#trait_ident));
+        }
+    }
+
+    match (field_types.is_empty(), padding_check) {
+        (true, _) | (false, PaddingCheck::None) => (),
+        (false, PaddingCheck::Struct) => {
+            let fields = field_types.iter();
+            // `parse_quote!` doesn't parse macro invocations in const generics
+            // properly without enabling syn's `full` feature, so the type has
+            // to be manually constructed as `syn::Type::Verbatim`.
+            //
+            // This where clause is equivalent to adding:
+            // ```
+            // HasPadding<Foo, {struct_has_padding!(Foo, a, b, ...)}>: ShouldBe<false>
+            // ```
+            // with fully-qualified paths.
+            where_clause.predicates.push(syn::WherePredicate::Type(syn::PredicateType {
+                lifetimes: None,
+                bounded_ty: syn::Type::Verbatim(quote!(zerocopy::derive_util::HasPadding<#type_ident, {zerocopy::struct_has_padding!(#type_ident, #(#fields),*)}>)),
+                colon_token: syn::Token![:](Span::mixed_site()),
+                bounds: parse_quote!(zerocopy::derive_util::ShouldBe<false>),
+            }));
+        }
+        (false, PaddingCheck::Union) => {
+            let fields = field_types.iter();
+            // `parse_quote!` doesn't parse macro invocations in const generics
+            // properly without enabling syn's `full` feature, so the type has
+            // to be manually constructed as `syn::Type::Verbatim`.
+            //
+            // This where clause is equivalent to adding:
+            // ```
+            // HasPadding<Foo, {union_has_padding!(Foo, a, b, ...)}>: ShouldBe<false>
+            // ```
+            // with fully-qualified paths.
+            where_clause.predicates.push(syn::WherePredicate::Type(syn::PredicateType {
+                lifetimes: None,
+                bounded_ty: syn::Type::Verbatim(quote!(zerocopy::derive_util::HasPadding<#type_ident, {zerocopy::union_has_padding!(#type_ident, #(#fields),*)}>)),
+                colon_token: syn::Token![:](Span::mixed_site()),
+                bounds: parse_quote!(zerocopy::derive_util::ShouldBe<false>),
+            }));
+        }
+    }
+
+    // We use a constant to force the compiler to emit an error when a concrete
+    // type does not satisfy the where clauses on its impl.
+    let use_concrete = if input.generics.params.is_empty() {
+        Some(quote! {
+            const _: () = {
+                fn must_implement_trait<T: zerocopy::#trait_ident + ?Sized>() {}
+                let _ = must_implement_trait::<#type_ident>;
+            };
+        })
     } else {
-        quote!()
-    };
-
-    let size_check_body = match (field_types.is_empty(), padding_check) {
-        (true, _) | (false, PaddingCheck::None) => quote!(),
-        (false, PaddingCheck::Struct) => quote!(
-            const _: () = {
-                trait HasPadding<const HAS_PADDING: bool> {}
-                fn assert_no_padding<T: HasPadding<false>>() {}
-
-                const COMPOSITE_TYPE_SIZE: usize = ::core::mem::size_of::<#type_ident>();
-                const SUM_FIELD_SIZES: usize = 0 #(+ ::core::mem::size_of::<#field_types>())*;
-                const HAS_PADDING: bool = COMPOSITE_TYPE_SIZE > SUM_FIELD_SIZES;
-                impl HasPadding<HAS_PADDING> for #type_ident {}
-                let _ = assert_no_padding::<#type_ident>;
-            };
-        ),
-        (false, PaddingCheck::Union) => quote!(
-            const _: () = {
-                trait FieldsAreSameSize<const FIELDS_ARE_SAME_SIZE: bool> {}
-                fn assert_fields_are_same_size<T: FieldsAreSameSize<true>>() {}
-
-                const COMPOSITE_TYPE_SIZE: usize = ::core::mem::size_of::<#type_ident>();
-                const FIELDS_ARE_SAME_SIZE: bool = true
-                    #(&& (::core::mem::size_of::<#field_types>() == COMPOSITE_TYPE_SIZE))*;
-                impl FieldsAreSameSize<FIELDS_ARE_SAME_SIZE> for #type_ident {}
-                let _ = assert_fields_are_same_size::<#type_ident>;
-            };
-        ),
+        None
     };
 
     quote! {
         unsafe impl < #(#params),* > zerocopy::#trait_ident for #type_ident < #(#param_idents),* > #where_clause {
-            fn only_derive_is_allowed_to_implement_this_trait() where Self: Sized {
-                #trait_bound_body
-                #size_check_body
-            }
+            fn only_derive_is_allowed_to_implement_this_trait() {}
         }
+        #use_concrete
     }
 }
 
@@ -616,12 +642,12 @@ mod tests {
         }
 
         fn elements_are_sorted_and_deduped<T: Clone + Ord>(lists: &[&[T]]) -> bool {
-            lists.iter().all(|list| is_sorted_and_deduped(*list))
+            lists.iter().all(|list| is_sorted_and_deduped(list))
         }
 
         fn config_is_sorted<T: KindRepr + Clone>(config: &Config<T>) -> bool {
-            elements_are_sorted_and_deduped(&config.allowed_combinations)
-                && elements_are_sorted_and_deduped(&config.disallowed_but_legal_combinations)
+            elements_are_sorted_and_deduped(config.allowed_combinations)
+                && elements_are_sorted_and_deduped(config.disallowed_but_legal_combinations)
         }
 
         assert!(config_is_sorted(&STRUCT_UNION_UNALIGNED_CFG));

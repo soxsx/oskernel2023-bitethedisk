@@ -257,7 +257,7 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     /// # Safety
     ///
     /// This method must only be called if the current thread logically owns a
-    /// `MutexGuard` but that guard has be discarded using `mem::forget`.
+    /// `MutexGuard` but that guard has been discarded using `mem::forget`.
     /// Behavior is undefined if a mutex is unlocked when not locked.
     #[inline]
     pub unsafe fn force_unlock(&self) {
@@ -344,7 +344,7 @@ impl<R: RawMutexFair, T: ?Sized> Mutex<R, T> {
     /// # Safety
     ///
     /// This method must only be called if the current thread logically owns a
-    /// `MutexGuard` but that guard has be discarded using `mem::forget`.
+    /// `MutexGuard` but that guard has been discarded using `mem::forget`.
     /// Behavior is undefined if a mutex is unlocked when not locked.
     #[inline]
     pub unsafe fn force_unlock_fair(&self) {
@@ -485,6 +485,7 @@ where
 ///
 /// The data protected by the mutex can be accessed through this guard via its
 /// `Deref` and `DerefMut` implementations.
+#[clippy::has_significant_drop]
 #[must_use = "if unused the Mutex will immediately unlock"]
 pub struct MutexGuard<'a, R: RawMutex, T: ?Sized> {
     mutex: &'a Mutex<R, T>,
@@ -678,6 +679,7 @@ unsafe impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> StableAddress for MutexGuard<'
 /// This is similar to the `MutexGuard` struct, except instead of using a reference to unlock the `Mutex` it
 /// uses an `Arc<Mutex>`. This has several advantages, most notably that it has an `'static` lifetime.
 #[cfg(feature = "arc_lock")]
+#[clippy::has_significant_drop]
 #[must_use = "if unused the Mutex will immediately unlock"]
 pub struct ArcMutexGuard<R: RawMutex, T: ?Sized> {
     mutex: Arc<Mutex<R, T>>,
@@ -813,6 +815,7 @@ impl<R: RawMutex, T: ?Sized> Drop for ArcMutexGuard<R, T> {
 /// former doesn't support temporarily unlocking and re-locking, since that
 /// could introduce soundness issues if the locked object is modified by another
 /// thread.
+#[clippy::has_significant_drop]
 #[must_use = "if unused the Mutex will immediately unlock"]
 pub struct MappedMutexGuard<'a, R: RawMutex, T: ?Sized> {
     raw: &'a R,

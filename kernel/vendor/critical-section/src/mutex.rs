@@ -3,6 +3,26 @@ use core::cell::{Ref, RefCell, RefMut, UnsafeCell};
 
 /// A mutex based on critical sections.
 ///
+/// # Example
+///
+/// ```no_run
+/// # use critical_section::Mutex;
+/// # use std::cell::Cell;
+///
+/// static FOO: Mutex<Cell<i32>> = Mutex::new(Cell::new(42));
+///
+/// fn main() {
+///     critical_section::with(|cs| {
+///         FOO.borrow(cs).set(43);
+///     });
+/// }
+///
+/// fn interrupt_handler() {
+///     let _x = critical_section::with(|cs| FOO.borrow(cs).get());
+/// }
+/// ```
+///
+///
 /// # Design
 ///
 /// [`std::sync::Mutex`] has two purposes. It converts types that are [`Send`]
@@ -29,21 +49,22 @@ use core::cell::{Ref, RefCell, RefMut, UnsafeCell};
 /// To reduce verbosity when using `Mutex<RefCell<T>>`, we reimplement some of
 /// `RefCell`'s methods on it directly.
 ///
-/// ```
-/// # use critical_section::{CriticalSection, Mutex};
+/// ```no_run
+/// # use critical_section::Mutex;
 /// # use std::cell::RefCell;
 ///
 /// static FOO: Mutex<RefCell<i32>> = Mutex::new(RefCell::new(42));
 ///
 /// fn main() {
-///     let cs = unsafe { CriticalSection::new() };
-///     // Instead of calling this
-///     let _ = FOO.borrow(cs).take();
-///     // Call this
-///     let _ = FOO.take(cs);
-///     // `RefCell::borrow` and `RefCell::borrow_mut` are renamed to
-///     // `borrow_ref` and `borrow_ref_mut` to avoid name collisions
-///     let _: &mut i32 = &mut *FOO.borrow_ref_mut(cs);
+///     critical_section::with(|cs| {
+///         // Instead of calling this
+///         let _ = FOO.borrow(cs).take();
+///         // Call this
+///         let _ = FOO.take(cs);
+///         // `RefCell::borrow` and `RefCell::borrow_mut` are renamed to
+///         // `borrow_ref` and `borrow_ref_mut` to avoid name collisions
+///         let _: &mut i32 = &mut *FOO.borrow_ref_mut(cs);
+///     })
 /// }
 /// ```
 ///

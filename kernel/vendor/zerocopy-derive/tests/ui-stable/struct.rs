@@ -5,6 +5,11 @@
 #[macro_use]
 extern crate zerocopy;
 
+#[path = "../util.rs"]
+mod util;
+
+use self::util::AU16;
+
 fn main() {}
 
 //
@@ -14,6 +19,13 @@ fn main() {}
 #[derive(AsBytes)]
 #[repr(C)]
 struct AsBytes1<T>(T);
+
+#[derive(AsBytes)]
+#[repr(C)]
+struct AsBytes2 {
+    foo: u8,
+    bar: AU16,
+}
 
 //
 // Unaligned errors
