@@ -3,6 +3,7 @@ use core::arch::global_asm;
 use alloc::{borrow::ToOwned, sync::Arc};
 use nix::{CreateMode, OpenFlags};
 use path::AbsolutePath;
+use spin::Mutex;
 
 use crate::{fs::open, task::TaskControlBlock};
 
@@ -26,6 +27,9 @@ lazy_static! {
 
         let task = TaskControlBlock::new(inode.clone());
         inode.delete(); // 删除 initproc 文件
+
+        load_test_all_custom();
+
         task
     });
 
@@ -85,5 +89,29 @@ lazy_static! {
         let task = Arc::new(TaskControlBlock::new(inode.clone()));
         inode.delete();
         Busybox { inner: task }
+    });
+}
+
+fn load_test_all_custom() {
+    let lck = TEST_ALL_CUSTOM.lock();
+    drop(lck);
+}
+
+lazy_static! {
+    pub static ref TEST_ALL_CUSTOM: Mutex<()> = Mutex::new({
+        extern "C" {
+            fn test_all_custom_entry();
+            fn test_all_custom_tail();
+        }
+        let entry = test_all_custom_entry as usize;
+        let tail = test_all_custom_tail as usize;
+        let siz = tail - entry;
+
+        let initproc = unsafe { core::slice::from_raw_parts(entry as *const u8, siz) };
+        let path = AbsolutePath::from_str("/test_all_custom.sh");
+
+        let inode = open(path, OpenFlags::O_CREATE, CreateMode::empty())
+            .expect("no kernel/src/task/initproc/test_all_custom.sh");
+        inode.write_all(&initproc.to_owned());
     });
 }
