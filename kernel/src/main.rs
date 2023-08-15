@@ -6,6 +6,9 @@
 #![feature(slice_from_ptr_range)]
 #![feature(error_in_core)]
 
+#![allow(unused)]
+#![allow(dead_code)]
+
 #[macro_use]
 extern crate alloc;
 

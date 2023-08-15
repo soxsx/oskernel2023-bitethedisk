@@ -86,8 +86,6 @@ pub const DIR_ENTRY_LAST_AND_UNUSED: u8 = 0x00;
 /// For Long Directory Entry Ord as the last entry mask
 pub const LAST_LONG_ENTRY: u8 = 0x40;
 
-type Error = BlockDeviceError;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockDeviceError {
     ClusterChain(ClusterChainErr),

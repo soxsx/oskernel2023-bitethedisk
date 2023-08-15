@@ -68,7 +68,7 @@ run: kernel-dev sdcard
 ifeq ($(BOARD), qemu)
 	@$(run-board-qemu)
 else ifeq ($(BOARD), fu740)
-	@(run-board-fu740)
+	@$(run-board-fu740)
 else
 	@$(error "Platform not supported (required $(BOARD))")
 endif
