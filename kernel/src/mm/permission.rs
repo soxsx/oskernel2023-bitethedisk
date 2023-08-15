@@ -1,4 +1,4 @@
-//! 虚拟地址空间映射的标志性字段
+//! Signature Fields of Virtual Address Space Mapping
 
 use nix::MmapProts;
 

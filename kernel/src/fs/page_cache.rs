@@ -1,4 +1,5 @@
-// 使用 page cache 前相当于对于文件的读写是直接与 fat32 交互; 现在相当于在 kernel 与 fat32 之间加了一层缓存
+//! Before using the page cache, file reads and writes were directly interacting
+//! with FAT32. Now, there is an additional layer of caching between the kernel and FAT32.
 
 use alloc::{
     collections::BTreeMap,

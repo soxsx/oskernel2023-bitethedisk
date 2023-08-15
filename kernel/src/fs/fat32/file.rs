@@ -77,7 +77,7 @@ impl InodeCache {
         self.0.write().clear();
     }
     pub fn shrink(&self) {
-        // 移除掉 Inode 强引用计数为1的项
+        // remove the item whose Inode strong reference count is 1
         let mut map = self.0.write();
         let mut remove_list = Vec::new();
         for (path, inode) in map.iter() {

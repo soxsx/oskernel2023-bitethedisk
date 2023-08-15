@@ -1,6 +1,22 @@
 //! Kernel file system
 //!
-//! The kernel uniformly borrows the VirtFile provided by the fat32 file system as the object for the kernel to operate files.
+//! The kernel uniformly borrows the VirtFile provided by the fat32 file system
+//! as the object for the kernel to operate files.
+//!
+//! Due to the coupling between our kernel's files and the FAT32 file system
+//! (the kernel files are based on FAT32), for certain tests that require specific
+//! files/directories to be present in the kernel, they must be created in advance
+//! at this location.
+//! A more reasonable solution would be to implement a tempfs within the kernel.
+//! However, as we are about to enter the second stage of the national competition,
+//! there is currently no time to improve the kernel file system.
+//! If future participating teams refer to the code implementation of our file system,
+//! we recommend looking at the implementation of the file system in TitanixOS,
+//! which was developed by a team from the same competition.
+//! In simple terms, TitanixOS implements most of its files within the kernel instead
+//! of relying on the FAT32 file system. This allows for significantly faster
+//! execution speed during testing in TitanixOS.
+//! TitanixOS seems to only read test files/programs from FAT32 filesystems
 
 mod fat32;
 mod file;

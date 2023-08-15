@@ -16,8 +16,8 @@ pub struct VmArea {
     pub vpn_range: VPNRange,
     pub map_type: MapType,
     pub permission: MapPermission,
-    pub file: Option<Arc<dyn File>>, // 被映射的文件
-    pub file_offset: usize,          // 被映射的文件在文件中的偏移量
+    pub file: Option<Arc<dyn File>>, // Mapped file.
+    pub file_offset: usize,          // Offset of the mapped file in the file.
     pub frame_map: BTreeMap<VirtPageNum, FrameTracker>, // vpn -> frame_tracker
 }
 
@@ -98,8 +98,10 @@ impl VmArea {
         }
     }
 
-    /// 将当前逻辑段到物理内存的映射从传入的该逻辑段所属的地址空间的多级页表中删除
-    /// 写回文件(如果 map_perm 包含 W)
+    /// Remove the mapping from the current logical segment to physical
+    /// memory from the multi-level page table of the address space to
+    /// which the incoming logical segment belongs.
+    /// Write back to file (if map_perm includes the W permission).
     #[allow(unused)]
     pub fn write_back(&self, page_table: &mut PageTable) -> Result<(), ()> {
         if !self.permission.contains(MapPermission::W) {
@@ -130,7 +132,9 @@ impl VmArea {
         Ok(())
     }
 
-    /// 将当前逻辑段到物理内存的映射从传入的该逻辑段所属的地址空间的多级页表中删除
+    /// Remove the mapping from the current logical segment to physical
+    /// memory from the multi-level page table of the address space to
+    /// which the incoming logical segment belongs.
     pub fn erase_pagetable(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
             page_table.unmap(vpn);

@@ -9,7 +9,6 @@ pub const PAGE_SIZE: usize = 0x1000;
 pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1;
 pub const SIGNAL_TRAMPOLINE: usize = TRAMPOLINE - PAGE_SIZE;
 
-/// Trap 上下文在应用地址空间中的位置
 pub const TRAP_CONTEXT_BASE: usize = SIGNAL_TRAMPOLINE - PAGE_SIZE;
 
 pub const USER_STACK_BASE: usize = 0xf000_0000;
