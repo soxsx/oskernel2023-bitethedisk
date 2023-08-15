@@ -25,13 +25,20 @@
 //!     - As different processes may write to the file, altering its size, when reopening the file with the Inode Cache,
 //!       it is essential to ensure consistency in file size.
 
+#[cfg(not(feature = "no_page_cache"))]
 use crate::consts::PAGE_SIZE;
+#[cfg(not(feature = "no_page_cache"))]
+use crate::fs::PageCache;
+#[cfg(not(feature = "no_page_cache"))]
+use alloc::collections::BTreeMap;
+#[cfg(not(feature = "no_page_cache"))]
+use spin::RwLock;
+
 use crate::drivers::BLOCK_DEVICE;
-use crate::fs::{ino_alloc, CreateMode, File, OpenFlags, PageCache};
+use crate::fs::{ino_alloc, CreateMode, File, OpenFlags};
 use crate::mm::UserBuffer;
 use crate::return_errno;
 use crate::syscall::impls::Errno;
-use alloc::collections::BTreeMap;
 use alloc::{
     string::{String, ToString},
     sync::Arc,
@@ -40,13 +47,17 @@ use alloc::{
 use fat32::{root, Dir as FatDir, DirError, FileSystem, VirtFile, VirtFileType, ATTR_DIRECTORY};
 use nix::{Dirent, InodeTime, Kstat, S_IFCHR, S_IFDIR, S_IFREG};
 use path::AbsolutePath;
-use spin::{Mutex, MutexGuard, RwLock};
+use spin::{Mutex, MutexGuard};
 
+#[cfg(not(feature = "no_page_cache"))]
 pub const INODE_CACHE_LIMIT: usize = 1024;
 
 /// InodeCache is used to cache the Inode of the file. Mainly used for the Open syscall.
+#[cfg(not(feature = "no_page_cache"))]
 pub struct InodeCache(pub RwLock<BTreeMap<AbsolutePath, Arc<Inode>>>);
+#[cfg(not(feature = "no_page_cache"))]
 pub static INODE_CACHE: InodeCache = InodeCache(RwLock::new(BTreeMap::new()));
+#[cfg(not(feature = "no_page_cache"))]
 #[allow(unused)]
 impl InodeCache {
     pub fn get(&self, path: &AbsolutePath) -> Option<Arc<Inode>> {
@@ -100,7 +111,9 @@ pub struct KFile {
 // You can see the introduction at the beginning of this file.
 pub struct Inode {
     pub file: Mutex<Arc<VirtFile>>,
+    #[cfg(not(feature = "no_page_cache"))]
     pub page_cache: Mutex<Option<Arc<PageCache>>>,
+    #[cfg(not(feature = "no_page_cache"))]
     pub file_size: Mutex<usize>,
 }
 
@@ -159,9 +172,11 @@ impl KFile {
     pub fn file(&self) -> MutexGuard<'_, Arc<VirtFile>> {
         self.inode.file.lock()
     }
+    #[cfg(not(feature = "no_page_cache"))]
     pub fn page_cache(&self) -> MutexGuard<'_, Option<Arc<PageCache>>> {
         self.inode.page_cache.lock()
     }
+    #[cfg(not(feature = "no_page_cache"))]
     // Because of the weak pointer, we need to create a page cache after creating KFile.
     pub fn create_page_cache_if_needed(self: &Arc<Self>) {
         let mut page_cache = self.page_cache();
@@ -169,6 +184,7 @@ impl KFile {
             *page_cache = Some(Arc::new(PageCache::new(self.file().clone())));
         }
     }
+    #[cfg(not(feature = "no_page_cache"))]
     pub fn write_all(&self, data: &Vec<u8>) -> usize {
         let mut total_write_size = 0usize;
         let page_cache = self.page_cache().as_ref().cloned().unwrap();
@@ -200,6 +216,24 @@ impl KFile {
         }
         total_write_size
     }
+    #[cfg(feature = "no_page_cache")]
+    pub fn write_all(&self, data: &Vec<u8>) -> usize {
+        let file = self.file();
+        let mut remain = data.len();
+        let mut index = 0;
+        loop {
+            let len = remain.min(512);
+            let offset = self.offset();
+            file.write_at(offset, &data.as_slice()[index..index + len]);
+            self.seek(offset + len);
+            index += len;
+            remain -= len;
+            if remain == 0 {
+                break;
+            }
+        }
+        index
+    }
     pub fn is_dir(&self) -> bool {
         let file = self.file();
         file.is_dir()
@@ -207,23 +241,35 @@ impl KFile {
     pub fn name(&self) -> &str {
         self.name.as_str()
     }
-    // TODO with page cache?
     pub fn delete(&self) -> usize {
         let file = self.file();
+        #[cfg(not(feature = "no_page_cache"))]
         let path = self.path.clone();
+        #[cfg(not(feature = "no_page_cache"))]
         INODE_CACHE.remove(&path);
         file.clear()
     }
-    // TODO with page cache?
     pub fn delete_direntry(&self) {
         let file = self.file();
         file.clear_direntry();
     }
+    #[cfg(not(feature = "no_page_cache"))]
     pub fn file_size(&self) -> usize {
         *self.inode.file_size.lock()
     }
+    #[cfg(feature = "no_page_cache")]
+    pub fn file_size(&self) -> usize {
+        let file = self.file();
+        file.file_size()
+    }
+    #[cfg(not(feature = "no_page_cache"))]
     pub fn set_file_size(&self, file_size: usize) {
         *self.inode.file_size.lock() = file_size;
+    }
+    #[cfg(feature = "no_page_cache")]
+    pub fn set_file_size(&self, file_size: usize) {
+        let file = self.file();
+        file.set_file_size(file_size);
     }
     pub fn rename(&self, new_path: AbsolutePath, flags: OpenFlags) {
         // duplicate a new file, and set file cluster and file size
@@ -280,9 +326,11 @@ pub fn list_apps(path: AbsolutePath) {
 }
 
 pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<Arc<KFile>, Errno> {
+    #[cfg(feature = "time_tracer")]
     time_trace!("open");
     let (readable, writable) = flags.read_write();
     let mut pathv = path.as_vec_str();
+    #[cfg(not(feature = "no_page_cache"))]
     if let Some(inode) = INODE_CACHE.get(&path) {
         let name = if let Some(name_) = pathv.last() {
             name_.to_string()
@@ -309,11 +357,17 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<A
                 } else {
                     "/"
                 };
+                #[cfg(not(feature = "no_page_cache"))]
                 let file_size = file.file_size();
+                #[cfg(not(feature = "no_page_cache"))]
                 let inode = Arc::new(Inode {
                     file: Mutex::new(file),
                     page_cache: Mutex::new(None),
                     file_size: Mutex::new(file_size),
+                });
+                #[cfg(feature = "no_page_cache")]
+                let inode = Arc::new(Inode {
+                    file: Mutex::new(file),
                 });
 
                 let res = Arc::new(KFile::new(
@@ -324,7 +378,9 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<A
                     name.to_string(),
                 ));
                 // create page cache
+                #[cfg(not(feature = "no_page_cache"))]
                 res.create_page_cache_if_needed();
+                #[cfg(not(feature = "no_page_cache"))]
                 INODE_CACHE.insert(path.clone(), inode.clone());
                 Ok(res)
             }
@@ -343,11 +399,17 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<A
                     // find parent to create file
                     Ok(parent) => match parent.create(name, create_type as VirtFileType) {
                         Ok(file) => {
+                            #[cfg(not(feature = "no_page_cache"))]
                             let file_size = file.file_size();
+                            #[cfg(not(feature = "no_page_cache"))]
                             let inode = Arc::new(Inode {
                                 file: Mutex::new(Arc::new(file)),
                                 page_cache: Mutex::new(None),
                                 file_size: Mutex::new(file_size),
+                            });
+                            #[cfg(feature = "no_page_cache")]
+                            let inode = Arc::new(Inode {
+                                file: Mutex::new(Arc::new(file)),
                             });
                             let res = Arc::new(KFile::new(
                                 readable,
@@ -356,7 +418,9 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<A
                                 path.clone(),
                                 name.to_string(),
                             ));
+                            #[cfg(not(feature = "no_page_cache"))]
                             res.create_page_cache_if_needed();
+                            #[cfg(not(feature = "no_page_cache"))]
                             INODE_CACHE.insert(path.clone(), inode.clone());
                             Ok(res)
                         }
@@ -377,11 +441,17 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<A
                     file.clear();
                 }
                 let name = file.name().to_string();
+                #[cfg(not(feature = "no_page_cache"))]
                 let file_size = file.file_size();
+                #[cfg(not(feature = "no_page_cache"))]
                 let inode = Arc::new(Inode {
                     file: Mutex::new(file),
                     file_size: Mutex::new(file_size),
                     page_cache: Mutex::new(None),
+                });
+                #[cfg(feature = "no_page_cache")]
+                let inode = Arc::new(Inode {
+                    file: Mutex::new(file),
                 });
                 let res = Arc::new(KFile::new(
                     readable,
@@ -390,7 +460,9 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<A
                     path.clone(),
                     name,
                 ));
+                #[cfg(not(feature = "no_page_cache"))]
                 res.create_page_cache_if_needed();
+                #[cfg(not(feature = "no_page_cache"))]
                 INODE_CACHE.insert(path.clone(), inode.clone());
                 Ok(res)
             }
@@ -410,6 +482,7 @@ pub fn chdir(path: AbsolutePath) -> bool {
 
 impl File for KFile {
     //  No change file offset
+    #[cfg(not(feature = "no_page_cache"))]
     fn kernel_read_with_offset(&self, offset: usize, len: usize) -> Vec<u8> {
         let page_cache = self.page_cache().as_ref().cloned().unwrap();
         let mut offset = offset;
@@ -434,6 +507,33 @@ impl File for KFile {
 
         buf
     }
+    #[cfg(feature = "no_page_cache")]
+    fn kernel_read_with_offset(&self, offset: usize, len: usize) -> Vec<u8> {
+        let file = self.file();
+        let mut len = len;
+        let mut offset = offset;
+        let mut buffer = [0u8; 512];
+        let mut ret: Vec<u8> = Vec::new();
+        if len >= 96 * 4096 {
+            // avoid ret's capacity too large
+            ret.reserve(96 * 4096);
+        }
+        loop {
+            let read_size = file.read_at(offset, &mut buffer);
+            if read_size == 0 {
+                break;
+            }
+            offset += read_size;
+            if len > read_size {
+                len -= read_size;
+                ret.extend_from_slice(&buffer[..read_size]);
+            } else {
+                ret.extend_from_slice(&buffer[..len]);
+                break;
+            }
+        }
+        ret
+    }
     // change file offset
     fn read_to_kspace(&self) -> Vec<u8> {
         let file_size = self.file_size();
@@ -443,8 +543,10 @@ impl File for KFile {
         self.seek(offset + res.len());
         res
     }
+    #[cfg(not(feature = "no_page_cache"))]
     fn read_to_ubuf(&self, mut buf: UserBuffer) -> usize {
         // with page cache
+        #[cfg(feature = "time_trace")]
         time_trace!("read");
         let offset = self.offset();
         let file_size = self.file_size();
@@ -481,8 +583,39 @@ impl File for KFile {
         }
         total_read_size
     }
+    #[cfg(feature = "no_page_cache")]
+    fn read_to_ubuf(&self, mut buf: UserBuffer) -> usize {
+        #[cfg(feature = "time_trace")]
+        time_trace!("read");
+        let offset = self.offset();
+        let file_size = self.file_size();
+        let file = self.file();
+        let mut total_read_size = 0usize;
+
+        if file_size == 0 {
+            if self.name == "zero" {
+                buf.write_zeros();
+            }
+            return 0;
+        }
+        if offset >= file_size {
+            return 0;
+        }
+
+        for slice in buf.buffers.iter_mut() {
+            let read_size = file.read_at(offset, *slice);
+            if read_size == 0 {
+                break;
+            }
+            self.seek(offset + read_size);
+            total_read_size += read_size;
+        }
+        total_read_size
+    }
     // The same as read_to_ubuf, but will not change offset
+    #[cfg(not(feature = "no_page_cache"))]
     fn pread(&self, mut buf: UserBuffer, offset: usize) -> usize {
+        #[cfg(feature = "time_tracer")]
         time_trace!("read");
         let mut offset = offset;
         let file_size = self.file_size();
@@ -518,7 +651,38 @@ impl File for KFile {
         }
         total_read_size
     }
+    #[cfg(feature = "no_page_cache")]
+    fn pread(&self, mut buf: UserBuffer, mut offset: usize) -> usize {
+        #[cfg(feature = "time_trace")]
+        time_trace!("read");
+        let file_size = self.file_size();
+        let file = self.file();
+        let mut total_read_size = 0usize;
+
+        if file_size == 0 {
+            if self.name == "zero" {
+                buf.write_zeros();
+            }
+            return 0;
+        }
+        if offset >= file_size {
+            return 0;
+        }
+
+        for slice in buf.buffers.iter_mut() {
+            let read_size = file.read_at(offset, *slice);
+            if read_size == 0 {
+                break;
+            }
+            offset += read_size;
+            total_read_size += read_size;
+        }
+        total_read_size
+    }
+    #[cfg(not(feature = "no_page_cache"))]
     fn write_from_kspace(&self, data: &Vec<u8>) -> usize {
+        #[cfg(feature = "time_tracer")]
+        time_trace!("write");
         let mut total_write_size = 0usize;
         let page_cache = self.page_cache().as_ref().cloned().unwrap();
         let mut offset = if self.flags().contains(OpenFlags::O_APPEND) {
@@ -549,7 +713,29 @@ impl File for KFile {
         }
         total_write_size
     }
+    #[cfg(feature = "no_page_cache")]
+    fn write_from_kspace(&self, data: &Vec<u8>) -> usize {
+        #[cfg(feature = "time_tracer")]
+        time_trace!("write");
+        let file = self.file();
+        let mut remain = data.len();
+        let mut base = 0;
+        loop {
+            let len = remain.min(512);
+            let offset = self.offset();
+            file.write_at(offset, &data.as_slice()[base..base + len]);
+            self.seek(offset + len);
+            base += len;
+            remain -= len;
+            if remain == 0 {
+                break;
+            }
+        }
+        base
+    }
+    #[cfg(not(feature = "no_page_cache"))]
     fn write_from_ubuf(&self, buf: UserBuffer) -> usize {
+        #[cfg(feature = "time_tracer")]
         time_trace!("write");
         let mut total_write_size = 0usize;
         let page_cache = self.page_cache().as_ref().cloned().unwrap();
@@ -583,8 +769,31 @@ impl File for KFile {
         }
         total_write_size
     }
+    #[cfg(feature = "no_page_cache")]
+    fn write_from_ubuf(&self, buf: UserBuffer) -> usize {
+        #[cfg(feature = "time_tracer")]
+        time_trace!("write");
+        let mut total_write_size = 0usize;
+        let file_size = self.file_size();
+        let file = self.file();
+        let mut offset = if self.flags().contains(OpenFlags::O_APPEND) {
+            file_size
+        } else {
+            self.offset()
+        };
+        for slice in buf.buffers.iter() {
+            let write_size = file.write_at(offset, *slice);
+            assert_eq!(write_size, slice.len());
+            offset += write_size;
+            self.seek(offset);
+            total_write_size += write_size;
+        }
+        total_write_size
+    }
+    #[cfg(not(feature = "no_page_cache"))]
     // The same as write_from_ubuf, but will not change offset
     fn pwrite(&self, buf: UserBuffer, offset: usize) -> usize {
+        #[cfg(feature = "time_tracer")]
         time_trace!("write");
         let mut total_write_size = 0usize;
         let page_cache = self.page_cache().as_ref().cloned().unwrap();
@@ -614,6 +823,26 @@ impl File for KFile {
         }
         if self.file_size() < offset {
             self.set_file_size(offset);
+        }
+        total_write_size
+    }
+    #[cfg(feature = "no_page_cache")]
+    fn pwrite(&self, buf: UserBuffer, offset: usize) -> usize {
+        #[cfg(feature = "time_tracer")]
+        time_trace!("write");
+        let mut total_write_size = 0usize;
+        let file_size = self.file_size();
+        let file = self.file();
+        let mut offset = if self.flags().contains(OpenFlags::O_APPEND) {
+            file_size
+        } else {
+            offset
+        };
+        for slice in buf.buffers.iter() {
+            let write_size = file.write_at(offset, *slice);
+            assert_eq!(write_size, slice.len());
+            offset += write_size;
+            total_write_size += write_size;
         }
         total_write_size
     }

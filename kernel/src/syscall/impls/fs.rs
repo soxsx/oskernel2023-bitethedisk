@@ -25,6 +25,7 @@ use spin::RwLock;
 
 use super::*;
 
+#[cfg(feature = "time_tracer")]
 use time_tracer::{time_trace, TimeTracer};
 
 /// #define SYS_getcwd 17
@@ -250,6 +251,7 @@ pub fn sys_chdir(path: *const u8) -> Result {
 /// int ret = syscall(SYS_openat, fd, filename, flags, mode);
 /// ```
 pub fn sys_openat(fd: i32, filename: *const u8, flags: u32, mode: u32) -> Result {
+    #[cfg(feature = "time_tracer")]
     time_trace!("sys_openat");
     let task = current_task();
     let token = current_user_token();
@@ -433,6 +435,7 @@ pub fn sys_getdents64(fd: isize, buf: *mut u8, len: usize) -> Result {
 /// ssize_t ret = syscall(SYS_read, fd, buf, count);
 /// ```
 pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> Result {
+    #[cfg(feature = "time_tracer")]
     time_trace!("sys_read");
     let token = current_user_token();
     let task = current_task();
@@ -449,6 +452,7 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> Result {
     }
     if let Some(file) = &fd_table[fd] {
         // 文件不可读
+        #[cfg(feature = "time_tracer")]
         time_trace!("sys_read_2");
         if !file.readable() {
             return_errno!(Errno::EINVAL, "fd is not readable, fd: {}", fd);
@@ -466,6 +470,7 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> Result {
             return Ok(userbuffer.buffers.len() as isize);
         }
 
+        #[cfg(feature = "time_tracer")]
         time_trace!("sys_read_3");
         let file_size = file.file_size();
         let file_offset = file.offset();
@@ -482,6 +487,7 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> Result {
 }
 
 pub fn sys_pread64(fd: usize, buf: *const u8, len: usize, offset: usize) -> Result {
+    #[cfg(feature = "time_tracer")]
     time_trace!("sys_pread");
     let token = current_user_token();
     let task = current_task();
@@ -546,6 +552,7 @@ pub fn sys_pread64(fd: usize, buf: *const u8, len: usize, offset: usize) -> Resu
 /// ssize_t ret = syscall(SYS_write, fd, buf, count);
 /// ```
 pub fn sys_write(fd: i32, buf: *const u8, len: usize) -> Result {
+    #[cfg(feature = "time_tracer")]
     time_trace!("sys_write");
     let token = current_user_token();
     let task = current_task();
@@ -595,6 +602,7 @@ pub fn sys_write(fd: i32, buf: *const u8, len: usize) -> Result {
 }
 
 pub fn sys_pwrite64(fd: i32, buf: *const u8, len: usize, offset: usize) -> Result {
+    #[cfg(feature = "time_tracer")]
     time_trace!("sys_pwrite");
     let token = current_user_token();
     let task = current_task();
@@ -916,6 +924,7 @@ pub fn sys_fstat(fd: i32, buf: *mut u8) -> Result {
 }
 
 pub fn sys_readv(fd: usize, iovp: *const usize, iovcnt: usize) -> Result {
+    #[cfg(feature = "time_tracer")]
     time_trace!("sys_readv");
     let token = current_user_token();
     let task = current_task();

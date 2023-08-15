@@ -223,6 +223,7 @@ impl VirtFile {
         self.read_sde(|sde| sde.first_cluster() as usize)
     }
     pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> usize {
+        #[cfg(feature = "time_tracer")]
         time_trace!("read_at");
         let spc = self.fs.read().bpb.sectors_per_cluster();
         let cluster_size = self.fs.read().cluster_size();
@@ -231,12 +232,16 @@ impl VirtFile {
         if buf.len() == 0 {
             return 0;
         }
+        #[cfg(feature = "time_tracer")]
         start_trace!("cluster");
         let pre_cluster_cnt = offset / cluster_size;
+        #[cfg(feature = "time_tracer")]
         start_trace!("clone");
         let clus_chain = self.cluster_chain.read();
+        #[cfg(feature = "time_tracer")]
         end_trace!();
         let mut cluster_iter = clus_chain.cluster_vec.iter().skip(pre_cluster_cnt);
+        #[cfg(feature = "time_tracer")]
         end_trace!();
         let mut left = pre_cluster_cnt * cluster_size;
         let mut right = left + BLOCK_SIZE;
@@ -277,6 +282,7 @@ impl VirtFile {
         already_read
     }
     pub fn write_at(&self, offset: usize, buf: &[u8]) -> usize {
+        #[cfg(feature = "time_tracer")]
         time_trace!("write_at");
         let spc = self.fs.read().bpb.sectors_per_cluster();
         let cluster_size = self.fs.read().cluster_size();
@@ -294,6 +300,7 @@ impl VirtFile {
         let mut right = left + BLOCK_SIZE;
         let mut already_write = 0;
 
+        #[cfg(feature = "time_tracer")]
         time_trace!("write_at2");
         while index < end {
             let curr_cluster = cluster_iter.next().unwrap().clone();

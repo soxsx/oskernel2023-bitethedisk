@@ -57,6 +57,7 @@ pub trait Dir {
 
 impl Dir for VirtFile {
     fn find(&self, path: Vec<&str>) -> Result<Arc<VirtFile>, DirError> {
+        #[cfg(feature = "time_tracer")]
         time_trace!("find");
         let len = path.len();
         if len == 0 {

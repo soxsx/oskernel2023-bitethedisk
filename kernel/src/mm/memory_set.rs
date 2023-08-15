@@ -848,7 +848,9 @@ impl MemorySet {
     }
 }
 
-#[cfg(feature = "stack_busybox")]
+#[cfg(feature = "static_busybox")]
+use crate::task::BUSYBOX;
+#[cfg(feature = "static_busybox")]
 fn hijack_busybox_load_elf() -> LoadedELF {
     let bb = BUSYBOX.read();
     let memory_set = bb.memory_set();

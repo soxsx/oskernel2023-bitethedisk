@@ -138,11 +138,12 @@ impl TaskControlBlock {
     pub fn new(elf: Arc<dyn File>) -> Self {
         // Translate ELF format data to construct the application address
         // space memory_set and obtain other information
+        #[allow(unused_variables)]
         let LoadedELF {
             memory_set,
             elf_entry: entry_point,
             user_stack_top: user_sp,
-            auxs: _,
+            auxs,
         } = MemorySet::load_elf(elf.clone());
 
         #[cfg(feature = "static_busybox")]

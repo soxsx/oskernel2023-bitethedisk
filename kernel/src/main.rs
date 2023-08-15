@@ -16,6 +16,7 @@ extern crate lazy_static;
 #[macro_use]
 extern crate log;
 
+#[cfg(feature = "time_tracer")]
 #[macro_use]
 extern crate time_tracer;
 
@@ -99,6 +100,7 @@ pub mod lang_items {
     use crate::consts::KERNEL_HEAP_SIZE;
     use crate::sbi::shutdown;
     use core::panic::PanicInfo;
+    #[cfg(feature = "time_tracer")]
     use time_tracer::TIME_ALL;
 
     pub fn setup() {
@@ -108,6 +110,7 @@ pub mod lang_items {
     #[panic_handler]
     fn _panic(info: &PanicInfo) -> ! {
         println!("PANIC");
+        #[cfg(feature = "time_tracer")]
         for (s, t) in TIME_ALL.lock().iter() {
             println!("{},{}", s, t);
         }

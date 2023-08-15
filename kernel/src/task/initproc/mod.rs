@@ -44,25 +44,30 @@ pub struct Busybox {
     inner: Arc<TaskControlBlock>,
 }
 #[cfg(feature = "static_busybox")]
+use crate::mm::MemorySet;
+#[cfg(feature = "static_busybox")]
+use alloc::vec::Vec;
+#[cfg(feature = "static_busybox")]
 impl Busybox {
     pub fn elf_entry_point(&self) -> usize {
         unsafe { STATIC_BUSYBOX_ENTRY }
     }
     pub fn aux(&self) -> Vec<AuxEntry> {
-        use alloc::vec::Vec;
         unsafe { STATIC_BUSYBOX_AUX.clone() }
     }
     pub fn memory_set(&self) -> MemorySet {
-        use crate::mm::MemorySet;
         let mut memory_set = self.inner.memory_set.write();
         MemorySet::from_copy_on_write(&mut memory_set)
     }
 }
 #[cfg(feature = "static_busybox")]
+use nix::AuxEntry;
+#[cfg(feature = "static_busybox")]
+use spin::RwLock;
+#[cfg(feature = "static_busybox")]
 lazy_static! {
     pub static ref BUSYBOX: RwLock<Busybox> = RwLock::new({
-        use super::AuxEntry;
-        use spin::RwLock;
+        info!("### busybox init ###");
         extern "C" {
             fn busybox_entry();
             fn busybox_tail();

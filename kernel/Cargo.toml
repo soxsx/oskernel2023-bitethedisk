@@ -23,9 +23,16 @@ thiserror = { version = "1.0", package = "thiserror-core", default-features = fa
 
 hashbrown = "0.14.0"
 
-# ----- 本地依赖 ----- #
+# local dependencies
 fat32 = { path = "../crates/fat32" }
 sync_cell = { path = "../crates/sync_cell" }
 nix = { path = "../crates/nix" }
 path = { path = "../crates/path" }
 time_tracer = { path = "../crates/time_tracer" }
+
+[features]
+static_busybox = []
+no_page_cache = []
+u740 =[] # useless temporarily
+inode_drop = []
+time_tracer = []
