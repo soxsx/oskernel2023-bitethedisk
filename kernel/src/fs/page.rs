@@ -35,6 +35,7 @@ pub struct FilePageInfo {
 impl FilePage {
     pub fn new(perm: MapPermission, offset: usize, inode: Arc<VirtFile>) -> Self {
         let data_frame = alloc_frame().expect("failed to alloc frame");
+        assert!(offset % PAGE_SIZE == 0);
         let file_info = FilePageInfo {
             file_offset: offset,
             data_states: [DataState::Unload; PAGE_SIZE / BLOCK_SIZE],

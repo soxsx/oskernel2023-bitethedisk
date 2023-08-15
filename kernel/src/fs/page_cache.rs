@@ -44,13 +44,13 @@ impl PageCache {
     ) -> Result<Arc<FilePage>, Errno> {
         // trace!("[PageCache]: get page at file offset {:#x}", offset);
         trace!("[PageCache]: get page at file offset {:#x}", offset);
-        let offset = offset & !(PAGE_SIZE - 1);
+        let page_start_offset = offset & !(PAGE_SIZE - 1);
         if let Some(page) = self.lookup(offset) {
             Ok(page)
         } else {
             let page = Arc::new(FilePage::new(
                 map_perm.unwrap_or(MapPermission::R | MapPermission::W),
-                offset,
+                page_start_offset,
                 self.inode.as_ref().unwrap().upgrade().unwrap(),
             ));
             self.pages.write().insert(offset / PAGE_SIZE, page.clone());
