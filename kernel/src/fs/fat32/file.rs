@@ -878,6 +878,11 @@ impl File for KFile {
         let vfile = inner.clone();
         let mut st_mode = 0;
         _ = st_mode;
+        #[cfg(not(feature = "no-page-cache"))]
+        let (_, st_blksize, st_blocks, is_dir, _time) = vfile.stat();
+        #[cfg(not(feature = "no-page-cache"))]
+        let st_size = self.file_size();
+        #[cfg(feature = "no-page-cache")]
         let (st_size, st_blksize, st_blocks, is_dir, _time) = vfile.stat();
 
         if is_dir {

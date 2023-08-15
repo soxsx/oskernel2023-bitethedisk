@@ -11,6 +11,7 @@ macro_rules! gen_syscallid {
          )*
         #[allow(non_camel_case_types)]
         #[allow(dead_code)]
+        #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
         pub enum SyscallId {
             $(
                 $id = $v,

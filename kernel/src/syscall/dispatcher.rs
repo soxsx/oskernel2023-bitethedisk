@@ -6,7 +6,9 @@ use nix::{RLimit, SchedParam, SigAction, SigMask};
 /// Syscall dispatcher.
 pub fn syscall(id: usize, args: [usize; 6]) -> isize {
     let syscall_id = SyscallId::from(id); // This will check if syscall id is valid.
-    // println!("On hart {}: [{}]", hartid!(), syscall_id);
+    // if syscall_id != SyscallId::SYS_BRK {
+    //     println!("On hart {}: [{}]", hartid!(), syscall_id);
+    // }
     let ret = match syscall_id {
         SyscallId::SYS_CLONE => sys_do_fork(args[0], args[1], args[2], args[3], args[4]),
 
