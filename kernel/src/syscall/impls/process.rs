@@ -510,7 +510,6 @@ pub fn sys_sched_getparam(pid: usize, param: *mut SchedParam) -> Result {
 // };
 pub fn sys_sched_setscheduler(pid: usize, policy: isize, param: *const SchedParam) -> Result {
     let task = pid2task(pid).ok_or(Errno::DISCARD)?;
-    let inner = task.inner_ref();
 
     {
         info!("sched_setscheduler: pid: {}, policy: {}", pid, policy);

@@ -484,7 +484,7 @@ pub fn sys_pread64(fd: usize, buf: *const u8, len: usize, offset: usize) -> Resu
     time_trace!("sys_pread");
     let token = current_user_token();
     let task = current_task().unwrap();
-    let mut fd_table = task.fd_table.write();
+    let fd_table = task.fd_table.write();
 
     // 文件描述符不合法
     if fd >= fd_table.len() {
@@ -1012,7 +1012,6 @@ pub fn sys_writev(fd: usize, iovp: *const usize, iovcnt: usize) -> Result {
 pub fn sys_ioctl(fd: i32, request: usize, argp: *mut u8) -> Result {
     let token = current_user_token();
     let task = current_task().unwrap();
-    let inner = task.inner_mut();
     let fd_table = task.fd_table.read();
     // 文件描述符不合法
     if fd as usize >= fd_table.len() {
@@ -1041,7 +1040,6 @@ pub fn sys_fcntl(fd: i32, cmd: usize, arg: Option<usize>) -> Result {
     let mut fd_table = task.fd_table.write();
     match cmd {
         FcntlFlags::F_SETFL => {
-            let inner = task.inner_mut();
             if let Some(file) = &fd_table[fd as usize] {
                 file.set_flags(OpenFlags::from_bits(arg.unwrap() as u32).unwrap());
             } else {
@@ -1051,7 +1049,6 @@ pub fn sys_fcntl(fd: i32, cmd: usize, arg: Option<usize>) -> Result {
         // Currently, only one such flag is defined: FD_CLOEXEC (value: 1)
         FcntlFlags::F_GETFD => {
             // Return (as the function result) the file descriptor flags; arg is ignored.
-            let inner = task.inner_mut();
             if let Some(file) = &fd_table[fd as usize] {
                 return Ok(file.available() as isize);
             } else {
@@ -1060,7 +1057,6 @@ pub fn sys_fcntl(fd: i32, cmd: usize, arg: Option<usize>) -> Result {
         }
         FcntlFlags::F_SETFD => {
             // Set the file descriptor flags to the value specified by arg.
-            let inner = task.inner_mut();
             if let Some(file) = &fd_table[fd as usize] {
                 if arg.unwrap() != 0 {
                     file.set_cloexec();
@@ -1075,7 +1071,7 @@ pub fn sys_fcntl(fd: i32, cmd: usize, arg: Option<usize>) -> Result {
             return Ok(04000);
         }
         FcntlFlags::F_DUPFD_CLOEXEC => {
-            let mut inner = task.inner_mut();
+            let inner = task.inner_mut();
             let start_num = arg.unwrap();
             let mut new_fd = 0;
             _ = new_fd;
@@ -1141,15 +1137,12 @@ pub fn sys_newfstatat(
             return_errno!(Errno::EBADF, "too many fd, fd: {}", dirfd);
         }
 
-        if let Some(file) = &fd_table[dirfd] {
+        if let Some(_file) = &fd_table[dirfd] {
             let open_path = inner.get_work_path().cd(path);
             let inode = open(open_path, OpenFlags::O_RDONLY, CreateMode::empty())?;
             inode.fstat(&mut kstat);
             userbuf.write(kstat.as_bytes());
             Ok(0)
-            // } else {
-            //     return_errno!(Errno::UNCLEAR);
-            // }
         } else {
             return_errno!(Errno::EBADF, "fd {} could not be found", dirfd);
         }
@@ -1315,7 +1308,6 @@ bitflags! {
 
 pub fn sys_lseek(fd: usize, off_t: isize, whence: usize) -> Result {
     let task = current_task().unwrap();
-    let inner = task.inner_mut();
     let fd_table = task.fd_table.read();
     // 文件描述符不合法
     if fd >= fd_table.len() {
@@ -1548,7 +1540,7 @@ pub fn sys_pselect6(
         if r_has_nready || w_has_nready {
             r_has_nready = false;
             w_has_nready = false;
-            let mut time_remain = get_timeval() - timer;
+            let time_remain = get_timeval() - timer;
             if time_remain.is_zero() {
                 drop(fd_table);
                 drop(task);

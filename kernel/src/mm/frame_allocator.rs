@@ -1,15 +1,35 @@
+//! We use FrameTracker to manage the lifecycle of physical page frames
+//! (which cannot be derived as Clone/Copy traits), so all operations on
+//! FrameTracker are accompanied by tracking its own reference count.
+//!
+//! The reference counter is located in the allocator StackFrameAllocator.
+//! It is necessary to analyze the operations on the reference counter carefully.
+//!
+//! In the future, improvements could potentially be made using Arc provided by Rust
+//! to manage the reference count.
+//!
+//! For those who have learned from rCore-tutorial, you may notice that rCore does
+//! not introduce a reference counter in StackFrameAllocator.
+//! In fact, we use the reference counter to implement the Copy-on-Write mechanism,
+//! which is not implemented in rCore-tutorial.
+//! However, it is not necessary to manually maintain the reference counter to
+//! implement the Copy-on-Write mechanism. Many excellent teams have also implemented
+//! the Copy-on-Write mechanism， and you can refer to their implementations.
+
 use super::address::{PhysAddr, PhysPageNum};
 use crate::board::PHYSICAL_MEM_END;
 use alloc::{collections::BTreeMap, vec::Vec};
 use core::fmt::{self, Debug, Formatter};
 use spin::Mutex;
 
-/// 物理页帧, 代表 RAM 上一段实际的物理页, 通过物理页号标识
+/// Physical Page Frame, which represents a physical page in
+/// RAM, identified by a physical page number.
 pub struct FrameTracker {
     pub ppn: PhysPageNum,
 }
 impl FrameTracker {
-    /// 通过物理页号创建一个物理页帧的结构体, 创建时初始化内存空间
+    /// Create a new FrameTracker from the given physical page number.
+    /// This function will initialize the memory to 0.
     pub fn new(ppn: PhysPageNum) -> Self {
         let bytes_arr = ppn.as_bytes_array();
         bytes_arr.into_iter().for_each(|b| *b = 0);
@@ -40,7 +60,6 @@ impl Clone for FrameTracker {
     }
 }
 
-/// 物理页帧管理器
 trait FrameAllocator {
     fn new() -> Self;
     fn alloc(&mut self) -> Option<PhysPageNum>;
@@ -51,21 +70,15 @@ trait FrameAllocator {
 }
 
 pub struct StackFrameAllocator {
-    /// 管理内存的起始物理页号
     base_num: usize,
-    /// 管理内存的结束物理页号
     end: usize,
-    /// 空闲内存的起始物理页号
     current: usize,
-    /// 以后入先出的方式保存被回收的物理页号
     recycled: Vec<usize>,
-    /// 引用计数器
     refcounter: BTreeMap<usize, u8>,
 }
 impl StackFrameAllocator {
-    /// 初始化栈式物理页管理器
-    /// - `l`:空闲内存起始页号
-    /// - `r`:空闲内存结束页号
+    /// - `l`: Free memory start page number
+    /// - `r`: Free memory end page number
     pub fn init(&mut self, l: PhysPageNum, r: PhysPageNum) {
         self.current = l.0;
         self.end = r.0;
@@ -83,17 +96,12 @@ impl FrameAllocator for StackFrameAllocator {
         }
     }
     fn alloc(&mut self) -> Option<PhysPageNum> {
-        // 首先检查栈 recycled 内有没有之前回收的物理页号, 如果有的话直接弹出栈顶并返回
         if let Some(ppn) = self.recycled.pop() {
             self.refcounter.insert(ppn, 0);
             Some(ppn.into())
-        }
-        // 空间满返回 None
-        else if self.current == self.end {
+        } else if self.current == self.end {
             None
-        }
-        // 否则就返回最低的物理页号
-        else {
+        } else {
             self.current += 1;
             self.refcounter.insert(self.current - 1, 0);
             Some((self.current - 1).into())
@@ -118,14 +126,12 @@ impl FrameAllocator for StackFrameAllocator {
         *ref_times -= 1;
         if *ref_times == 0 {
             self.refcounter.remove(&ppn);
-            // 验证物理页号有效性, PPN大于已分配的最高内存或已释放栈中存在这个物理页号
             if ppn >= self.current || self.recycled.iter().any(|&v| v == ppn) {
                 panic!(
                     "[StackFrameAllocator::dealloc] Frame ppn={:#x} has not been allocated!",
                     ppn
                 );
             }
-            // 回收, 压栈
             self.recycled.push(ppn);
         }
     }
@@ -144,20 +150,13 @@ impl FrameAllocator for StackFrameAllocator {
     }
 }
 
-/// 物理页帧管理器实例类型
 type FrameAllocatorImpl = StackFrameAllocator;
 
 lazy_static! {
-    /// 物理页帧管理器实例
-    /// - 全局变量, 管理除内核空间外的内存空间
     pub static ref FRAME_ALLOCATOR: Mutex<FrameAllocatorImpl> =
         Mutex::new(FrameAllocatorImpl::new());
 }
 
-/// 初始化物理页帧管理器
-/// - 物理页帧范围
-///     - 对 `ekernel` 物理地址上取整获得起始物理页号
-///     - 对 `PHYSICAL_MEM_END` 物理地址下取整获得结束物理页号
 pub fn init() {
     extern "C" {
         fn ekernel();

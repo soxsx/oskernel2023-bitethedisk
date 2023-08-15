@@ -45,6 +45,7 @@ pub fn sys_futex(
     let ret = match option {
         FUTEX_WAIT => {
             // val2 is a timespec
+            // error!("FUTEX_WAIT");
             let time = if val2 as usize != 0 {
                 let ts = translated_ref(token, val2 as *const TimeSpec);
                 ts.into_ns()
@@ -53,7 +54,10 @@ pub fn sys_futex(
             };
             futex_wait(uaddr as usize, val, time)
         }
-        FUTEX_WAKE => futex_wake(uaddr as usize, val),
+        FUTEX_WAKE => {
+            // error!("FUTEX_WAKE");
+            futex_wake(uaddr as usize, val)
+        },
         FUTEX_REQUEUE => {
             // val2 is a limit
             futex_requeue(uaddr as usize, val, uaddr2 as usize, val2 as u32)
@@ -140,6 +144,7 @@ pub fn futex_wake(uaddr: usize, nr_wake: u32) -> Result {
     if fq.waiters() == 0 {
         fq_writer.remove(&uaddr);
     }
+    drop(fq_writer);
 
     for task in wakeup_queue.into_iter() {
         unblock_task(task);

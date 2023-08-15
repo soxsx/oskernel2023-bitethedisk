@@ -141,7 +141,7 @@ pub fn sys_nanosleep(buf: *const u8) -> Result {
 //      const struct timespec *request,
 //      struct timespec *_Nullable remain);
 pub fn sys_clock_nanosleep(
-    clock_id: usize,
+    _clock_id: usize,
     flags: isize,
     req: *const TimeSpec,
     _remain: *mut TimeSpec,

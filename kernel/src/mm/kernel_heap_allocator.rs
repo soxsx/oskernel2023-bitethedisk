@@ -20,6 +20,7 @@ pub fn init_heap() {
     }
 }
 
+#[allow(unused)]
 pub fn heap_usage() {
     let usage_actual = HEAP_ALLOCATOR.lock().stats_alloc_actual();
     let usage_all = HEAP_ALLOCATOR.lock().stats_total_bytes();
