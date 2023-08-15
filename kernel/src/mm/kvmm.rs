@@ -2,9 +2,11 @@ use alloc::sync::Arc;
 use spin::{Mutex, MutexGuard};
 
 use crate::{
-    board::MMIO,
-    consts::PHYS_END,
-    mm::{MapPermission, MapType, MemorySet, VmArea, VmAreaType},
+    board::{MMIO, PHYSICAL_MEM_END},
+    mm::{
+        vm_area::{VmArea, VmAreaType},
+        MapPermission, MapType, MemorySet,
+    },
 };
 
 extern "C" {
@@ -20,10 +22,9 @@ extern "C" {
 }
 
 lazy_static! {
-    /// 内核虚拟地址空间抽象
+    /// Kernel's virtual memory memory set.
     static ref KERNEL_VMM: Arc<Mutex<MemorySet>> = Arc::new(Mutex::new({
         let mut memory_set = MemorySet::new_bare();
-        // map trampoline
         memory_set.map_trampoline();
         macro_rules! insert_kernel_vm_areas {
             ($kvmm:ident,$($start:expr, $end:expr, $permission:expr, $file:expr, $page_offset:expr)*) => {
@@ -48,10 +49,11 @@ lazy_static! {
             srodata, erodata,  MapPermission::R, None, 0
             sdata,   edata,    MapPermission::R | MapPermission::W, None, 0
             sbss,    ebss,     MapPermission::R | MapPermission::W, None, 0
-            ekernel, PHYS_END, MapPermission::R | MapPermission::W, None, 0
+            ekernel, PHYSICAL_MEM_END,
+                MapPermission::R | MapPermission::W, None, 0
         }
 
-        // 恒等映射 内存映射 I/O (MMIO, Memory-Mapped I/O) 地址到内核地址空间
+        // For MMIO(Memory mapped IO).
         for &pair in MMIO {
             insert_kernel_vm_areas!(memory_set,
                 pair.0, pair.0+pair.1, MapPermission::R | MapPermission::W, None, 0);

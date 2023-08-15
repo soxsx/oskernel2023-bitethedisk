@@ -1,16 +1,5 @@
-//! SBI
-//!
-//! 由于文档中给出的是 C 代码, 所以需要对应到相应的 Rust 类型
-//! 对于具体的 C 类型位宽在 riscv-spec Chapter 18 Calling Convention
-//!
-//! long - isize
-//! unsigned long - usize
-//!
-//! 当前 u740 所使用的 SBI 信息
-//! SBI impl name: OpenSBI
-//! SBI impl version: 65536
-//! SBI spec version: 3
 #![allow(unused)]
+
 use core::arch::asm;
 
 use thiserror::Error;
@@ -32,7 +21,6 @@ impl SBIRet {
     }
 }
 
-#[allow(unused)]
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub enum SBIError {
     #[error("Completed successfully")]
@@ -128,11 +116,12 @@ macro_rules! return_sbi_result {
 
 // ===== Base Extension EID #0x10 =====
 const BASE_EXTENSION_EID: usize = 0x10;
-/// 获取当前 SBI 实现依赖的 SBI spec 版本
+
 pub fn get_sbi_spec_version() -> Result<isize, SBIError> {
     const FID: usize = 0x0;
     return_sbi_result!(sbi_call(BASE_EXTENSION_EID, FID, 0, 0, 0))
 }
+
 #[derive(Debug)]
 pub enum SBIImplement {
     BerkeleyBootLoader = 0,
@@ -161,18 +150,16 @@ impl From<isize> for SBIImplement {
     }
 }
 
-/// 获取 SBI 实现的 id
 pub fn get_sbi_impl_id() -> Result<isize, SBIError> {
     const FID: usize = 0x1;
     return_sbi_result!(sbi_call(BASE_EXTENSION_EID, FID, 0, 0, 0))
 }
-/// 获取 SBI 实现的版本
 pub fn get_sbi_impl_version() -> Result<isize, SBIError> {
     const FID: usize = 0x2;
     return_sbi_result!(sbi_call(BASE_EXTENSION_EID, FID, 0, 0, 0))
 }
 
-pub fn echo_sbi_verbose_info<'a>() {
+pub fn echo_sbi_verbose_info() {
     let sbi_impl_version = get_sbi_impl_version().unwrap();
     let sbi_spec_version = get_sbi_spec_version().unwrap();
     let sbi_impl_name = SBIImplement::from(get_sbi_impl_id().unwrap());
@@ -182,7 +169,7 @@ pub fn echo_sbi_verbose_info<'a>() {
     );
 }
 
-/// 检测当前实现相应的 extension 是否可用, 0 为不可用
+/// Whether the given extension is usable, 0 is not.
 #[allow(unused)]
 pub fn probe_sbi_extension(eid: isize) -> Result<isize, SBIError> {
     const FID: usize = 0x3;
@@ -193,15 +180,26 @@ pub fn probe_sbi_extension(eid: isize) -> Result<isize, SBIError> {
         Ok(ret.value)
     }
 }
+
+// =====  IPI Extension (EID #0x735049 "sPI: s-mode IPI") =====
+const IPI_EXTENSION_EID: usize = 0x735049;
+pub fn sbi_send_ipi(hart_mask: usize, hart_mask_base: usize) -> Result<isize, SBIError> {
+    const FID: usize = 0;
+    return_sbi_result!(sbi_call(
+        IPI_EXTENSION_EID,
+        FID,
+        hart_mask,
+        hart_mask_base,
+        0
+    ))
+}
+
 // ===== Hart State Management Extension (EID #0x48534D "HSM") =====
 const HSM_EXTENSION_EID: usize = 0x48534D;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum HartStatus {
-    /// hart 已上电并正常执行
     Started = 0,
-    /// hart 没有运行在 S 或者更低的特权级中, 可能运行在 M 态或者被硬件平台
-    /// power down 关机
     Stopped = 1,
     StartPending = 2,
     StopPending = 3,
@@ -225,9 +223,8 @@ impl From<isize> for HartStatus {
     }
 }
 
-/// 通知 SBI 将 hart 以 S 态从指定地址开始运行
-///
-/// opaque 会在 hart 在 start_addr 开始运行时放到 a1 寄存器中
+/// Request SBI to run the given hart indicated by `hartid` at `start_addr`.
+/// `opaque` will be placed in register `a1`.
 pub fn sbi_start_hart(hartid: usize, start_addr: usize, opaque: usize) -> Result<(), isize> {
     const FID: usize = 0x0;
     let sbiret = sbi_call(HSM_EXTENSION_EID, FID, hartid, start_addr, opaque);
@@ -238,7 +235,6 @@ pub fn sbi_start_hart(hartid: usize, start_addr: usize, opaque: usize) -> Result
     }
 }
 
-/// 停止在 S 态执行该函数的 hart, 并将其交由 SBI 处理
 pub fn sbi_stop_hart() -> Result<(), isize> {
     const FID: usize = 0x1;
     let sbiret = sbi_call(HSM_EXTENSION_EID, FID, 0, 0, 0);

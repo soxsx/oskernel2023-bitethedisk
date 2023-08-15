@@ -1,22 +1,17 @@
-use alloc::collections::VecDeque;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
 use errno::Errno;
 use hashbrown::HashMap;
 use nix::{TimeSpec, FUTEX_CLOCK_REALTIME, FUTEX_CMD_MASK, FUTEX_REQUEUE, FUTEX_WAIT, FUTEX_WAKE};
-use spin::{Lazy, RwLock};
+use spin::RwLock;
 
 use crate::mm::translated_ref;
 
 use crate::return_errno;
 use crate::syscall::errno;
 use crate::syscall::futex::{FutexQueue, FutexWaiter};
-use crate::task::{
-    block_current_and_run_next, current_task, current_user_token, suspend_current_and_run_next,
-    unblock_task, TaskControlBlock,
-};
-use crate::timer::{get_time_ns, get_time_us};
+use crate::task::{block_current_and_run_next, current_task, current_user_token, unblock_task};
+use crate::timer::get_time_ns;
 
 use super::Result;
 
@@ -37,7 +32,7 @@ pub fn sys_futex(
     val: u32,
     val2: *const u32,
     uaddr2: *const u32,
-    val3: u32,
+    _val3: u32,
 ) -> Result {
     let option = futex_op & FUTEX_CMD_MASK;
     let token = current_user_token();
@@ -50,6 +45,7 @@ pub fn sys_futex(
     let ret = match option {
         FUTEX_WAIT => {
             // val2 is a timespec
+            // error!("FUTEX_WAIT");
             let time = if val2 as usize != 0 {
                 let ts = translated_ref(token, val2 as *const TimeSpec);
                 ts.into_ns()
@@ -58,7 +54,10 @@ pub fn sys_futex(
             };
             futex_wait(uaddr as usize, val, time)
         }
-        FUTEX_WAKE => futex_wake(uaddr as usize, val),
+        FUTEX_WAKE => {
+            // error!("FUTEX_WAKE");
+            futex_wake(uaddr as usize, val)
+        },
         FUTEX_REQUEUE => {
             // val2 is a limit
             futex_requeue(uaddr as usize, val, uaddr2 as usize, val2 as u32)
@@ -95,7 +94,7 @@ pub fn futex_wait(uaddr: usize, val: u32, timeout: usize) -> Result {
     }
 
     // futex_wait_queue_me
-    let task = current_task();
+    let task = current_task().unwrap();
     let timeout_time = get_time_ns().saturating_add(timeout);
     fq_lock.push_back(FutexWaiter::new(task.clone(), get_time_ns(), timeout));
     drop(fq_lock);
@@ -105,10 +104,10 @@ pub fn futex_wait(uaddr: usize, val: u32, timeout: usize) -> Result {
 
     block_current_and_run_next();
 
-    if (get_time_ns() >= timeout_time) {
+    if get_time_ns() >= timeout_time {
         return_errno!(Errno::ETIMEDOUT);
     }
-    let task = current_task();
+    let task = current_task().unwrap();
     let inner = task.inner_ref();
     // woke by signal
     if !inner.pending_signals.difference(inner.sigmask).is_empty() {
@@ -145,6 +144,7 @@ pub fn futex_wake(uaddr: usize, nr_wake: u32) -> Result {
     if fq.waiters() == 0 {
         fq_writer.remove(&uaddr);
     }
+    drop(fq_writer);
 
     for task in wakeup_queue.into_iter() {
         unblock_task(task);

@@ -1,9 +1,7 @@
-//! 系统时间相关模块
-
 #![allow(unused)]
 
 use crate::{
-    consts::CLOCK_FREQ,
+    board::CLOCK_FREQ,
     sbi::set_timer,
     task::{current_add_signal, current_task, TaskControlBlock},
 };
@@ -49,13 +47,13 @@ pub fn get_timeval() -> TimeVal {
     TimeVal { sec, usec }
 }
 
-/// 设置下次触发时钟中断的时间
+/// Setup the next time interrupt time.
 pub fn set_next_trigger() {
     set_timer((get_time() + CLOCK_FREQ / TIME_SLICE) as u64);
 }
 
 pub fn check_interval_timer() {
-    let task = current_task();
+    let task = current_task().unwrap();
     let mut inner = task.inner_mut();
     if inner.interval_timer.is_none() {
         return;

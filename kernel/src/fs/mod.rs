@@ -14,6 +14,7 @@ pub use mount::*;
 pub use page_cache::*;
 pub use path::*;
 pub use pipe::*;
+use spin::Mutex;
 pub use stdio::*;
 
 mod page;
@@ -22,10 +23,14 @@ pub use page::*;
 use alloc::string::ToString;
 use nix::{CreateMode, OpenFlags};
 use path::AbsolutePath;
-use sync_cell::SyncRefCell;
+pub use path::*;
+
+pub use crate::fs::fat32::{chdir, open};
+pub use mount::MNT_TABLE;
+pub use pipe::{make_pipe, Pipe};
+pub use stdio::{Stdin, Stdout};
 
 pub fn init() {
-    // 预创建文件/文件夹
     open(
         "/proc".into(),
         OpenFlags::O_DIRECTROY | OpenFlags::O_CREATE,
@@ -107,13 +112,9 @@ pub fn init() {
 
     open("/dev/tty".into(), OpenFlags::O_CREATE, CreateMode::empty()).unwrap();
     open("/lat_sig".into(), OpenFlags::O_CREATE, CreateMode::empty()).unwrap();
-
-    println!("===+ Files Loaded +===");
-    list_apps(AbsolutePath::from_string("/".to_string()));
-    println!("===+==============+===");
 }
 
-static INO_ALLOCATOR: SyncRefCell<Allocator> = SyncRefCell::new(Allocator::new());
+static INO_ALLOCATOR: Mutex<Allocator> = Mutex::new(Allocator::new());
 struct Allocator {
     current: u64,
 }
@@ -131,5 +132,5 @@ impl Allocator {
     }
 }
 pub fn ino_alloc() -> u64 {
-    INO_ALLOCATOR.borrow_mut().alloc()
+    INO_ALLOCATOR.lock().alloc()
 }

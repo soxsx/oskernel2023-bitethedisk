@@ -15,7 +15,7 @@ use core::convert::TryInto;
 use core::iter::Iterator;
 use core::str;
 extern crate alloc;
-#[cfg(feature = "time_tracer")]
+#[cfg(feature = "time-tracer")]
 #[macro_use]
 extern crate time_tracer;
 

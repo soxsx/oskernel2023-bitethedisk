@@ -23,7 +23,7 @@ use path::AbsolutePath;
 use riscv::register::scause::Scause;
 use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-#[cfg(feature = "static_busybox")]
+#[cfg(feature = "static-busybox")]
 use super::initproc::{STATIC_BUSYBOX_AUX, STATIC_BUSYBOX_ENTRY};
 
 pub struct TaskControlBlock {
@@ -146,7 +146,7 @@ impl TaskControlBlock {
             auxs,
         } = MemorySet::load_elf(elf.clone());
 
-        #[cfg(feature = "static_busybox")]
+        #[cfg(feature = "static-busybox")]
         if elf.name() == "static-busybox" {
             save_busybox_related(entry_point, auxs.clone());
         }
@@ -660,7 +660,7 @@ impl TaskControlBlock {
     }
 }
 
-#[cfg(feature = "static_busybox")]
+#[cfg(feature = "static-busybox")]
 pub fn save_busybox_related(elf_entry: usize, auxs: Vec<AuxEntry>) {
     unsafe {
         STATIC_BUSYBOX_ENTRY = elf_entry;

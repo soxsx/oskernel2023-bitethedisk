@@ -13,8 +13,38 @@ SDCARD = ../workspace/sdcard.img
 SDCARD_BAK = ../workspace/sdcard.img.bak
 NCPU = 2
 
-RUST_LOG := info
+RUST_LOG := debug
 
+# Available features: no-page-cache,static-busybox,inode-drop,fu740,dev
+FEATURES ?= static-busybox
+
+DEV ?= false
+
+BOARD ?= qemu
+
+define run-board-qemu
+	@$(QEMU) \
+	 	-machine virt \
+		-kernel $(KERNEL_ELF) \
+		-m 128M \
+		-nographic \
+		-smp 2 \
+		-bios default \
+		-drive file=$(SDCARD),if=none,format=raw,id=x0 \
+		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
+		-device virtio-net-device,netdev=net \
+		-netdev user,id=net
+endef
+define run-board-fu740
+	 @(QEMU) \
+		-machine virt \
+		-kernel $(KERNEL_ELF) \
+		-m 2G \
+		-nographic \
+		-smp 4 \
+		-drive file=sdcard.img,if=none,format=raw,id=x0 \
+		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+endef
 ##################################################################
 #                        Run straightly                          #
 ##################################################################
@@ -25,25 +55,23 @@ sdcard:
 	@cp $(SDCARD_BAK) $(SDCARD)
 
 kernel: initproc
-	@RUST_LOG=warn cargo build --release --offline
+	@cargo build --release --features $(BOARD) --offline 
 
-kernel-dbg: initproc
-	@RUST_LOG=$(RUST_LOG) cargo build --release --offline \
-	--features no_page_cache
-	# --features static_busybox
-	# --features inode_drop
-	# --features u740
+kernel-dev: initproc
+ifeq ($(DEV), true)
+	@RUST_LOG=$(RUST_LOG) cargo build --release --offline --features $(FEATURES)
+else
+	@RUST_LOG=error cargo build --release --offline --features $(FEATURES)
+endif
 
-run: kernel-dbg sdcard
-	@$(QEMU) \
-	 	-machine virt \
-		-kernel $(KERNEL_ELF) \
-		-m 128M \
-		-nographic \
-		-smp $(NCPU) \
-		-bios default \
-		-drive file=$(SDCARD),if=none,format=raw,id=x0 \
-		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+run: kernel-dev sdcard
+ifeq ($(BOARD), qemu)
+	@$(run-board-qemu)
+else ifeq ($(BOARD), fu740)
+	@(run-board-fu740)
+else
+	@$(error "Platform not supported (required $(BOARD))")
+endif
 
 ##################################################################
 #                      Debug build & run.                        #

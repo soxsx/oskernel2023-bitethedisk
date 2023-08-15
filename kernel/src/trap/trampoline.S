@@ -1,12 +1,19 @@
 # kernel/trap/trampoline.S
 
-	# TrapContext 内存布局:
-	#   0 - 通用寄存器
-	# 256 - sstatus
-	# 264 - sepc
-	# 272 - kernel_satp
-	# 280 - kernel_sp
-	# 288 - trap_handler
+	# TrapContext memory layout:
+    #
+    #     Offset | Explanation
+    # -----------------------------------------
+	#          0 | 32 genernal purpose registers
+	#  32*8(256) | sstatus
+	#  33*8(264) | sepc
+	#  34*8(272) | kernel_satp
+	#  35*8(280) | kernel_sp
+	#  36*8(288) | trap_handler
+	#  37*8(296) | executor_id
+    #  38*8(304) | float registers
+
+.attribute arch, "rv64gc"
 
 .altmacro
 .macro STORE_X n
@@ -14,6 +21,12 @@
 .endm
 .macro LOAD_X n
     ld x\n, \n*8(sp)
+.endm
+.macro STORE_FP n, m
+    fsd f\n, \m*8(sp)
+.endm
+.macro LOAD_FP n, m
+    fld f\n, \m*8(sp)
 .endm
 
 .section .text.trampoline
@@ -43,11 +56,22 @@ user_trapvec:
 	csrr t2, sscratch
 	sd t2, 2*8(sp)
 
+    # 保存浮点寄存器
+    .set n, 0
+    .set m, 38
+    .rept 32
+        STORE_FP %n, %m
+        .set n, n+1
+        .set m, m+1
+    .endr
+
 	# 将 kernel_satp 装载到 t0
 	ld t0, 34*8(sp)
 
 	# 将 trap_handler 的入口地址装载到 t1
 	ld t1, 36*8(sp)
+
+    ld tp, 37*8(sp)
 
 	# 将 sp 设置到内核栈
 	ld sp, 35*8(sp)
@@ -84,6 +108,16 @@ user_trapret:
 	ld t1, 33*8(sp)
 	csrw sstatus, t0
 	csrw sepc, t1
+
+    .set n, 0
+    .set m, 38
+    .rept 32
+        LOAD_FP %n, %m
+        .set n, n+1
+        .set m, m+1
+    .endr
+
+    sd tp, 37*8(sp)
 
 	# 开始恢复除了 x0 和 sp 以外的通用寄存器
 	# 因为 sp 在宏中是作为偏移的基址使用的, 所以现在不能从内存中恢复它的值

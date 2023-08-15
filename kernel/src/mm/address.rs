@@ -4,16 +4,15 @@ use super::PageTableEntry;
 use crate::consts::PAGE_SIZE;
 use core::fmt::Debug;
 
-/// Page Offset: 12bit
 pub const IN_PAGE_OFFSET: usize = 0xc;
 
-/// Physical Address Width: 56bit
+/// Physical address width of Sv39.
 const PA_WIDTH_SV39: usize = 56;
-/// Virtual Address Width: 39bit
+/// Virtual address width of Sv39.
 const VA_WIDTH_SV39: usize = 39;
-/// Physical Page Number Width: 44bit
+/// Physical page number width of Sv39.
 const PPN_WIDTH_SV39: usize = PA_WIDTH_SV39 - IN_PAGE_OFFSET;
-/// Virtual Page Number Width: 27bit
+/// Virtual page number width of Sv39.
 const VPN_WIDTH_SV39: usize = VA_WIDTH_SV39 - IN_PAGE_OFFSET;
 
 macro_rules! derive_wrap {
@@ -247,7 +246,7 @@ where
     }
 }
 pub trait Step {
-    /// 返回当前值后步进 1
+    /// Add up self and return the previous value.
     fn step(&mut self) -> Self;
 }
 impl Step for VirtPageNum {

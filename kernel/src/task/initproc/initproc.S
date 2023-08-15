@@ -1,3 +1,7 @@
+# kernel/task/initproc/initproc.S
+#
+# All of these below will become a part of the kernel.
+
 .align 3
 .section .data
 .globl initproc_entry

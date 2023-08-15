@@ -4,7 +4,6 @@ pub const SIG_IGN: usize = 1;
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 #[allow(non_camel_case_types)]
-#[allow(unused)]
 #[repr(u32)]
 pub enum Signal {
     EMPTY = 0,

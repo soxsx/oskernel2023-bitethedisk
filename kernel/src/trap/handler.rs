@@ -1,39 +1,29 @@
-//! trap 处理模块
-//!
-//! 根据 trap 发生的原因进行分发处理
-
-use nix::SigMask;
-use riscv::register::{
-    mcause,
-    mstatus::{self},
-    mtval,
-    scause::{self, Exception, Interrupt, Trap},
-    stval,
-};
-
+use super::{set_kernel_trap_entry, trap_return};
 use crate::mm::VirtAddr;
+use crate::syscall::SYS_SIGRETURN;
 use crate::{
     consts::TRAMPOLINE,
-    syscall::dispatcher::{syscall, SYS_SIGRETURN},
+    syscall::dispatcher::syscall,
     task::{
         current_add_signal, current_task, current_trap_cx, exec_signal_handlers,
         suspend_current_and_run_next,
     },
     timer::{check_interval_timer, get_timeval, set_next_trigger},
 };
+use nix::SigMask;
+use riscv::register::{
+    scause::{self, Exception, Interrupt, Trap},
+    stval,
+};
 
-use super::{set_kernel_trap_entry, trap_return};
-
-/// 用户态 trap 发生时的处理函数
 #[no_mangle]
 pub fn user_trap_handler() -> ! {
     // let pid = current_task().unwrap().pid(); println!("pid:{:?}",pid);
     set_kernel_trap_entry();
     // 用于描述 Trap 的原因
     let scause = scause::read();
-    // 给出 Trap 附加信息
     let stval = stval::read();
-    let task = current_task();
+    let task = current_task().unwrap();
     let mut inner = task.inner_mut();
 
     // 考虑以下情况, 当一个进程因为耗尽时间片而让出执行流, 切换回一个因为在内核态阻塞而让出执行流的
@@ -97,10 +87,9 @@ pub fn user_trap_handler() -> ! {
                 // println!("[kernel trap] VirtAddr out of range!");
                 current_add_signal(SigMask::SIGSEGV);
             }
-            let task = current_task();
+            let task = current_task().unwrap();
             let lazy = task.check_lazy(va);
             if lazy != 0 {
-                // println!("[Kernel] Check Lazy Fail: {:?}, va: {:#x?}", lazy, va.0);
                 current_add_signal(SigMask::SIGSEGV);
             }
         }
@@ -119,7 +108,6 @@ pub fn user_trap_handler() -> ! {
             current_add_signal(SigMask::SIGILL);
         }
 
-        // 时间片到了
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             suspend_current_and_run_next();
             set_next_trigger();
@@ -141,17 +129,7 @@ pub fn user_trap_handler() -> ! {
     trap_return();
 }
 
-/// 内核态 trap 发生时的处理函数
 #[no_mangle]
 pub fn kernel_trap_handler() -> ! {
-    let mstatus = mstatus::read();
-    let mcause = mcause::read();
-    error!(
-        "mstatus: {:?}, mtval: {}, mcause: {:?}",
-        mstatus,
-        mtval::read(),
-        mcause
-    );
-
-    panic!("a trap {:?} from kernel!", scause::read().cause());
+    panic!("hart {} nested trap!", hartid!());
 }

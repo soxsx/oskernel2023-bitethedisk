@@ -9,7 +9,6 @@ use crate::{fs::open, task::TaskControlBlock};
 global_asm!(include_str!("initproc.S"));
 
 lazy_static! {
-    /// 引导 pcb
     pub static ref INITPROC: Arc<TaskControlBlock> = Arc::new({
         extern "C" {
             fn initproc_entry();
@@ -35,19 +34,19 @@ lazy_static! {
 // This is the processing done in the first stage of the national competition.
 // At that time, the file system was not optimized, and the page cache mechanism was not added.
 // We could only do some simple optimization.
-#[cfg(feature = "static_busybox")]
+#[cfg(feature = "static-busybox")]
 pub static mut STATIC_BUSYBOX_ENTRY: usize = 0;
-#[cfg(feature = "static_busybox")]
+#[cfg(feature = "static-busybox")]
 pub static mut STATIC_BUSYBOX_AUX: Vec<AuxEntry> = Vec::new();
-#[cfg(feature = "static_busybox")]
+#[cfg(feature = "static-busybox")]
 pub struct Busybox {
     inner: Arc<TaskControlBlock>,
 }
-#[cfg(feature = "static_busybox")]
+#[cfg(feature = "static-busybox")]
 use crate::mm::MemorySet;
-#[cfg(feature = "static_busybox")]
+#[cfg(feature = "static-busybox")]
 use alloc::vec::Vec;
-#[cfg(feature = "static_busybox")]
+#[cfg(feature = "static-busybox")]
 impl Busybox {
     pub fn elf_entry_point(&self) -> usize {
         unsafe { STATIC_BUSYBOX_ENTRY }
@@ -60,11 +59,11 @@ impl Busybox {
         MemorySet::from_copy_on_write(&mut memory_set)
     }
 }
-#[cfg(feature = "static_busybox")]
+#[cfg(feature = "static-busybox")]
 use nix::AuxEntry;
-#[cfg(feature = "static_busybox")]
+#[cfg(feature = "static-busybox")]
 use spin::RwLock;
-#[cfg(feature = "static_busybox")]
+#[cfg(feature = "static-busybox")]
 lazy_static! {
     pub static ref BUSYBOX: RwLock<Busybox> = RwLock::new({
         info!("### busybox init ###");

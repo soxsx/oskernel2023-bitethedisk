@@ -1,23 +1,3 @@
-//! trap 上下文
-//!
-//! [`TrapContext`] 布局
-//!
-//! ```text
-//! +--------------+
-//! |   通用寄存器   |
-//! +--------------+ <-- offset: 256
-//! |   sstatus    |
-//! +--------------+ <-- offset: 264
-//! |    sepc      |
-//! +--------------+ <-- offset: 272
-//! |  kernel_satp |
-//! +--------------+ <-- offset: 280
-//! |  kernel_sp   |
-//! +--------------+ <-- offset: 288
-//! | trap_handler |
-//! +--------------+
-//! ```
-
 use riscv::register::sstatus::{self, Sstatus, SPP};
 
 #[derive(Clone, Debug)]
@@ -40,6 +20,10 @@ pub struct TrapContext {
 
     /// trap 处理函数入口点的(虚拟)地址
     trap_handler: usize,
+
+    executor_id: usize,
+
+    pub freg: [usize; 32],
 }
 
 impl TrapContext {
@@ -55,16 +39,18 @@ impl TrapContext {
         let mut cx = Self {
             x: [0; 32],
             sstatus,
-            sepc: entry, // Trap 返回后到程序入口
+            sepc: entry, // ELF entry point
             kernel_satp,
             kernel_sp,
             trap_handler,
+            executor_id: hartid!(),
+            freg: [0; 32],
         };
         cx.set_sp(sp);
         cx
     }
 
-    /// 通用寄存器 `x0`
+    /// General purpose register `x0`
     #[allow(unused)]
     #[inline(always)]
     pub fn zero(&self) -> usize {

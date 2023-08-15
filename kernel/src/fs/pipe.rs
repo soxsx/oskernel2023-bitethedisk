@@ -1,6 +1,5 @@
 use super::file::File;
-use crate::mm::UserBuffer;
-use crate::task::suspend_current_and_run_next;
+use crate::{mm::UserBuffer, task::suspend_current_and_run_next};
 use alloc::{
     sync::{Arc, Weak},
     vec::Vec,
@@ -132,7 +131,7 @@ impl File for Pipe {
         true
     }
     fn read_to_ubuf(&self, buf: UserBuffer) -> usize {
-        #[cfg(feature = "time_tracer")]
+        #[cfg(feature = "time-tracer")]
         time_trace!("pipe_read");
         assert_eq!(self.readable(), true);
         let mut buf_iter = buf.into_iter();

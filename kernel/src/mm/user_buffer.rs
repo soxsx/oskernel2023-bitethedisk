@@ -1,8 +1,5 @@
 use alloc::vec::Vec;
 
-/// 应用地址空间中的一段缓冲区(即内存)的抽象
-///
-/// - `buffers`: 位于应用地址空间中, 内核无法直接通过用户地址空间的虚拟地址来访问, 因此需要进行封装
 #[derive(Debug)]
 pub struct UserBuffer {
     pub buffers: Vec<&'static mut [u8]>,
@@ -10,7 +7,6 @@ pub struct UserBuffer {
 
 #[allow(unused)]
 impl UserBuffer {
-    /// 使用 `buffer` 创建一个新的缓冲区实例
     pub fn empty() -> Self {
         Self {
             buffers: Vec::new(),
@@ -24,10 +20,8 @@ impl UserBuffer {
         for b in self.buffers.iter() {
             total += b.len();
         }
-
         total
     }
-    // 将一个Buffer的数据写入UserBuffer, 返回写入长度
     pub fn write(&mut self, buff: &[u8]) -> usize {
         let len = self.len().min(buff.len());
         let mut current = 0;
@@ -80,7 +74,7 @@ impl UserBuffer {
                     }
                 }
             } else {
-                //head + sblen > offset and head > offset
+                // head + sblen > offset and head > offset
                 for j in 0..sblen {
                     (*sub_buff)[j] = buff[current];
                     current += 1;
@@ -94,21 +88,21 @@ impl UserBuffer {
         0
     }
 
-    // 将UserBuffer的数据读入一个Buffer, 返回读取长度
-    pub fn read(&self, buff: &mut [u8]) -> usize {
-        let len = self.len().min(buff.len());
+    // 将UserBuffer的数据读入一个Buffer，返回读取长度
+    pub fn read(&self, buf: &mut [u8]) -> usize {
+        let len = self.len().min(buf.len());
         let mut current = 0;
         for sub_buff in self.buffers.iter() {
             let sblen = (*sub_buff).len();
             for j in 0..sblen {
-                buff[current] = (*sub_buff)[j];
+                buf[current] = (*sub_buff)[j];
                 current += 1;
                 if current == len {
                     return len;
                 }
             }
         }
-        return len;
+        len
     }
 }
 

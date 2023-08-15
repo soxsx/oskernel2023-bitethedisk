@@ -12,9 +12,6 @@ use riscv::register::{mtvec::TrapMode, sie, stvec};
 
 global_asm!(include_str!("trampoline.S"));
 
-/// trap 初始化
-///
-/// 在内核初始化阶段发生的 trap 为 S 特权器的 trap, 设置成相应的内核态 trap 处理函数 [`kernel_trap_handler`]
 pub fn init() {
     set_kernel_trap_entry();
 }
@@ -33,7 +30,7 @@ fn set_user_trap_entry() {
     unsafe { stvec::write(TRAMPOLINE as usize, TrapMode::Direct) }
 }
 
-/// 使能 S 特权级时钟中断
+/// Enable S-mode timer interrupt.
 pub fn enable_stimer_interrupt() {
     unsafe { sie::set_stimer() }
 }
@@ -49,7 +46,7 @@ pub fn trap_return() -> ! {
         fn user_trapret();
     }
 
-    let task = current_task();
+    let task = current_task().unwrap();
     let mut inner = task.inner_mut();
     let diff = get_timeval() - inner.last_enter_smode_time;
     inner.add_stime(diff);
@@ -72,11 +69,11 @@ pub fn trap_return() -> ! {
     let trapret_addr = user_trapret as usize - user_trapvec as usize + TRAMPOLINE;
     unsafe {
         asm!(
-            "fence.i",              // 指令清空指令缓存 i-cache
+            "fence.i",              // Clear up i-cache.
             "jr {user_trapret}",
             user_trapret = in(reg) trapret_addr,
-            in("a0") trap_addr,  // trap 上下文在应用地址空间中的位置
-            in("a1") user_satp,     // 即将回到的应用的地址空间的 token
+            in("a0") trap_addr,     // User's trap context virtual address.
+            in("a1") user_satp,     // User's memory set token.
             options(noreturn)
         );
     }

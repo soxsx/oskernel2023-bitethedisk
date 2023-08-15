@@ -26,25 +26,21 @@ use crate::{
 use alloc::sync::Arc;
 use fat32::sync_all;
 
-/// 将当前任务置为就绪态, 放回到进程管理器中的就绪队列中, 重新选择一个进程运行
+use self::{
+    initproc::INITPROC,
+    processor::{acquire_processor, schedule},
+};
+
 pub fn suspend_current_and_run_next() -> isize {
     exec_signal_handlers();
 
-    // 取出当前正在执行的任务
-    let task = take_current_task().unwrap();
+    let task = current_task().unwrap();
     let mut inner = task.inner_mut();
     let task_cx_ptr = &mut inner.task_cx as *mut TaskContext;
-
-    // 修改其进程控制块内的状态为就绪状态
     inner.task_status = TaskStatus::Ready;
     drop(inner);
 
-    // 将进程加入进程管理器中的就绪队列
-    add_task(task);
-
-    // 开启一轮新的调度
     schedule(task_cx_ptr);
-
     0
 }
 
@@ -80,10 +76,6 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // 将这个进程的子进程转移到 initproc 进程的子进程中
     // 若当前进程为子线程则不会执行下面的 for
     for child in inner.children.iter() {
-        if child.is_child_thread() {
-            child.inner_mut().parent = None; // weak reference 可以注释掉?
-            continue;
-        }
         let mut initproc_inner = INITPROC.inner_mut();
         child.inner_mut().parent = Some(Arc::downgrade(&INITPROC));
         initproc_inner.children.push(child.clone()); // 引用计数 -1
@@ -113,7 +105,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 }
 
 pub fn hanging_current_and_run_next(sleep_time: usize, duration: usize) {
-    let task = current_task();
+    let task = current_task().unwrap();
     let mut inner = task.inner_mut();
     let current_cx_ptr = &mut inner.task_cx as *mut TaskContext;
     inner.task_status = TaskStatus::Hanging;
@@ -124,19 +116,16 @@ pub fn hanging_current_and_run_next(sleep_time: usize, duration: usize) {
 }
 
 pub fn block_current_and_run_next() {
-    let task = current_task();
+    let task = current_task().unwrap();
 
-    // ---- access current TCB exclusively
     let mut task_inner = task.inner_mut();
     let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
-    // Change status to Ready
     task_inner.task_status = TaskStatus::Blocking;
     block_task(task.clone());
 
     drop(task_inner);
     drop(task);
 
-    // jump to scheduling cycle
     schedule(task_cx_ptr);
 }
 
@@ -146,7 +135,7 @@ pub fn add_initproc() {
 }
 
 pub fn exec_signal_handlers() {
-    let task = current_task();
+    let task = current_task().unwrap();
     let mut task_inner = task.inner_mut();
 
     if task_inner.pending_signals == SigSet::empty() {
@@ -221,8 +210,6 @@ pub fn exec_signal_handlers() {
                 copyout(token, sig_context_ptr, &sig_context);
 
                 trap_cx.x[1] = SIGNAL_TRAMPOLINE; // ra = user_sigreturn
-
-                // println!("prepare to jump to `handler`:{:x?}, original sepc = {:#x?},current sp:{:x?}",handler, trap_cx.sepc, trap_cx.x[2]);
 
                 trap_cx.sepc = handler; // sepc = handler
                 return;

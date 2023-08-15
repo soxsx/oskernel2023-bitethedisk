@@ -3,9 +3,10 @@ use alloc::{sync::Arc, vec::Vec};
 use path::AbsolutePath;
 
 use super::{MapPermission, MapType, VmArea, VmAreaType};
+use crate::board::CLOCK_FREQ;
 use crate::consts::{
-    CLOCK_FREQ, LINK_BASE, MMAP_BASE, PAGE_SIZE, SHM_BASE, SIGNAL_TRAMPOLINE, THREAD_LIMIT,
-    TRAMPOLINE, TRAP_CONTEXT_BASE, USER_HEAP_SIZE, USER_STACK_BASE, USER_STACK_SIZE,
+    LINK_BASE, MMAP_BASE, PAGE_SIZE, SHM_BASE, SIGNAL_TRAMPOLINE, THREAD_LIMIT, TRAMPOLINE,
+    TRAP_CONTEXT_BASE, USER_HEAP_SIZE, USER_STACK_BASE, USER_STACK_SIZE,
 };
 use crate::fs::{open, File};
 use crate::mm::{
@@ -20,43 +21,6 @@ use nix::{
     AT_GID, AT_HWCAP, AT_PAGESZ, AT_PHDR, AT_PHENT, AT_PHNUM, AT_RANDOM, AT_SECURE, AT_UID,
 };
 
-/// 虚拟地址空间抽象
-///
-/// 比如, 用户进程的虚拟地址空间抽象:
-///
-/// ```text
-/// +--------------------+
-/// |     trampoline     |
-/// +--------------------+
-/// |      trap_cx       |
-/// +--------------------+
-/// |     Guard Page     | <-- 保护页
-/// +--------------------+
-/// |                    |
-/// |     User Stack     | <-- 用户虚拟地址空间(U-mode)中的用户栈
-/// |                    |
-/// +--------------------+
-/// |       Unused       |
-/// +--------------------+
-/// |                    |
-/// |     mmap Areas     | <-- mmap 区
-/// |                    |
-/// +--------------------+
-/// |                    |
-/// |        ...         |
-/// |                    |
-/// +--------------------+ <-- brk
-/// |                    |
-/// |                    |
-/// |     User Heap      |
-/// |                    |
-/// |                    |
-/// +--------------------+ <-- brk_start
-/// |                    |
-/// |    Data Segments   | <-- ELF 文件加载后所有 Segment 的集合
-/// |                    |
-/// +--------------------+
-/// ```
 pub struct MemorySet {
     pub page_table: PageTable,
 
@@ -78,7 +42,6 @@ pub struct MemorySet {
 }
 
 impl MemorySet {
-    /// 新建一个空的地址空间
     pub fn new_bare() -> Self {
         Self {
             page_table: PageTable::new(),
@@ -112,7 +75,6 @@ impl MemorySet {
         }
     }
 
-    /// 获取当前页表的 token (符合 satp CSR 格式要求的多级页表的根节点所在的物理页号)
     pub fn token(&self) -> usize {
         self.page_table.token()
     }
@@ -229,70 +191,8 @@ impl MemorySet {
         );
     }
 
-    /// 中 ELF 文件中构建出一个 [`MemorySet`]
-    ///
-    /// *因为我们是加载 ELF 文件, 所以我们只关心执行视图(Execution View)*
-    ///
-    /// *需要注意的是, 无论是什么视图, 对于 ELF 文件来说只是划分标准不同而已, 布局基本没有差别*
-    ///
-    /// ELF 文件在 x64 的布局(Execution View):
-    ///
-    /// ```text
-    /// +----------------------+
-    /// |    Program Header    | <-- ELF Header 包含了 ELF 文件的各个段的长度等基本信息等
-    /// +----------------------+
-    /// | Program Header Table | <-- ph_* 包含了运行时加载所需的基本信息
-    /// +----------------------+
-    /// |       Segment1       |
-    /// +----------------------+
-    /// |       Segment2       |
-    /// +----------------------+
-    /// |         ...          |
-    /// +----------------------+
-    /// | Section Header Table |
-    /// |      (Optional)      |
-    /// +----------------------+
-    ///
-    /// ```
-    ///
-    /// 当前实现中, ELF 加载后在内存中的布局(进程的地址空间布局):
-    ///
-    /// ```text
-    /// +--------------------+
-    /// |     trampoline     |
-    /// +--------------------+
-    /// |      trap_cx       |
-    /// +--------------------+
-    /// |     Guard Page     | <-- 保护页
-    /// +--------------------+
-    /// |                    |
-    /// |     User Stack     | <-- 用户虚拟地址空间(U-mode)中的用户栈
-    /// |                    |
-    /// +--------------------+
-    /// |     Guard Page     |
-    /// +--------------------+
-    /// |                    |
-    /// |     mmap Areas     | <-- mmap 区
-    /// |                    |
-    /// +--------------------+
-    /// |                    |
-    /// |        ...         |
-    /// |                    |
-    /// +--------------------+ <-- brk
-    /// |                    |
-    /// |                    | <-- brk
-    /// |                    | <-- brk
-    /// |     User Heap      |
-    /// |                    |
-    /// |                    |
-    /// +--------------------+ <-- brk_start
-    /// |                    |
-    /// |    Data Segments   | <-- ELF 文件加载后所有 Segment 的集合
-    /// |                    |
-    /// +--------------------+
-    /// ```
     pub fn load_elf(elf_file: Arc<dyn File>) -> LoadedELF {
-        #[cfg(feature = "static_busybox")]
+        #[cfg(feature = "static-busybox")]
         {
             const BB: &str = "BUSYBOX";
             if elf_file.name() == BB {
@@ -304,7 +204,6 @@ impl MemorySet {
 
         memory_set.map_trampoline();
         memory_set.map_signal_trampoline();
-        // TODO thread
         memory_set.map_trap_context();
 
         // 第一次读取前64字节确定程序表的位置与大小
@@ -330,7 +229,6 @@ impl MemorySet {
         // 遍历程序段进行加载
         for i in 0..ph_count as u16 {
             let ph = elf.program_header(i).unwrap();
-            // {let start_va: VirtAddr = (ph.virtual_addr() as usize).into();let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();println!("[DEBUG] start:0x{:x?},end:0x{:x?},type:{:?}",start_va,end_va,ph.get_type().unwrap());}
             match ph.get_type().unwrap() {
                 xmas_elf::program::Type::Load => {
                     let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
@@ -376,9 +274,7 @@ impl MemorySet {
                     // println!("elf Interp");
                     dynamic_link = true;
                 }
-                _ => {
-                    // let start_va: VirtAddr = (ph.virtual_addr() as usize).into();let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();println!("TYPE:{:?} start_va:{:?} end_va{:?}",ph.get_type().unwrap(),start_va,end_va);
-                }
+                _ => {}
             }
         }
         if dynamic_link {
@@ -848,9 +744,9 @@ impl MemorySet {
     }
 }
 
-#[cfg(feature = "static_busybox")]
+#[cfg(feature = "static-busybox")]
 use crate::task::BUSYBOX;
-#[cfg(feature = "static_busybox")]
+#[cfg(feature = "static-busybox")]
 fn hijack_busybox_load_elf() -> LoadedELF {
     let bb = BUSYBOX.read();
     let memory_set = bb.memory_set();

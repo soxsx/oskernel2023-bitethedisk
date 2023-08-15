@@ -1,5 +1,4 @@
-//! Sv39 页表
-//!
+//! Sv39 Page table.
 //!
 //! ```text
 //!                    +--------+--------+--------+
@@ -25,13 +24,10 @@ use super::{alloc_frame, FrameTracker};
 use alloc::vec::Vec;
 use bitflags::*;
 
-// SV39 多级页表
 #[derive(Debug)]
 pub struct PageTable {
-    /// 根节点的物理页号,作为页表唯一的区分标志
+    /// The root of current pagetable.
     root_ppn: PhysPageNum,
-    /// 以 FrameTracker 的形式保存了页表所有的节点(包括根节点)所在的物理页帧
-    /// 用以延长物理页帧的生命周期
     pub frames: Vec<FrameTracker>,
 }
 
@@ -134,9 +130,6 @@ impl PageTable {
         }
     }
 
-    /// 根据 vpn 查找页表项
-    ///
-    /// 调用 `find_pte` 来实现, 如果能够找到页表项, 那么它会将页表项拷贝一份并返回, 否则就返回一个 `None`
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.find_pte(vpn).map(|pte| *pte)
     }
@@ -144,9 +137,7 @@ impl PageTable {
     /// 在当前多级页表中将虚拟地址转换为物理地址
     pub fn translate_va(&self, va: VirtAddr) -> Option<PhysAddr> {
         self.find_pte(va.clone().floor()).map(|pte| {
-            //println!("translate_va:va = {:?}", va);
             let aligned_pa: PhysAddr = pte.ppn().into();
-            //println!("translate_va:pa_align = {:?}", aligned_pa);
             let offset = va.page_offset();
             let aligned_pa_usize: usize = aligned_pa.into();
 
@@ -154,9 +145,9 @@ impl PageTable {
         })
     }
 
-    /// 按照 satp CSR 格式要求 构造一个无符号 64 位无符号整数, 使得其分页模式为 SV39 , 且将当前多级页表的根节点所在的物理页号填充进去
+    /// A token indicating a valid memory set. In riscv, it's actually the S-mode's register `satp`
     pub fn token(&self) -> usize {
-        8usize << 60 | self.root_ppn.0
+        0b1000 << 60 | self.root_ppn.0
     }
 
     pub fn set_cow(&mut self, vpn: VirtPageNum) {
@@ -179,7 +170,6 @@ impl PageTable {
     }
 }
 
-// 可以将一个 u8 封装成一个标志位的集合类型, 支持一些常见的集合运算
 bitflags! {
     /// PTEFlags 一共 10 bits
     #[derive(Clone, Copy, Debug)]

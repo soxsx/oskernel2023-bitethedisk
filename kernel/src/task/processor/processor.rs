@@ -1,12 +1,20 @@
+use alloc::sync::Arc;
+use sync_cell::SyncRefCell;
+
 use crate::task::manager::TASK_MANAGER;
 use crate::task::{task::TaskControlBlock, TaskContext};
-use alloc::sync::Arc;
 
-/// Processor provides a series of abstractions
+lazy_static! {
+    pub static ref PROCESSORS: [SyncRefCell<Processor>; 4] = [
+        SyncRefCell::new(Processor::new()),
+        SyncRefCell::new(Processor::new()),
+        SyncRefCell::new(Processor::new()),
+        SyncRefCell::new(Processor::new()),
+    ];
+}
+
 pub struct Processor {
-    /// Current task running on this processor
     current: Option<Arc<TaskControlBlock>>,
-    /// Current idle task context on this processor
     idle_task_cx: TaskContext,
 }
 
@@ -20,6 +28,7 @@ impl Processor {
     pub fn idle_task_cx_ptr(&mut self) -> *mut TaskContext {
         &mut self.idle_task_cx as *mut _
     }
+    /// Take current task.
     pub fn take_current(&mut self) -> Option<Arc<TaskControlBlock>> {
         self.current.take()
     }
@@ -31,13 +40,7 @@ impl Processor {
     }
     pub fn hang_current(&mut self, sleep_time: usize, duration: usize) {
         TASK_MANAGER
-            .borrow_mut()
+            .lock()
             .hang(sleep_time, duration, self.take_current().unwrap());
-    }
-}
-
-impl Default for Processor {
-    fn default() -> Self {
-        Self::new()
     }
 }

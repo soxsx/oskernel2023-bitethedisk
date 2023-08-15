@@ -54,18 +54,18 @@ impl Drop for TimeTracer {
 #[macro_export]
 macro_rules! time_trace {
     ($msg: literal) => {
-        let _s = alloc::string::String::from($msg);
-        let _time_tracer = $crate::TimeTracer::new(_s, $crate::get_time_ns());
+        let s = alloc::string::String::from($msg);
+        let time_tracer = $crate::TimeTracer::new(_s, $crate::get_time_ns());
     };
 }
 
 #[macro_export]
 macro_rules! start_trace {
     ($msg: literal) => {
-        let _s = alloc::string::String::from($msg);
-        let _time_tracer = $crate::TimeTracer::new(_s, $crate::get_time_ns());
+        let s = alloc::string::String::from($msg);
+        let time_tracer = $crate::TimeTracer::new(_s, $crate::get_time_ns());
         let mut lock = $crate::TIME_STACK.lock();
-        lock.push(_time_tracer);
+        lock.push(time_tracer);
         drop(lock);
     };
 }

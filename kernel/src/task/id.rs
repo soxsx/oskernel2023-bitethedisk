@@ -1,10 +1,8 @@
-//! Process Identifier
+use spin::Mutex;
 
-use sync_cell::SyncRefCell;
+static PID_ALLOCATOR: Mutex<PidAllocator> = Mutex::new(PidAllocator::new());
 
-static PID_ALLOCATOR: SyncRefCell<PidAllocator> = SyncRefCell::new(PidAllocator::new());
-
-/// Stack-based Process Identifier Allocator
+/// Process identifier allocator.
 struct PidAllocator {
     current: usize,
 }
@@ -14,7 +12,7 @@ pub struct PidHandle(pub usize);
 
 impl PidAllocator {
     pub const fn new() -> Self {
-        PidAllocator { current: 0 }
+        Self { current: 0 }
     }
     fn fetch_add(&mut self) -> usize {
         let new_pid = self.current;
@@ -26,7 +24,6 @@ impl PidAllocator {
     }
 }
 
-/// Allocate a process identifier from the global stack process identifier allocator `PID_ALLOCATOR`
 pub fn pid_alloc() -> PidHandle {
-    PID_ALLOCATOR.borrow_mut().alloc()
+    PID_ALLOCATOR.lock().alloc()
 }

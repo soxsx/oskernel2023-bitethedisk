@@ -8,7 +8,7 @@ use crate::{
     syscall::impls::Errno,
 };
 
-// 与 MmapPage 的区别在于不需要虚拟地址
+// The difference compared to MmapPage is that it does not require a virtual address.
 pub struct FilePage {
     /// Immutable page permission
     pub permission: MapPermission,

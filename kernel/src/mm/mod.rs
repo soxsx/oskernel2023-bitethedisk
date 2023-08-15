@@ -8,6 +8,7 @@ mod permission;
 mod shared_memory;
 mod user_buffer;
 mod vm_area;
+mod kernel_heap_allocator;
 pub use address::*;
 pub use frame_allocator::*;
 pub use kvmm::*;
@@ -24,10 +25,15 @@ use alloc::{string::String, vec::Vec};
 use core::{cmp::min, mem::size_of};
 use riscv::register::satp;
 
-/// 内存管理子系统的初始化
+/// Initialize kernel's frame allocator and enable MMU.
 pub fn init() {
+    init_kernel_heap_allocator();
     init_frame_allocator();
     enable_mmu();
+}
+
+pub fn init_kernel_heap_allocator() {
+    kernel_heap_allocator::init_heap();
 }
 
 pub fn init_frame_allocator() {
@@ -36,14 +42,10 @@ pub fn init_frame_allocator() {
 
 pub fn enable_mmu() {
     satp::write(acquire_kvmm().token());
-    unsafe { core::arch::asm!("sfence.vma") } // 刷新 MMU 的 TLB
+    unsafe { core::arch::asm!("sfence.vma") } // Refresh MMU's TLB
 }
 
-/// 以向量的形式返回一组可以在内存空间中直接访问的字节数组切片
-///
-/// - `token`: 某个应用地址空间的 token
-/// - `ptr`: 应用地址空间中的一段缓冲区的起始地址
-/// - `len`: 应用地址空间中的一段缓冲区的长度
+/// Get a bytes buffer [`Vec`] from user's memory set.
 pub fn translated_bytes_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&'static mut [u8]> {
     let page_table = PageTable::from_token(token);
     let mut start = VirtAddr::from(ptr as usize);
@@ -54,14 +56,15 @@ pub fn translated_bytes_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<
         let ppn = match page_table.translate(vpn) {
             Some(pte) => pte.ppn(),
             None => {
-                if current_task().check_lazy(start) != 0 {
+                if current_task().unwrap().check_lazy(start) != 0 {
                     panic!("check lazy error");
                 }
                 page_table.translate(vpn).unwrap().ppn()
             }
         };
         vpn.step();
-        // 避免跨页
+
+        // Avoid page crossing.
         let in_page_end_va: VirtAddr = min(vpn.into(), end);
         if in_page_end_va.page_offset() == 0 {
             v.push(&mut ppn.as_bytes_array()[start.page_offset()..]);
@@ -73,9 +76,8 @@ pub fn translated_bytes_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<
     v
 }
 
-/// 从内核地址空间之外的某个应用的用户态地址空间中拿到一个字符串
-///
-/// 针对应用的字符串中字符的用户态虚拟地址, 查页表, 找到对应的内核虚拟地址, 逐字节地构造字符串, 直到发现一个 \0 为止
+/// Get a translated [`String`] from user's memory set.
+#[warn(deprecated)]
 pub fn translated_str(token: usize, ptr: *const u8) -> String {
     let page_table = PageTable::from_token(token);
     let mut string = String::new();
@@ -95,7 +97,8 @@ pub fn translated_str(token: usize, ptr: *const u8) -> String {
     string
 }
 
-/// 根据 多级页表token (satp) 和 虚拟地址 获取大小为 T 的空间的不可变切片
+/// Get a reference T from user's memory set.
+#[warn(deprecated)]
 pub fn translated_ref<T>(token: usize, ptr: *const T) -> &'static T {
     let offset = ptr as usize % PAGE_SIZE;
     assert!(
@@ -109,7 +112,8 @@ pub fn translated_ref<T>(token: usize, ptr: *const T) -> &'static T {
         .as_ref()
 }
 
-/// 根据 多级页表token (satp) 和 虚拟地址 获取大小为 T 的空间的切片
+/// Get a mutable reference T from user's memory set.
+#[warn(deprecated)]
 pub fn translated_mut<T>(token: usize, ptr: *mut T) -> &'static mut T {
     let offset = ptr as usize % PAGE_SIZE;
     assert!(
@@ -124,6 +128,7 @@ pub fn translated_mut<T>(token: usize, ptr: *mut T) -> &'static mut T {
         .as_mut()
 }
 
+/// Copy data from `src` from memory set indicated by the given token into `dst` in kernel's memory set.
 pub fn copyin<T>(token: usize, dst: &mut T, src: *const T) {
     let src_buffer = translated_bytes_buffer(token, src as *const u8, core::mem::size_of::<T>());
 
@@ -145,6 +150,8 @@ pub fn copyin<T>(token: usize, dst: &mut T, src: *const T) {
     }
 }
 
+/// Copy data from `src` out of kernel memory set into `dst` which lives in the given
+/// memory set indicated by the given `token`.
 pub fn copyout<T>(token: usize, dst: *mut T, src: &T) {
     let mut dst_buffer =
         translated_bytes_buffer(token, dst as *const u8, core::mem::size_of::<T>());

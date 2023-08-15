@@ -1,10 +1,11 @@
 //! Kernel stack for a process.
 
-use super::PidHandle;
 use crate::{
     consts::{KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE},
     mm::{acquire_kvmm, MapPermission, VirtAddr, VmAreaType},
 };
+
+use super::PidHandle;
 
 /// Return (bottom, top) of a kernel stack in kernel space.
 pub fn kernel_stack_position(id: usize) -> (usize, usize) {

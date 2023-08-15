@@ -1,13 +1,10 @@
 use nix::info::Utsname;
-use nix::{
-    itimerval, tms, IntervalTimer, IntervalTimerType, TimeSpec, TimeVal, ITIMER_PROF, ITIMER_REAL,
-    ITIMER_VIRTUAL,
-};
+use nix::{itimerval, tms, IntervalTimer, IntervalTimerType, TimeSpec, TimeVal};
 
 use crate::mm::translated_mut;
 use crate::return_errno;
 use crate::task::{current_task, hanging_current_and_run_next};
-use crate::timer::{get_time, get_time_ns};
+use crate::timer::get_time_ns;
 use crate::{
     mm::{translated_bytes_buffer, translated_ref, UserBuffer},
     task::{current_user_token, suspend_current_and_run_next},
@@ -144,12 +141,12 @@ pub fn sys_nanosleep(buf: *const u8) -> Result {
 //      const struct timespec *request,
 //      struct timespec *_Nullable remain);
 pub fn sys_clock_nanosleep(
-    clock_id: usize,
+    _clock_id: usize,
     flags: isize,
     req: *const TimeSpec,
     _remain: *mut TimeSpec,
 ) -> Result {
-    if (flags == 1) {
+    if flags == 1 {
         // TIMER_ABSTIME
         let current_time = get_time_ns();
         let token = current_user_token();
@@ -177,7 +174,7 @@ pub fn sys_setitimer(which: i32, new_value: *const itimerval, old_value: *mut it
         return_errno!(Errno::EFAULT);
     }
     if let Ok(itimer_type) = IntervalTimerType::try_from(which) {
-        let task = current_task();
+        let task = current_task().unwrap();
         if ovp_usize != 0 {
             let inner = task.inner_ref();
             if let Some(itimer) = &inner.interval_timer {
@@ -221,7 +218,7 @@ pub fn sys_getitimer(which: i32, curr_value: *mut itimerval) -> Result {
         return_errno!(Errno::EFAULT);
     }
     if let Ok(itimer_type) = IntervalTimerType::try_from(which) {
-        let task = current_task();
+        let task = current_task().unwrap();
         match itimer_type {
             IntervalTimerType::Real => {
                 let inner = task.inner_ref();
@@ -250,14 +247,14 @@ pub fn sys_getitimer(which: i32, curr_value: *mut itimerval) -> Result {
     Ok(0)
 }
 
-// TODO timerid 指定的计时器
+// TODO: timerid 指定的计时器
 pub fn sys_timer_settime(
     _time_id: usize,
     _flags: isize,
     new_value: *const itimerval,
     old_value: *mut itimerval,
 ) -> Result {
-    let task = current_task();
+    let task = current_task().unwrap();
     if new_value as usize != 0 {
         let nv = translated_ref(task.token(), new_value);
         let zero = TimeVal::zero();
