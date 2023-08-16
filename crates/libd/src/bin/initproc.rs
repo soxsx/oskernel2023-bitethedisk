@@ -11,6 +11,8 @@ use libd::{
     syscall::{exec, execve, exit, fork, sys_exec, waitpid},
 };
 
+const BUSYBOX_PID: isize = 2;
+
 #[no_mangle]
 fn main() -> isize {
     let pid = fork();
@@ -22,7 +24,7 @@ fn main() -> isize {
         );
     } else {
         let mut exit_code = 0_i32;
-        while waitpid(-1, &mut exit_code) != 2 {}
+        while waitpid(-1, &mut exit_code) != BUSYBOX_PID {}
         println!("child proc exit_code: {}", exit_code);
     }
     0
