@@ -8,7 +8,7 @@ use alloc::{collections::VecDeque, string::String};
 use core::fmt::{Debug, Formatter};
 use core::ops::{Deref, DerefMut};
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AbsolutePath {
     pub components: VecDeque<String>,
 }
