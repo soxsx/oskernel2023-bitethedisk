@@ -17,6 +17,7 @@ static-busybox = []
 no-page-cache = []
 inode-drop = []
 time-tracer = []
+hash-inode-cache = []
 
 [dependencies]
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
