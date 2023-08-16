@@ -60,6 +60,7 @@ pub struct TaskControlBlockInner {
     pub trap_cause: Option<Scause>,
 
     pub parent: Option<Weak<TaskControlBlock>>,
+    // child process and thread collection
     pub children: Vec<Arc<TaskControlBlock>>,
 
     pub pending_signals: SigSet,

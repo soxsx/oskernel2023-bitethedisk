@@ -73,13 +73,13 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         true
     });
 
-    // 将这个进程的子进程转移到 initproc 进程的子进程中
-    // 若当前进程为子线程则不会执行下面的 for
+    // Move the child of this process to the child of the initproc process.
     for child in inner.children.iter() {
-        // 不用区分子线程和子进程，将 child 全部转移到 initproc 中，后面会对子线程做处理
+        // There is no need to distinguish between child threads and child processes.
+        // Transfer all children to initproc, and further processing will be done for child threads.
         let mut initproc_inner = INITPROC.inner_mut();
         child.inner_mut().parent = Some(Arc::downgrade(&INITPROC));
-        initproc_inner.children.push(child.clone()); // 引用计数 -1
+        initproc_inner.children.push(child.clone());
     }
 
     if is_child_thread {
@@ -130,7 +130,6 @@ pub fn block_current_and_run_next() {
     schedule(task_cx_ptr);
 }
 
-/// 将初始进程 `initproc` 加入任务管理器
 pub fn add_initproc() {
     add_task(INITPROC.clone());
 }
@@ -144,7 +143,7 @@ pub fn exec_signal_handlers() {
     }
 
     loop {
-        // 取出 pending 的第一个 signal
+        // take out the first signal of pending
         let signum = match task_inner
             .pending_signals
             .difference(task_inner.sigmask)
@@ -156,7 +155,7 @@ pub fn exec_signal_handlers() {
         task_inner.pending_signals.sub(signum);
         let sigaction = task.sigactions.read()[signum as usize];
 
-        // 如果信号对应的处理函数存在, 则做好跳转到 handler 的准备
+        // if signal handler exists, then prepare to jump to handler
         let handler = sigaction.sa_handler;
         match handler {
             SIG_IGN => {
@@ -173,23 +172,24 @@ pub fn exec_signal_handlers() {
                 return;
             }
             _ => {
-                // 阻塞当前信号以及 sigaction.sa_mask 中的信号
+                // block the current signal and the signals in sigaction.sa_mask
                 let mut sigmask = sigaction.sa_mask.clone();
                 if !sigaction.sa_flags.contains(SAFlags::SA_NODEFER) {
                     sigmask.add(signum);
                 }
-
-                // 保存旧的信号掩码
+                // save the old sigmask
                 let old_sigmask = task_inner.sigmask.clone();
                 sigmask.add_other(old_sigmask);
-                // 将信号掩码设置为 sigmask
+                // set the signal mask to sigmask
                 task_inner.sigmask = sigmask;
-                // 将 SignalContext 数据放入栈中
+                // put the SignalContext data into the stack.
                 let trap_cx = task_inner.trap_context();
-                // 保存 Trap 上下文与 old_sigmask 到 sig_context 中
+                // save the trap context and old_sigmask to sig_context
                 let sig_context = SignalContext::from_another(trap_cx, old_sigmask);
                 trap_cx.x[10] = signum as usize; // a0 (args0 = signum)
-                                                 // 如果 sa_flags 中包含 SA_SIGINFO, 则将 siginfo 和 ucontext 放入栈中
+
+                // If SA_SIGINFO is included in sa_flags, put siginfo and ucontext into the stack.
+                // However, we did not differentiate whether the flag is present or not. We handled it uniformly.
 
                 let memory_set = task.memory_set.read();
                 let token = memory_set.token();
