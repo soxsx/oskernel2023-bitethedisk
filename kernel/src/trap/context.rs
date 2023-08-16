@@ -3,26 +3,19 @@ use riscv::register::sstatus::{self, Sstatus, SPP};
 #[derive(Clone, Debug)]
 #[repr(C)]
 pub struct TrapContext {
-    /// 通用寄存器
     pub x: [usize; 32],
-
-    /// 提供状态信息
     sstatus: Sstatus,
-
-    /// 记录 trap 发生前执行的最后一条指令的地址
     pub sepc: usize,
-
-    /// 内核地址空间的 token
+    /// Kernel space address translation and protection
+    /// (KSpace Page Table Token)
     kernel_satp: usize,
-
-    /// 进程内核栈栈顶的(虚拟)地址
+    /// Process kernel stack pointer(virtual address)
     pub kernel_sp: usize,
-
-    /// trap 处理函数入口点的(虚拟)地址
+    /// Trap handler entry point(virtual address)
     trap_handler: usize,
-
+    /// The Hart ID of the executor that this context belongs to
     executor_id: usize,
-
+    // Floating point registers
     pub freg: [usize; 32],
 }
 

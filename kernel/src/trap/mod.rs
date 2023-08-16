@@ -17,16 +17,16 @@ pub fn init() {
     set_kernel_trap_entry();
 }
 
-/// 设置内核态下的 trap 入口
+/// Set the trap entry point in kernel mode
 ///
-/// 在内核态发生 trap 后, CPU 会跳转执行 [`kernel_trap_handler`] 处的代码
+/// After a trap occurs in kernel mode, the CPU will jump and execute the code at [kernel_trap_handler].
 fn set_kernel_trap_entry() {
     unsafe { stvec::write(kernel_trap_handler as usize, TrapMode::Direct) }
 }
 
-/// 设置用户态下的 trap 入口
+/// Set the trap entry point in user mode
 ///
-/// 在用户态发生 trap 后, CPU 会跳转执行 [`TRAMPOLINE`] 处的代码
+/// After a trap occurs in user mode, the CPU will jump and execute the code at [TRAMPOLINE].
 fn set_user_trap_entry() {
     unsafe { stvec::write(TRAMPOLINE as usize, TrapMode::Direct) }
 }
