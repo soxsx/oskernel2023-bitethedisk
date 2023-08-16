@@ -34,6 +34,15 @@ bitflags! {
 pub const UTIME_NOW: u64 = 0x3fffffff;
 pub const UTIME_OMIT: u64 = 0x3ffffffe;
 
+bitflags! {
+    #[derive(PartialEq, Eq)]
+    pub struct SeekFlags: usize {
+        const SEEK_SET = 0;   // 参数 offset 即为新的读写位置
+        const SEEK_CUR = 1;   // 以目前的读写位置往后增加 offset 个位移量
+        const SEEK_END = 2;   // 将读写位置指向文件尾后再增加 offset 个位移量
+    }
+}
+
 #[repr(C)]
 pub struct Statfs {
     pub f_type: u64,
@@ -50,6 +59,7 @@ pub struct Statfs {
     pub f_spare: [u64; 4],
 }
 impl Statfs {
+    // TODO
     pub fn new() -> Self {
         Self {
             f_type: 1,

@@ -77,6 +77,9 @@ pub trait File: Send + Sync {
     fn truncate(&self, _new_length: usize) {
         unimplemented!("not implemente yet");
     }
+    fn fid(&self) -> u64 {
+        unimplemented!("not implemente yet");
+    }
 }
 
 impl Debug for dyn File + Send + Sync {
