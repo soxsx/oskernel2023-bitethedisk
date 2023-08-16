@@ -88,7 +88,7 @@ pub fn user_trap_handler() -> ! {
 
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             suspend_current_and_run_next();
-            set_next_trigger();
+            // set_next_trigger(); // we have deal with it in trap_return
         }
 
         _ => panic!(
