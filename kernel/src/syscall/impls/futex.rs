@@ -1,3 +1,5 @@
+//! About syscall detail: https://man7.org/linux/man-pages/man2/futex.2.html
+
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
 use errno::Errno;

@@ -6,6 +6,7 @@ use nix::{RLimit, SchedParam, SigAction, SigMask};
 /// Syscall dispatcher.
 pub fn syscall(id: usize, args: [usize; 6]) -> isize {
     let syscall_id = SyscallId::from(id); // This will check if syscall id is valid.
+
     // if syscall_id != SyscallId::SYS_BRK {
     //     println!("On hart {}: [{}]", hartid!(), syscall_id);
     // }
@@ -213,7 +214,7 @@ pub fn syscall(id: usize, args: [usize; 6]) -> isize {
             args[4] as *const u32,
             args[5] as u32,
         ),
-        SyscallId::SYS_TILL => sys_tkill(args[0], args[1]),
+        SyscallId::SYS_TKILL => sys_tkill(args[0], args[1]),
         SyscallId::SYS_SOCKET => Ok(1),
         SyscallId::SYS_BIND => Ok(0),
         SyscallId::SYS_LISTEN => Ok(0),

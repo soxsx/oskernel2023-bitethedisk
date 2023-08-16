@@ -1,3 +1,5 @@
+//! About syscall detail: https://man7.org/linux/man-pages/dir_section_2.html
+
 use crate::board::CLOCK_FREQ;
 use crate::fs::{make_pipe, open};
 use crate::mm::{
@@ -25,23 +27,7 @@ use super::super::errno::*;
 
 use crate::task::*;
 
-/// #define SYS_clone 220
-///
-/// 功能: 创建一个子进程;
-///
-/// 输入:
-///
-/// - flags: 创建的标志, 如SIGCHLD;
-/// - stack: 指定新进程的栈, 可为0;
-/// - ptid: 父线程ID;
-/// - tls: TLS线程本地存储描述符;
-/// - ctid: 子线程ID;
-///
-/// 返回值: 成功则返回子进程的线程ID, 失败返回-1;
-///
-/// ```c
-/// pid_t ret = syscall(SYS_clone, flags, stack, ptid, tls, ctid)
-/// ```
+// clone 220
 pub fn sys_do_fork(flags: usize, stack_ptr: usize, ptid: usize, tls: usize, ctid: usize) -> Result {
     let current_task = current_task().unwrap();
     let _signal = flags & 0xff;
@@ -88,22 +74,7 @@ pub fn sys_do_fork(flags: usize, stack_ptr: usize, ptid: usize, tls: usize, ctid
     Ok(new_pid as isize) // 对于父进程, 返回值是子进程的 PID
 }
 
-/// #define SYS_execve 221
-///
-/// 功能: 执行一个指定的程序;
-///
-/// 输入:
-///
-/// - path: 待执行程序路径名称,
-/// - argv: 程序的参数,
-/// - envp: 环境变量的数组指针
-///
-/// 返回值: 成功不返回, 失败返回-1;
-///
-/// ```c
-/// const char *path, char *const argv[], char *const envp[];
-/// int ret = syscall(SYS_execve, path, argv, envp);
-/// ```
+// execve 221
 pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize) -> Result {
     let token = current_user_token();
     // 读取到用户空间的应用程序名称(路径)
@@ -169,22 +140,7 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
     // }
 }
 
-/// #define SYS_wait4 260
-///
-/// 功能: 等待进程改变状态;
-///
-/// 输入:
-///
-/// - pid: 指定进程ID, 可为-1等待任何子进程;
-/// - status: 接收状态的指针;
-/// - options: 选项: WNOHANG, WUNTRACED, WCONTINUED;
-///
-/// 返回值: 成功则返回进程ID; 如果指定了WNOHANG, 且进程还未改变状态, 直接返回0; 失败则返回-1;
-///
-/// ```c
-/// pid_t pid, int *status, int options;
-/// pid_t ret = syscall(SYS_wait4, pid, status, options);
-/// ```
+// wait4 260
 pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result {
     let task = current_task().unwrap();
 
@@ -239,18 +195,7 @@ pub fn sys_wait4(pid: isize, exit_code_ptr: *mut i32) -> Result {
     }
 }
 
-/// #define SYS_exit 93
-///
-/// 功能: 触发进程终止, 无返回值;
-///
-/// 输入: 终止状态值;
-///
-/// 返回值: 无返回值;
-///
-/// ```c
-/// int ec;
-/// syscall(SYS_exit, ec);
-/// ```
+// exit 93
 pub fn sys_exit(exit_code: i32) -> ! {
     exit_current_and_run_next(exit_code);
     unreachable!("unreachable in sys_exit!");
@@ -261,36 +206,17 @@ pub fn sys_exit_group(exit_code: i32) -> ! {
     panic!("Unreachable in sys_exit!");
 }
 
-/// #define SYS_getppid 173
-///
-/// 功能: 获取父进程ID;
-///
-/// 输入: 系统调用ID;
-///
-/// 返回值: 成功返回父进程ID;
-///
-/// ```c
-/// pid_t ret = syscall(SYS_getppid);
-/// ```
+// getppid 173
 pub fn sys_getppid() -> Result {
     Ok(current_task().unwrap().tgid as isize)
 }
 
-/// #define SYS_getpid 172
-///
-/// 功能: 获取进程ID;
-///
-/// 输入: 系统调用ID;
-///
-/// 返回值: 成功返回进程ID;
-///
-/// ```c
-/// pid_t ret = syscall(SYS_getpid);
-/// ```
+// getpid 172
 pub fn sys_getpid() -> Result {
     Ok(current_task().unwrap().pid.0 as isize)
 }
 
+// set_tid_address 96
 pub fn sys_set_tid_address(tidptr: *mut usize) -> Result {
     let token = current_user_token();
     let task = current_task().unwrap();
@@ -298,42 +224,32 @@ pub fn sys_set_tid_address(tidptr: *mut usize) -> Result {
     Ok(task.pid() as isize)
 }
 
+// getuid 174
 pub fn sys_getuid() -> Result {
     Ok(0)
 }
 
+// gettid 178
 pub fn sys_gettid() -> Result {
     Ok(0)
 }
 
+// geteuid 175
 pub fn sys_geteuid() -> Result {
     Ok(0)
 }
 
+// ppoll 73
 pub fn sys_ppoll(
     fds: usize,
     nfds: usize,
     tmo_p: *const TimeSpec,
     sigmask: *const SigMask,
 ) -> Result {
-    // let token = current_user_token();
-    // if sigmask as usize != 0 {
-    //     let mut mask = translated_ref(token, sigmask as *const SigMask).clone();
-    //     mask.sub(Signal::SIGKILL as u32); // sub 函数保证即使不存在 SIGKILL 也无影响
-    //     mask.sub(Signal::SIGSTOP as u32);
-    //     mask.sub(Signal::SIGILL as u32);
-    //     mask.sub(Signal::SIGSEGV as u32);
-    //     current_task().unwrap()().inner_mut().sigmask |= mask;
-    // }
-    // let mut poll_fd = Vec::<PollFd>::with_capacity(nfds);
-    // for i in 0..nfds {
-    //     let fd = translated_ref(token, unsafe { (fds as *mut PollFd).add(i) }).clone();
-    //     poll_fd.push(fd);
-    // }
-
     Ok(1)
 }
 
+// clock_gettime 113
 pub fn sys_clock_gettime(_clk_id: usize, ts: *mut u64) -> Result {
     if ts as usize == 0 {
         return Ok(0);
@@ -347,6 +263,7 @@ pub fn sys_clock_gettime(_clk_id: usize, ts: *mut u64) -> Result {
     Ok(0)
 }
 
+// kill 129
 pub fn sys_kill(pid: usize, signal: u32) -> Result {
     //TODO pid==-1
     if signal == 0 {
@@ -365,6 +282,8 @@ pub fn sys_kill(pid: usize, signal: u32) -> Result {
         Ok(0)
     }
 }
+
+// tkill 130
 pub fn sys_tkill(tid: usize, signal: usize) -> Result {
     //TODO pid==-1
     // println!("[DEBUG] tkill tid:{:?} signal:0x{:x?}", tid, signal);
@@ -390,6 +309,7 @@ pub fn sys_tkill(tid: usize, signal: usize) -> Result {
     }
 }
 
+// getrusgae 165
 pub fn sys_getrusage(who: isize, usage: *mut u8) -> Result {
     if who != RUSAGE_SELF {
         return_errno!(Errno::EINVAL, "currently only supports RUSAGE_SELF");
@@ -409,21 +329,20 @@ pub fn sys_getrusage(who: isize, usage: *mut u8) -> Result {
     Ok(0)
 }
 
-///
-///
-/// ```c
-/// int tgkill(int tgid, int tid, int sig);
-/// ```
+// tgkill 131
 pub fn sys_tgkill(tgid: isize, tid: usize, sig: isize) -> Result {
     if tgid == -1 {
-        todo!("给当前tgid对应的线程组里面所有的线程发送对应的信号")
+        todo!(
+            "Send the corresponding signal to all threads within\n
+        the thread group associated with the current TGID"
+        )
     }
     let master_pid = tgid as usize;
     let son_pid = tid;
     if let Some(parent_task) = pid2task(master_pid) {
         let inner = parent_task.inner_mut();
         if let Some(target_task) = inner.children.iter().find(|child| child.pid() == son_pid) {
-            todo!("发送信号")
+            todo!("Send Signal")
         } else {
             todo!("errno")
         }
@@ -432,31 +351,22 @@ pub fn sys_tgkill(tgid: isize, tid: usize, sig: isize) -> Result {
     }
 }
 
-// TODO 多核 在进程内加入 CpuMask
-// 用于获取一个进程或线程的 CPU 亲和性(CPU affinity).
-// CPU 亲和性指定了一个进程或线程可以运行在哪些 CPU 上.
-// 通过使用 sched_getaffinity 系统调用, 程序员可以查询进程或线程当前绑定的 CPU.
-// mask 参数是一个位图, 其中每个位表示一个 CPU.
-// 如果某个位为 1, 表示进程或线程可以运行在对应的 CPU 上;
-// 如果某个位为 0, 则表示进程或线程不能运行在对应的 CPU 上.
-// int sched_getaffinity(pid_t pid, size_t cpusetsize, cpu_set_t *mask);
-// cpu_set_t* cpu_set_t 是一个位图, 其中每个位表示一个 CPU. cpu_set_t 是一个结构体, 定义如下:
-// typedef struct {
-//     unsigned long __bits[1024 / (8 * sizeof(long))];
-// } cpu_set_t;
-// cpusetsize 参数指定了 mask 参数指向的位图的大小, 单位是字节.
+// sched_getaffinity 123
 pub fn sys_sched_getaffinity(pid: usize, cpusetsize: usize, mask: *mut u8) -> Result {
     let token = current_user_token();
     let mut userbuf = UserBuffer::wrap(translated_bytes_buffer(token, mask, cpusetsize));
 
-    // 内核中的调度器会维护一个位图, 用于记录进程或线程当前的 CPU 亲和性信息.
-    // 当调用 sched_getaffinity 系统调用时, 调度器会将位图中对应的位复制到用户空间中的 mask 指针指向的内存区域中.
+    // The scheduler in the kernel maintains a bitmap that records the CPU affinity
+    // information of processes or threads. When the sched_getaffinity system call
+    // is invoked, the scheduler copies the corresponding bits from the bitmap to
+    // the memory area pointed to by the mask pointer in the user space.
     let mut cpuset = CpuMask::new();
     cpuset.set(0);
     userbuf.write(cpuset.as_bytes());
     Ok(0)
 }
 
+// sched_setaffinity 122
 pub fn sys_sched_setaffinity(pid: usize, cpusetsize: usize, mask: *const u8) -> Result {
     let token = current_user_token();
     let mut userbuf = UserBuffer::wrap(translated_bytes_buffer(token, mask, cpusetsize));
@@ -466,29 +376,15 @@ pub fn sys_sched_setaffinity(pid: usize, cpusetsize: usize, mask: *const u8) -> 
     Ok(0)
 }
 
-// TODO 系统调用策略
-// 该函数接受一个参数 pid, 表示要查询的进程的 PID.如果 pid 是 0, 则表示查询当前进程的调度策略.
-// 函数返回值是一个整数, 表示指定进程的调度策略, 可能的取值包括:
-// SCHED_FIFO: 先进先出调度策略.
-// SCHED_RR: 轮转调度策略.
-// SCHED_OTHER: 其他调度策略.
-// 如果查询失败, 则返回 -1, 并将错误码存入 errno 变量中.
+// getscheduler 120
 pub fn sys_getscheduler(pid: usize) -> Result {
     // let task = pid2task(pid).ok_or(SyscallError::PidNotFound(-1, pid as isize))?;
     // let inner = task.read();
-    // Ok(inner.policy as isize) // TODO
+    // Ok(inner.policy as isize)
     Ok(SCHED_OTHER as isize)
 }
 
-// sched_priority 成员表示进程的调度优先级, 值越高表示优先级越高.
-// 在 Linux 中, 调度优先级的取值范围是 1-99, 其中 1 表示最低优先级, 99 表示最高优先级.
-// 如果调用成功, sched_getparam 返回 0; 否则返回 -1, 并设置 errno 变量表示错误类型.
-// 可能的错误类型包括 EINVAL(无效的参数), ESRCH(指定的进程不存在)等.
-// sched_getparam 系统调用只能获取当前进程或当前进程的子进程的调度参数, 对于其他进程则需要相应的权限或特权.
-// 如果要获取其他进程的调度参数, 可以使用 sys_sched_getaffinity 系统调用获取进程的 CPU 亲和性, 然后在相应的 CPU 上运行一个特权进程, 以便获取进程的调度参数.
-// struct sched_param {
-//     int sched_priority;
-// };
+// sched_getparam 121
 pub fn sys_sched_getparam(pid: usize, param: *mut SchedParam) -> Result {
     // let task = pid2task(pid).ok_or(SyscallError::PidNotFound(-1, pid as isize))?;
     // let inner = task.read();
@@ -499,15 +395,7 @@ pub fn sys_sched_getparam(pid: usize, param: *mut SchedParam) -> Result {
     Ok(0)
 }
 
-// pid 参数指定要设置调度策略和参数的进程的 PID;
-// policy 参数是一个整数值, 表示要设置的调度策略;
-// param 参数是一个指向 sched_param 结构体的指针, 用于设置调度参数.
-// 如果调用成功, sched_setscheduler 返回 0; 否则返回 -1, 并设置 errno 变量表示错误类型.
-// 可能的错误类型包括 EINVAL(无效的参数), ESRCH(指定的进程不存在)等.
-// int sched_setscheduler(pid_t pid, int policy, const struct sched_param *param);
-// struct sched_param {
-//     int sched_priority;
-// };
+// sched_setscheduler 119
 pub fn sys_sched_setscheduler(pid: usize, policy: isize, param: *const SchedParam) -> Result {
     let task = pid2task(pid).ok_or(Errno::DISCARD)?;
 
@@ -521,15 +409,7 @@ pub fn sys_sched_setscheduler(pid: usize, policy: isize, param: *const SchedPara
     Ok(0)
 }
 
-// 用于获取指定时钟的精度(resolution)
-// 其中, clk_id 参数指定要获取精度的时钟 ID; res 参数是一个指向 timespec 结构体的指针, 用于存储获取到的精度.
-// 如果调用成功, clock_getres() 返回值为 0; 否则返回一个负数值, 表示错误类型.
-// 可能的错误类型包括 EINVAL(无效的参数), EFAULT(无效的内存地址)等.
-// int clock_getres(clockid_t clk_id, struct timespec *res);
-// struct timespec {
-//     time_t tv_sec; /* seconds */
-//     long tv_nsec;  /* nanoseconds */
-// };
+// clock_getres 114
 pub fn sys_clock_getres(clockid: usize, res: *mut TimeSpec) -> Result {
     let token = current_user_token();
     let user_res = translated_mut(token, res);
@@ -539,11 +419,7 @@ pub fn sys_clock_getres(clockid: usize, res: *mut TimeSpec) -> Result {
     Ok(0)
 }
 
-// int socketpair(int domain, int type, int protocol, int sv[2]);
-// domain: 指定要创建的套接字的协议族, 可以取值为 AF_UNIX 或 AF_LOCAL, 表示使用本地 IPC.
-// type: 指定要创建的套接字的类型, 可以取值为 SOCK_STREAM 或 SOCK_DGRAM.
-// protocol: 指定要使用的协议, 通常为 0.
-// sv: 指向一个长度为 2 的数组的指针, 用于保存创建的套接字文件描述符.
+// socketpair 199
 pub fn sys_socketpair(domain: isize, _type: isize, _protocol: isize, sv: *mut [i32; 2]) -> Result {
     let token = current_user_token();
     let task = current_task().unwrap();
@@ -575,10 +451,7 @@ pub fn sys_socketpair(domain: isize, _type: isize, _protocol: isize, sv: *mut [i
     Ok(0)
 }
 
-/*********** SIGNAL ******************/
-// 用于在信号处理程序中恢复被中断的程序执行流程.
-// 当一个进程收到一个信号时, 内核会为该进程保存信号处理程序的上下文(如寄存器的值, 栈指针等), 并将程序的执行流程转移到信号处理程序中.
-// 在信号处理程序中, 如果需要返回到被中断的程序执行流程中, 可以使用 sigreturn 系统调用
+// sigreturn 139
 pub fn sys_sigreturn() -> Result {
     let token = current_user_token();
     let task = current_task().unwrap();
@@ -606,20 +479,7 @@ pub fn sys_sigreturn() -> Result {
     Ok(0)
 }
 
-// 用于设置和修改信号
-// sig 表示要设置或修改的信号的编号, act 是一个指向 sigaction 结构体的指针, 用于指定新的信号处理方式,
-// oact 是一个指向 sigaction 结构体的指针, 用于保存原来的信号处理方式
-// ```c
-// asmlinkage long sys_sigaction(int sig, const struct sigaction __user *act, struct sigaction __user *oact);
-// struct sigaction {
-//     void (*sa_handler)(int);
-//     void (*sa_sigaction)(int, siginfo_t *, void *);
-//     unsigned long sa_flags;
-//     void (*sa_restorer)(void);
-//     struct old_sigaction __user *sa_restorer_old;
-//     sigset_t sa_mask;
-// };
-// ```
+// sigaction 134
 pub fn sys_sigaction(signum: isize, act: *const SigAction, oldact: *mut SigAction) -> Result {
     let token = current_user_token();
     let task = current_task().unwrap();
@@ -664,15 +524,7 @@ pub fn sys_sigaction(signum: isize, act: *const SigAction, oldact: *mut SigActio
     Ok(0)
 }
 
-// 用于设置和修改进程的信号屏蔽字.
-// 信号屏蔽字是一个位图, 用于指定哪些信号在当前进程中被屏蔽, 即在进程处理某些信号时, 屏蔽掉一些信号, 以避免这些信号的干扰.
-// ```c
-// int sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
-// ```
-// how 参数指定了如何修改进程的信号屏蔽字, 可以取以下三个值之一:
-// - SIG_BLOCK: 将 set 中指定的信号添加到进程的信号屏蔽字中.
-// - SIG_UNBLOCK: 将 set 中指定的信号从进程的信号屏蔽字中移除.
-// - SIG_SETMASK: 将进程的信号屏蔽字设置为 set 中指定的信号.
+// sigprocmask 135
 pub fn sys_sigprocmask(
     how: usize,
     set: *const usize,
@@ -689,7 +541,6 @@ pub fn sys_sigprocmask(
     }
 
     if set as usize != 0 {
-        // let mut new_set = translated_ref(token, set as *const SigMask).clone();
         let mut new_set = translated_ref(token, set as *const SigMask).clone();
         new_set.sub(Signal::SIGKILL as u32); // sub 函数保证即使不存在 SIGKILL 也无影响
         new_set.sub(Signal::SIGSTOP as u32);
@@ -712,6 +563,8 @@ pub fn sys_sigprocmask(
     // );
     Ok(0)
 }
+
+// set_robust_list 99
 pub fn sys_set_robust_list(head: usize, len: usize) -> Result {
     if len != RobustList::HEAD_SIZE {
         return_errno!(Errno::EINVAL, "robust list head len missmatch:{:?}", len);
@@ -723,6 +576,7 @@ pub fn sys_set_robust_list(head: usize, len: usize) -> Result {
     Ok(0)
 }
 
+// get_robust_list 100
 pub fn sys_get_robust_list(pid: usize, head_ptr: *mut usize, len_ptr: *mut usize) -> Result {
     let task = if pid == 0 {
         current_task().unwrap()
@@ -741,6 +595,7 @@ pub fn sys_get_robust_list(pid: usize, head_ptr: *mut usize, len_ptr: *mut usize
     Ok(0)
 }
 
+// prlimit64 261
 pub fn sys_prlimit64(
     pid: usize,
     resource: u32,

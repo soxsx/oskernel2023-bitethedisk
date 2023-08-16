@@ -1,3 +1,5 @@
+//! About syscall detail: https://man7.org/linux/man-pages/dir_section_2.html
+
 use crate::mm::create_shm;
 use crate::mm::MapPermission;
 use crate::mm::PTEFlags;
@@ -16,18 +18,7 @@ use nix::MmapProts;
 
 use super::*;
 
-// #define SYS_brk 214
-///
-/// 功能: 修改数据段的大小;
-///
-/// 输入: 指定待修改的地址;
-///
-/// 返回值: 成功返回0, 失败返回-1;
-///
-/// ```c
-/// uintptr_t brk;
-/// uintptr_t ret = syscall(SYS_brk, brk);
-/// ```
+// brk 214
 pub fn sys_brk(brk: usize) -> Result {
     let task = current_task().unwrap();
     if brk == 0 {
@@ -39,42 +30,13 @@ pub fn sys_brk(brk: usize) -> Result {
     }
 }
 
-/// #define SYS_munmap 215
-///
-/// 功能: 将文件或设备取消映射到内存中;
-///
-/// 输入: 映射的指定地址及区间;
-///
-/// 返回值: 成功返回0, 失败返回-1;
-///
-/// ```c
-/// void *start, size_t len
-/// int ret = syscall(SYS_munmap, start, len);
-/// ```
+// munmap 215
 pub fn sys_munmap(addr: usize, length: usize) -> Result {
     let task = current_task().unwrap();
     Ok(task.munmap(addr, length) as isize)
 }
 
-/// #define SYS_mmap 222
-///
-/// 功能: 将文件或设备映射到内存中;
-///
-/// 输入:
-///
-/// - start: 映射起始位置,
-/// - len: 长度,
-/// - prot: 映射的内存保护方式, 可取: PROT_EXEC, PROT_READ, PROT_WRITE, PROT_NONE
-/// - flags: 映射是否与其他进程共享的标志,
-/// - fd: 文件句柄,
-/// - off: 文件偏移量;
-///
-/// 返回值: 成功返回已映射区域的指针, 失败返回-1;
-///
-/// ```c
-/// void *start, size_t len, int prot, int flags, int fd, off_t off
-/// long ret = syscall(SYS_mmap, start, len, prot, flags, fd, off);
-/// ```
+// mmap 222
 pub fn sys_mmap(
     addr: usize,
     length: usize,
@@ -109,6 +71,7 @@ pub fn sys_mmap(
     Ok(result_addr as isize)
 }
 
+// shmget 194
 pub fn sys_shmget(key: usize, size: usize, shmflg: usize) -> Result {
     let size = (size + PAGE_SIZE - 1) / PAGE_SIZE * PAGE_SIZE;
     assert!(size % PAGE_SIZE == 0);
@@ -121,6 +84,7 @@ pub fn sys_shmget(key: usize, size: usize, shmflg: usize) -> Result {
     Ok(new_key as isize)
 }
 
+// shmctl 195
 pub fn sys_shmctl(key: usize, cmd: usize, buf: *const u8) -> Result {
     if cmd == IPC_RMID {
         remove_shm(key);
@@ -130,6 +94,7 @@ pub fn sys_shmctl(key: usize, cmd: usize, buf: *const u8) -> Result {
     Ok(0)
 }
 
+// shmat 196
 pub fn sys_shmat(key: usize, address: usize, shmflg: usize) -> Result {
     let task = current_task().unwrap();
     let mut memory_set = task.memory_set.write();
@@ -143,6 +108,7 @@ pub fn sys_shmat(key: usize, address: usize, shmflg: usize) -> Result {
     Ok(address as isize)
 }
 
+// shmdt 197
 pub fn sys_shmdt(address: usize) -> Result {
     let task = current_task().unwrap();
     let mut memory_set = task.memory_set.write();
@@ -153,6 +119,7 @@ pub fn sys_shmdt(address: usize) -> Result {
     Ok(nattch as isize)
 }
 
+// mprotect 226
 pub fn sys_mprotect(addr: usize, length: usize, prot: usize) -> Result {
     let token = current_user_token();
     let page_table = PageTable::from_token(token);

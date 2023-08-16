@@ -1,3 +1,8 @@
+//! Syscall Implementation
+//!
+//! About syscall id in RISC-V: https://marcin.juszkiewicz.com.pl/download/tables/syscalls.html
+//! About syscall detail: [1](https://man7.org/linux/man-pages/index.html) [2](https://man7.org/linux/man-pages/dir_section_2.html)
+
 pub mod dispatcher;
 pub mod errno;
 pub mod futex;
@@ -96,7 +101,7 @@ gen_syscallid! {
     SYS_SYSLOG = 116,
     SYS_SCHED_YIELD = 124,
     SYS_KILL = 129,
-    SYS_TILL = 130,
+    SYS_TKILL = 130,
     SYS_TGKILL = 131,
     SYS_SIGTIMEDWAIT = 137,
     SYS_TIMES = 153,
