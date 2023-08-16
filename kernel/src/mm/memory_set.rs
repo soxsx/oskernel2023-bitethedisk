@@ -24,7 +24,7 @@ use nix::{
 pub struct MemorySet {
     pub page_table: PageTable,
 
-    pub vm_areas: Vec<VmArea>,
+    pub map_areas: Vec<VmArea>,
 
     pub mmap_manager: MmapManager,
     pub heap_areas: VmArea,
@@ -45,7 +45,7 @@ impl MemorySet {
     pub fn new_bare() -> Self {
         Self {
             page_table: PageTable::new(),
-            vm_areas: Vec::new(),
+            map_areas: Vec::new(),
             heap_areas: VmArea::new(
                 0.into(),
                 0.into(),
@@ -105,13 +105,13 @@ impl MemorySet {
     /// non-contiguous segments) based on the starting virtual page number.
     pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
         if let Some((idx, vm_area)) = self
-            .vm_areas
+            .map_areas
             .iter_mut()
             .enumerate()
             .find(|(_, area)| area.vpn_range.get_start() == start_vpn)
         {
             vm_area.erase_pagetable(&mut self.page_table);
-            self.vm_areas.remove(idx);
+            self.map_areas.remove(idx);
         }
     }
 
@@ -127,7 +127,7 @@ impl MemorySet {
             map_area.copy_data(&mut self.page_table, data.0, data.1, data.2);
         }
         // Push the generated data segment into areas to have its lifecycle controlled by areas.
-        self.vm_areas.push(map_area);
+        self.map_areas.push(map_area);
     }
 
     /// Insert a contiguous logical segment into the current address space
@@ -137,7 +137,7 @@ impl MemorySet {
     /// the child process's address space during COW creation, where specific
     /// physical page numbers need to be specified.
     pub fn push_mapped_area(&mut self, map_area: VmArea) {
-        self.vm_areas.push(map_area);
+        self.map_areas.push(map_area);
     }
 
     pub fn map_trampoline(&mut self) {
@@ -416,7 +416,7 @@ impl MemorySet {
         new_memory_set.map_signal_trampoline();
 
         // This part is for copy on write
-        let parent_areas = &user_space.vm_areas;
+        let parent_areas = &user_space.map_areas;
         let parent_page_table = &mut user_space.page_table;
         for area in parent_areas.iter() {
             match area.area_type {
@@ -576,7 +576,7 @@ impl MemorySet {
         self.remap_cow(vpn, ppn, former_ppn);
 
         // Note: Here, the reference count is reduced using the insert() method of BTreeMap.
-        for area in self.vm_areas.iter_mut() {
+        for area in self.map_areas.iter_mut() {
             let head_vpn = area.vpn_range.get_start();
             let tail_vpn = area.vpn_range.get_end();
             if vpn < tail_vpn && vpn >= head_vpn {
@@ -642,12 +642,12 @@ impl MemorySet {
     #[allow(unused)]
     pub fn recycle_data_pages(&mut self) {
         //*self = Self::new_bare();
-        self.vm_areas.clear();
+        self.map_areas.clear();
     }
 
     pub fn check_va_range(&self, start_va: VirtAddr, len: usize) -> bool {
         let end_va = VirtAddr::from(start_va.0 + len);
-        for area in self.vm_areas.iter() {
+        for area in self.map_areas.iter() {
             if area.vpn_range.get_start() <= start_va.floor()
                 && end_va.ceil() <= area.vpn_range.get_end()
             {
