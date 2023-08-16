@@ -16,7 +16,7 @@ NCPU = 2
 RUST_LOG := debug
 
 # Available features: no-page-cache,static-busybox,inode-drop,fu740,dev
-FEATURES ?= static-busybox
+FEATURES ?= --features static-busybox
 
 DEV ?= false
 
@@ -55,13 +55,13 @@ sdcard:
 	@cp $(SDCARD_BAK) $(SDCARD)
 
 kernel: initproc
-	@cargo build --release --features $(BOARD) --offline 
+	@cargo build --release --features $(BOARD) --offline
 
 kernel-dev: initproc
 ifeq ($(DEV), true)
-	@RUST_LOG=$(RUST_LOG) cargo build --release --offline --features $(FEATURES)
+	@RUST_LOG=$(RUST_LOG) cargo build --release --offline $(FEATURES)
 else
-	@RUST_LOG=error cargo build --release --offline --features $(FEATURES)
+	@RUST_LOG=error cargo build --release --offline $(FEATURES)
 endif
 
 run: kernel-dev sdcard
