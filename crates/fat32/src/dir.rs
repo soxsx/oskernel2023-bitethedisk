@@ -1,6 +1,7 @@
 //! Directory file traits definition and implementation for VirtFile
 //!
-// 磁盘中目录文件下目录项布局:(低地址 -> 高地址)
+// The layout of directory entries in a directory file on disk
+// (from low address to high address) is as follows:
 // fileA_lde_n
 // fileA_lde_n-1
 // ...
@@ -12,8 +13,7 @@
 // fileB_lde_1
 // fileB_sde
 // ...
-//
-// 注意: Fat32 规定目录文件的大小为 0
+// Note: Fat32 specifies that the size of the directory file is 0
 
 use super::entry::{LongDirEntry, ShortDirEntry};
 use super::vf::{DirEntryPos, VirtFile, VirtFileType};
@@ -104,7 +104,7 @@ impl Dir for VirtFile {
     // Dir Functions
 
     fn create(&self, name: &str, file_type: VirtFileType) -> Result<VirtFile, DirError> {
-        // 检测同名文件
+        // serach same name file
         assert!(self.is_dir());
         let option = self.find_by_name(name);
         if let Some(file) = option {
@@ -113,7 +113,7 @@ impl Dir for VirtFile {
             }
         }
         let (name_, ext_) = split_name_ext(name);
-        // 搜索空处
+        // serach empty position for dirent
         let mut entry_offset: usize;
 
         match self.empty_entry_index() {
@@ -128,43 +128,44 @@ impl Dir for VirtFile {
         // lfn(n) -> lfn(n-1) -> .. -> lfn(1) -> sfn
         let mut sde: ShortDirEntry;
         if name_.len() > 8 || ext_.len() > 3 {
-            // 长文件名 生成短文件名及对应目录项
+            // generate short name and dirent from long name
             let short_name = generate_short_name(name);
             let (_name, _ext) = short_name_format(short_name.as_str());
             sde = ShortDirEntry::new(NEW_VIRT_FILE_CLUSTER, &_name, &_ext, file_type);
             sde.set_name_case(ALL_UPPER_CASE); // 可能不必要
 
-            // 长文件名拆分
+            // Split long file name
             let mut lfn_vec = long_name_split(name);
-            // 需要创建的长文件名目录项个数
+            // Number of long file name directory entries to be created
             let lfn_cnt = lfn_vec.len();
-            // 逐个写入长名目录项
+            // Write long name directory entries one by one
             for i in 0..lfn_cnt {
-                // 按倒序填充长文件名目录项, 目的是为了避免名字混淆
+                // Fill in the long file name directory entry in reverse order to avoid name confusion
                 let mut order: u8 = (lfn_cnt - i) as u8;
                 if i == 0 {
-                    // 最后一个长文件名目录项, 将该目录项的序号与 0x40 进行或运算然后写入
+                    // The last long file name directory entry, perform bitwise OR with 0x40 and write the result
                     order |= 0x40;
                 }
-                // 初始化长文件名目录项
+                // Initialize the long file name directory entry
                 let lde = LongDirEntry::new_form_name_slice(
                     order,
                     lfn_vec.pop().unwrap(),
                     sde.gen_check_sum(),
                 );
-                // 写入长文件名目录项
+                // Write the long file name directory entry
                 let write_size = self.write_at(entry_offset, lde.as_bytes());
                 assert_eq!(write_size, DIRENT_SIZE);
-                // 更新写入位置
+                // Update the write position
                 entry_offset += DIRENT_SIZE;
             }
         } else {
-            // 短文件名
+            // short name
             let (_name, _ext) = short_name_format(name);
             sde = ShortDirEntry::new(NEW_VIRT_FILE_CLUSTER, &_name, &_ext, file_type);
-            sde.set_name_case(ALL_UPPER_CASE); // 可能不必要
+            sde.set_name_case(ALL_UPPER_CASE); // maybe not necessary
 
-            // Linux中文件创建都会创建一个长文件名目录项, 用于处理文件大小写问题
+            // Linux will create a long file name directory entry when
+            // creating a file to handle the case of the file
             let order: u8 = 1 | 0x40;
             let name_array = long_name_split(name)[0];
             let lde = LongDirEntry::new_form_name_slice(order, name_array, sde.gen_check_sum());
@@ -173,7 +174,7 @@ impl Dir for VirtFile {
             entry_offset += DIRENT_SIZE;
         }
 
-        // 写短目录项(长文件名也是有短文件名目录项的)
+        // write short dirent(there is also a short dirent for long file name)
         let wirte_size = self.write_at(entry_offset, sde.as_bytes());
         assert_eq!(wirte_size, DIRENT_SIZE);
         assert!(
@@ -182,11 +183,13 @@ impl Dir for VirtFile {
             self.first_cluster()
         );
 
-        // 验证
+        // validation
         if let Some(file) = self.find_by_name(name) {
             // 如果是目录类型, 需要创建.和..
             if file_type == VirtFileType::Dir {
-                // 先写入 .. 使得目录获取第一个簇 (否则 increase_size 不会分配簇而是直接返回, 导致 first_cluster 为 0, 进而 panic)
+                // First, write ".." to make the directory obtain the first cluster
+                // (otherwise, increase_size will not allocate a cluster and will
+                // return directly, causing the first_cluster to be 0, leading to a panic)
                 let (_name, _ext) = short_name_format("..");
                 let mut parent_sde = ShortDirEntry::new(
                     self.first_cluster() as u32,
@@ -194,7 +197,8 @@ impl Dir for VirtFile {
                     &_ext,
                     VirtFileType::Dir,
                 );
-                // fat32 规定目录文件大小为 0, 不要更新目录文件的大小
+                // According to FAT32 specifications, the directory file size is 0,
+                // so do not update the size of the directory file.
                 file.write_at(DIRENT_SIZE, parent_sde.as_bytes_mut());
 
                 let (_name, _ext) = short_name_format(".");
@@ -218,7 +222,7 @@ impl VirtFile {
     fn find_by_lfn(&self, name: &str) -> Option<VirtFile> {
         let name_vec = long_name_split(name);
         let name_cnt = name_vec.len();
-        //  在目录文件中的偏移
+
         let mut index = 0;
         let mut lde = LongDirEntry::empty();
         let mut lde_pos_vec: Vec<DirEntryPos> = Vec::new();
@@ -229,8 +233,9 @@ impl VirtFile {
                 return None;
             }
 
-            // 先匹配最后一个长文件名目录项, 即长文件名的最后一块
-            if lde.attr() == ATTR_LONG_NAME // 防止为短文件名
+            // First, match the last long file name directory entry,
+            // which corresponds to the last block of the long file name.
+            if lde.attr() == ATTR_LONG_NAME // must be long name
             && lde.name_utf16() == name_last
             {
                 let mut order = lde.order();
@@ -238,21 +243,23 @@ impl VirtFile {
                     index += DIRENT_SIZE;
                     continue;
                 }
-                // 恢复 order为正确的次序值
+                // Restore the correct order value for 'order'
                 order = order ^ LAST_LONG_ENTRY;
-                // 如果长文件名目录项数量对不上, 则跳过继续搜索
+                // If the number of long file name directory entries does not match,
+                // skip and continue searching
                 if order as usize != name_cnt {
                     index += DIRENT_SIZE;
                     continue;
                 }
-                // 如果 order 匹配通过, 开一个循环继续匹配长名目录项
+                // If the order matches, enter a loop to continue matching the
+                // long name directory entries
                 let mut is_match = true;
                 for i in 1..order as usize {
                     read_size = self.read_at(index + i * DIRENT_SIZE, lde.as_bytes_mut());
                     if read_size != DIRENT_SIZE {
                         return None;
                     }
-                    // 匹配前一个名字段, 如果失败就退出
+                    // Match the previous name field, and exit if it fails
                     if lde.name_utf16() != name_vec[name_cnt - 1 - i]
                         || lde.attr() != ATTR_LONG_NAME
                     {
@@ -261,7 +268,7 @@ impl VirtFile {
                     }
                 }
                 if is_match {
-                    // 如果成功, 读短目录项, 进行校验
+                    // If successful, read the short directory entry for verification
                     let checksum = lde.check_sum();
                     let mut sde = ShortDirEntry::empty();
                     let sde_offset = index + name_cnt * DIRENT_SIZE;
@@ -272,7 +279,8 @@ impl VirtFile {
                     if !sde.is_deleted() && checksum == sde.gen_check_sum() {
                         let sde_pos = self.dirent_cluster_pos(sde_offset).unwrap();
                         for i in 0..order as usize {
-                            // 存入长名目录项位置了, 第一个在栈顶
+                            // The positions of the long name directory entries are stored,
+                            // with the first one at the top of the stack.
                             let lde_pos = self.dirent_cluster_pos(index + i * DIRENT_SIZE);
                             lde_pos_vec.push(lde_pos.unwrap());
                         }
@@ -310,7 +318,7 @@ impl VirtFile {
                 return None;
             }
 
-            // 判断名字是否一样
+            // check if the names are the same:
             if !sde.is_deleted() && name == sde.get_name_uppercase() {
                 let sde_pos = self.dirent_cluster_pos(index).unwrap();
                 let lde_pos_vec: Vec<DirEntryPos> = Vec::new();
@@ -337,19 +345,17 @@ impl VirtFile {
     }
 
     pub fn find_by_name(&self, name: &str) -> Option<VirtFile> {
-        // 不是目录则退出
         assert!(self.is_dir());
         let (name_, ext_) = split_name_ext(name);
         if name_.len() > 8 || ext_.len() > 3 {
-            //长文件名
             return self.find_by_lfn(name);
         } else {
-            // 短文件名
             return self.find_by_sfn(name);
         }
     }
 
-    // 查找可用目录项, 返回 offset, 簇不够也会返回相应的 offset
+    // Find an available directory entry and return the offset.
+    // If there are not enough clusters, it will also return the corresponding offset.
     fn empty_entry_index(&self) -> Result<usize, DirError> {
         if !self.is_dir() {
             return Err(DirError::NotDir);
@@ -358,9 +364,11 @@ impl VirtFile {
         let mut index = 0;
         loop {
             let read_size = self.read_at(index, sde.as_bytes_mut());
-            if read_size == 0 // 读到目录文件末尾 -> 超过 dir_size, 需要分配新簇 -> write_at 中处理 -> increase_size
-            || sde.is_empty()
-            {
+            // Reached the end of the directory file ->
+            // exceeded dir_size, need to allocate a new cluster ->
+            // handled in write_at ->
+            // increase_size
+            if read_size == 0 || sde.is_empty() {
                 return Ok(index);
             } else {
                 index += DIRENT_SIZE;
@@ -376,7 +384,8 @@ impl VirtFile {
         }
     }
 
-    // 返回二元组, 第一个是文件名, 第二个是文件属性(文件或者目录)
+    // Return a tuple where the first element is the file name and the
+    // second element is the file attribute (file or directory).
     pub fn ls_with_attr(&self) -> Result<Vec<(String, u8)>, DirError> {
         if !self.is_dir() {
             return Err(DirError::NotDir);
@@ -386,22 +395,23 @@ impl VirtFile {
         let mut offset = 0usize;
         loop {
             let read_size = self.read_at(offset, entry.as_bytes_mut());
-            // 读取完了
+            // Finished reading
             if read_size != DIRENT_SIZE || entry.is_empty() {
                 return Ok(list);
             }
-            // 文件被标记删除则跳过
+            // Skip if the file is marked as deleted
             if entry.is_deleted() {
                 offset += DIRENT_SIZE;
                 continue;
             }
             if entry.attr() != ATTR_LONG_NAME {
-                // 短文件名
+                // Short file name
                 let sde: ShortDirEntry = unsafe { core::mem::transmute(entry) };
                 list.push((sde.get_name_lowercase(), sde.attr()));
             } else {
-                // 长文件名
-                // 如果是长文件名目录项, 则必是长文件名最后的那一段
+                // Long file name
+                // If it's a long file name directory entry, it must be the last
+                // segment of the long file name
                 let mut name = String::new();
                 let order = entry.order() ^ LAST_LONG_ENTRY;
                 for _ in 0..order {
