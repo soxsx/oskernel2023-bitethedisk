@@ -112,6 +112,7 @@ pub struct KFile {
 // You can see the introduction at the beginning of this file.
 pub struct Inode {
     pub file: Mutex<Arc<VirtFile>>,
+    fid: u64,
     #[cfg(not(feature = "no-page-cache"))]
     pub page_cache: Mutex<Option<Arc<PageCache>>>,
     #[cfg(not(feature = "no-page-cache"))]
@@ -286,6 +287,9 @@ impl KFile {
         // clear old direntry
         self.delete_direntry();
     }
+    pub fn fid(&self) -> u64 {
+        self.inode.fid
+    }
 }
 
 lazy_static! {
@@ -358,11 +362,13 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<A
                 } else {
                     "/"
                 };
+                let fid = ino_alloc();
                 #[cfg(not(feature = "no-page-cache"))]
                 let file_size = file.file_size();
                 #[cfg(not(feature = "no-page-cache"))]
                 let inode = Arc::new(Inode {
                     file: Mutex::new(file),
+                    fid,
                     page_cache: Mutex::new(None),
                     file_size: Mutex::new(file_size),
                 });
@@ -400,11 +406,13 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<A
                     // find parent to create file
                     Ok(parent) => match parent.create(name, create_type as VirtFileType) {
                         Ok(file) => {
+                            let fid = ino_alloc();
                             #[cfg(not(feature = "no-page-cache"))]
                             let file_size = file.file_size();
                             #[cfg(not(feature = "no-page-cache"))]
                             let inode = Arc::new(Inode {
                                 file: Mutex::new(Arc::new(file)),
+                                fid,
                                 page_cache: Mutex::new(None),
                                 file_size: Mutex::new(file_size),
                             });
@@ -442,11 +450,13 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<A
                     file.clear();
                 }
                 let name = file.name().to_string();
+                let fid = ino_alloc();
                 #[cfg(not(feature = "no-page-cache"))]
                 let file_size = file.file_size();
                 #[cfg(not(feature = "no-page-cache"))]
                 let inode = Arc::new(Inode {
                     file: Mutex::new(file),
+                    fid,
                     file_size: Mutex::new(file_size),
                     page_cache: Mutex::new(None),
                 });
@@ -901,7 +911,7 @@ impl File for KFile {
         let atime = time_info.access_time;
         let mtime = time_info.modify_time;
         let ctime = time_info.create_time;
-        let ino = ino_alloc();
+        let ino = self.fid();
         kstat.init(
             st_size as i64,
             st_blksize as i32,
@@ -949,6 +959,9 @@ impl File for KFile {
     fn truncate(&self, new_length: usize) {
         let inner = self.file();
         inner.modify_size(new_length);
+    }
+    fn fid(&self) -> u64 {
+        self.fid()
     }
     // Currently not used in the kernel. Design problem, it can be used to design general
     // Inode and PageCache, which can use this method to create page cache
