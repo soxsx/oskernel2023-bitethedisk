@@ -358,16 +358,20 @@ impl TaskControlBlock {
         (user_sp, args_ptr_base as usize, envs_ptr_base as usize)
     }
 
-    /// 用来实现 exec 系统调用, 即当前进程加载并执行另一个 ELF 格式可执行文件
+    /// Used to implement the exec system call, which loads and executes another ELF
+    /// format executable file within the current process.
     pub fn exec(&self, elf_file: Arc<dyn File>, args: Vec<String>, envs: Vec<String>) {
-        // 从 ELF 文件生成一个全新的地址空间并直接替换
+        // Generate a brand new address space from an ELF file and replace the current address space directly.
         let LoadedELF {
             memory_set,
             user_stack_top: user_sp,
             elf_entry: entry_point,
             mut auxs,
         } = MemorySet::load_elf(elf_file);
-        assert!(self.pid.0 == self.tgid, "exec task must be thread");
+        assert!(
+            self.pid.0 == self.tgid,
+            "exec task must be main thread(process)"
+        );
         // let trap_addr = trap_context_position(self.pid() - self.tgid);
         // let trap_cx_ppn = memory_set
         //     .translate(VirtAddr::from(trap_addr).into())
@@ -379,27 +383,28 @@ impl TaskControlBlock {
             .unwrap()
             .ppn();
 
-        // memory_set
-        // 这将导致原有的地址空间生命周期结束, 里面包含的全部物理页帧都会被回收,
-        // 结果表现为: 原有的地址空间中的所有页表项的 ppn 引用计数减 1
+        // This will result in the end of the lifecycle of the original address space,
+        // and all the physical page frames contained within it will be reclaimed.
+        // The result is that the reference count (ppn) of all page table entries in
+        // the original address space will be decremented by 1.
         let mut ms = self.memory_set.write();
         *ms = memory_set;
-        drop(ms); // 避免接下来的操作导致死锁
+        drop(ms); // to avoid deadlock
 
-        // fd_table
         let mut fd_table = self.fd_table.write();
         fd_table
             .iter_mut()
             .find(|fd| fd.is_some() && !fd.as_ref().unwrap().available())
-            .take(); // TODO
+            .take();
 
         let mut inner = self.inner_mut();
         inner.trap_cx_ppn = trap_cx_ppn;
         let trap_cx = inner.trap_context();
-        drop(inner); // 避免接下来的操作导致死锁
+        drop(inner); // to avoid deadlock
 
         let (user_sp, _args_ptr, _envs_ptr) = self.init_ustack(user_sp, args, envs, &mut auxs);
-        // 修改新的地址空间中的 Trap 上下文, 将解析得到的应用入口点, 用户栈位置以及一些内核的信息进行初始化
+        // Modify the Trap context in the new address space to initialize the resolved application
+        // entry point, user stack location, and some kernel information
         *trap_cx = TrapContext::app_init_context(
             entry_point,
             user_sp,
@@ -409,7 +414,8 @@ impl TaskControlBlock {
         );
     }
 
-    /// 用来实现 fork 系统调用, 即当前进程 fork 出来一个与之几乎相同的子进程
+    /// Used to implement the fork system call, which creates a nearly identical child process/thread
+    /// from the current process.
     pub fn fork(self: &Arc<TaskControlBlock>, flags: CloneFlags) -> Arc<TaskControlBlock> {
         // 分配一个 PID
         let pid_handle = pid_alloc();
@@ -419,18 +425,18 @@ impl TaskControlBlock {
             pid_handle.0
         };
         let private_tid = pid_handle.0 - tgid;
-        // 根据 PID 创建一个应用内核栈
+        // create a kernel stack for the new process according to the PID
         let kernel_stack = KernelStack::new(&pid_handle);
 
         let kernel_stack_top = kernel_stack.top();
 
-        // 拷贝用户地址空间
+        // copy user address space
         let memory_set = if flags.contains(CloneFlags::VM) {
             self.memory_set.clone()
         } else {
             Arc::new(RwLock::new(MemorySet::from_copy_on_write(
                 &mut self.memory_set.write(),
-            ))) // use 4 pages
+            )))
         };
 
         if flags.contains(CloneFlags::THREAD) {
@@ -486,8 +492,6 @@ impl TaskControlBlock {
             memory_set,
             fd_table,
             sigactions,
-            // set_child_tid: 0,
-            // clear_child_tid: 0,
             kernel_stack,
             inner: RwLock::new(TaskControlBlockInner {
                 trap_cx_ppn,
@@ -515,27 +519,21 @@ impl TaskControlBlock {
             }),
         });
 
-        // 把新生成的进程加入到子进程向量中
+        // push the new process/thread into the children vector
         parent_inner.children.push(task_control_block.clone());
-        // 更新子进程 trap 上下文中的栈顶指针
+        // update the stack pointer in the child process trap context
         let trap_cx = task_control_block.inner_mut().trap_context();
         trap_cx.kernel_sp = kernel_stack_top;
 
         task_control_block
     }
 
-    /// 尝试用时加载缺页, 目前只支持mmap缺页
+    /// Attempt to load a page on demand.
+    /// - va: Virtual address of the page fault
     ///
-    /// - 参数:
-    ///     - `va`: 缺页中的虚拟地址
-    ///     - `is_load`: 加载(1)/写入(0)
-    /// - 返回值:
-    ///     - `0`: 成功加载缺页
-    ///     - `-1`: 加载缺页失败
-    ///
-    /// 分别用于:
-    ///     - 用户态: handler page fault
-    ///     - 内核态:  translate_bytes_buffer
+    /// Used for:
+    /// - User mode: handler page fault
+    /// - Kernel mode: translate_bytes_buffer
     pub fn check_lazy(&self, va: VirtAddr) -> isize {
         let mut memory_set = self.memory_set.write();
 
@@ -577,7 +575,7 @@ impl TaskControlBlock {
         }
     }
 
-    // 在进程虚拟地址空间中分配创建一片虚拟内存地址映射
+    // Allocate and create a virtual memory address mapping in the process's virtual address space.
     pub fn mmap(
         &self,
         addr: usize,
@@ -592,35 +590,38 @@ impl TaskControlBlock {
         }
 
         let fd_table = self.fd_table.read().clone();
-        // memory_set mut borrow
-        let mut ms_mut = self.memory_set.write();
+        let mut memory_set = self.memory_set.write();
         let mut start_va = VirtAddr::from(0);
-        // "prot<<1" 右移一位以符合 MapPermission 的权限定义
-        // "1<<4" 增加 MapPermission::U 权限
+        // Right-shift "prot<<1" by one bit to match the permission definition of MapPermission.
+        // Add "1<<4" to include the MapPermission::U permission.
         if addr == 0 {
-            start_va = ms_mut.mmap_manager.get_mmap_top();
+            start_va = memory_set.mmap_manager.get_mmap_top();
         }
 
         if flags.contains(MmapFlags::MAP_FIXED) {
             start_va = VirtAddr::from(addr);
-            ms_mut.mmap_manager.remove(start_va, length);
+            memory_set.mmap_manager.remove(start_va, length);
         }
         let file = if flags.contains(MmapFlags::MAP_ANONYMOUS) {
             None
         } else {
             fd_table[fd as usize].clone()
         };
-        ms_mut
+        memory_set
             .mmap_manager
             .push(start_va, length, prot, flags, offset, file);
-        drop(ms_mut);
+        drop(memory_set);
         start_va.0
     }
 
     pub fn munmap(&self, addr: usize, length: usize) -> isize {
         let start_va = VirtAddr(addr);
-        // 可能会有 mmap 后没有访问直接 munmap 的情况, 需要检查是否访问过 mmap 的区域(即
-        // 是否引发了 lazy_mmap), 防止 unmap 页表中不存在的页表项引发 panic
+        // There may be cases where munmap is called without accessing the mmaped region directly.
+        // It is necessary to check whether the mmaped area has been accessed (i.e., whether
+        // lazy_mmap has been triggered) to prevent panics caused by unmapping page table entries
+        // that do not exist.
+        // This situation occurred during copy-on-write and has been handled (MmapPage.valid).
+        // Refer to the from_copy_on_write function for details.
         self.memory_set
             .write()
             .mmap_manager
@@ -633,10 +634,9 @@ impl TaskControlBlock {
     }
 
     pub fn grow_proc(&self, grow_size: isize) -> usize {
-        // memory_set mut borrow
-        let mut ms_mut = self.memory_set.write();
-        let brk = ms_mut.brk;
-        let brk_start = ms_mut.brk_start;
+        let mut memory_set = self.memory_set.write();
+        let brk = memory_set.brk;
+        let brk_start = memory_set.brk_start;
         if grow_size > 0 {
             let growed_addr: usize = brk + grow_size as usize;
             let limit = brk_start + USER_HEAP_SIZE;
@@ -649,15 +649,15 @@ impl TaskControlBlock {
                     self.pid.0
                 );
             }
-            ms_mut.brk = growed_addr;
+            memory_set.brk = growed_addr;
         } else {
             let shrinked_addr: usize = brk + grow_size as usize;
             if shrinked_addr < brk_start {
                 panic!("Memory shrinked to the lowest boundary!")
             }
-            ms_mut.brk = shrinked_addr;
+            memory_set.brk = shrinked_addr;
         }
-        return ms_mut.brk;
+        return memory_set.brk;
     }
 }
 

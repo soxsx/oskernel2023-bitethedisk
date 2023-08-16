@@ -79,7 +79,7 @@ impl MemorySet {
         self.page_table.token()
     }
 
-    /// 在当前地址空间插入一个 `Framed` 方式映射到物理内存的逻辑段
+    /// Insert a Framed logical segment mapped to physical memory into the current address space.
     pub fn insert_framed_area(
         &mut self,
         start_va: VirtAddr,
@@ -101,7 +101,8 @@ impl MemorySet {
         );
     }
 
-    /// 通过起始虚拟页号删除对应的逻辑段(包括连续逻辑段和离散逻辑段)
+    /// Remove the corresponding logical segments (including both contiguous and
+    /// non-contiguous segments) based on the starting virtual page number.
     pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
         if let Some((idx, vm_area)) = self
             .vm_areas
@@ -114,29 +115,31 @@ impl MemorySet {
         }
     }
 
-    /// 在当前地址空间插入一个新的连续逻辑段
+    /// Insert a new contiguous logical segment into the current address space.
     ///
-    /// - 物理页号是随机分配的
-    /// - 如果是以 Framed 方式映射到物理内存,
-    /// 还可以可选性地在那些被映射到的物理页帧上写入一些初始化数据
-    /// - data:(osinode,offset,len,page_offset)
+    /// - Physical page numbers are randomly allocated.
+    /// - If the mapping is done in the Framed mode to physical memory,
+    ///   it is optional to write some initialization data on the mapped physical page frames.
+    /// - data: (osinode, offset, len, page_offset)
     pub fn insert(&mut self, mut map_area: VmArea, data: Option<(usize, usize, usize)>) {
         map_area.inflate_pagetable(&mut self.page_table);
         if let Some(data) = data {
-            // 写入初始化数据, 如果数据存在
             map_area.copy_data(&mut self.page_table, data.0, data.1, data.2);
         }
-        self.vm_areas.push(map_area); // 将生成的数据段压入 areas 使其生命周期由areas控制
+        // Push the generated data segment into areas to have its lifecycle controlled by areas.
+        self.vm_areas.push(map_area);
     }
 
-    /// 在当前地址空间插入一段已被分配空间的连续逻辑段
+    /// Insert a contiguous logical segment into the current address space
+    /// with pre-allocated space.
     ///
-    /// 主要用于 COW 创建时子进程空间连续逻辑段的插入, 其要求指定物理页号
+    /// This is mainly used for inserting contiguous logical segments into
+    /// the child process's address space during COW creation, where specific
+    /// physical page numbers need to be specified.
     pub fn push_mapped_area(&mut self, map_area: VmArea) {
         self.vm_areas.push(map_area);
     }
 
-    /// 映射跳板的虚拟页号和物理物理页号
     pub fn map_trampoline(&mut self) {
         extern "C" {
             fn strampoline();
@@ -206,7 +209,7 @@ impl MemorySet {
         memory_set.map_signal_trampoline();
         memory_set.map_trap_context();
 
-        // 第一次读取前64字节确定程序表的位置与大小
+        // Read the first 64 bytes to determine the position and size of the program table.
         let elf_head_data = elf_file.kernel_read_with_offset(0, 64);
         let elf_head_data_slice = elf_head_data.as_slice();
         let elf = xmas_elf::ElfFile::new(elf_head_data_slice).unwrap();
@@ -215,18 +218,19 @@ impl MemorySet {
         let ph_offset = elf.header.pt2.ph_offset() as usize;
         let ph_count = elf.header.pt2.ph_count() as usize;
 
-        // 进行第二次读取, 这样的elf对象才能正确解析程序段头的信息
+        // Perform a second read so that the ELF object can correctly parse the
+        // information in the program header.
         let elf_head_data =
             elf_file.kernel_read_with_offset(0, ph_offset + ph_count * ph_entry_size);
         let elf = xmas_elf::ElfFile::new(elf_head_data.as_slice()).unwrap();
 
         let mut head_va = None; // top va of ELF which points to ELF header
 
-        // 记录目前涉及到的最大的虚拟地址
+        // Record the maximum virtual address currently involved.
         let mut brk_start_va = VirtAddr(0);
         let mut dynamic_link = false;
         let mut entry_point = elf.header.pt2.entry_point() as usize;
-        // 遍历程序段进行加载
+        // Iterate through the program segments for loading.
         for i in 0..ph_count as u16 {
             let ph = elf.program_header(i).unwrap();
             match ph.get_type().unwrap() {
@@ -281,7 +285,7 @@ impl MemorySet {
             let path = AbsolutePath::from_str("/libc.so");
             let interpreter_file = open(path, OpenFlags::O_RDONLY, CreateMode::empty())
                 .expect("can't find interpreter file");
-            // 第一次读取前64字节确定程序表的位置与大小
+
             let interpreter_head_data = interpreter_file.kernel_read_with_offset(0, 64);
             let interp_elf = xmas_elf::ElfFile::new(interpreter_head_data.as_slice()).unwrap();
 
@@ -289,13 +293,12 @@ impl MemorySet {
             let ph_offset = interp_elf.header.pt2.ph_offset() as usize;
             let ph_count = interp_elf.header.pt2.ph_count() as usize;
 
-            // 进行第二次读取, 这样的elf对象才能正确解析程序段头的信息
             let interpreter_head_data =
                 interpreter_file.kernel_read_with_offset(0, ph_offset + ph_count * ph_entry_size);
             let interp_elf = xmas_elf::ElfFile::new(interpreter_head_data.as_slice()).unwrap();
             auxs.push(AuxEntry(AT_BASE, LINK_BASE));
             entry_point = LINK_BASE + interp_elf.header.pt2.entry_point() as usize;
-            // 获取 program header 的数目
+            // get the number of program header
             let ph_count = interp_elf.header.pt2.ph_count();
             for i in 0..ph_count {
                 let ph = interp_elf.program_header(i).unwrap();
@@ -328,9 +331,6 @@ impl MemorySet {
         } else {
             auxs.push(AuxEntry(AT_BASE, 0));
         }
-
-        // let user_stack_top = TRAP_CONTEXT_BASE - THREAD_LIMIT * PAGE_SIZE;
-        // let user_stack_bottom = user_stack_top - USER_STACK_SIZE;
 
         let user_stack_top = USER_STACK_BASE;
         let user_stack_bottom = user_stack_top - USER_STACK_SIZE;
@@ -369,7 +369,6 @@ impl MemorySet {
         // do not add this line, too wide
         // auxs.push(AuxEntry(AT_NULL, 0));
 
-        // 分配用户栈, 懒加载
         memory_set.user_stack_start = user_stack_bottom;
         memory_set.user_stack_end = user_stack_top;
         memory_set.user_stack_areas = VmArea::new(
@@ -382,7 +381,6 @@ impl MemorySet {
             0,
         );
 
-        // 分配用户堆, 懒加载
         let user_heap_bottom: usize = usize::from(brk_start_va) + PAGE_SIZE;
         let user_heap_top: usize = user_heap_bottom + USER_HEAP_SIZE;
         // println!("[DEBUG] user heap:0x{:x?},0x{:x?}",user_heap_bottom,user_heap_top);
@@ -407,7 +405,7 @@ impl MemorySet {
         }
     }
 
-    /// 以COW的方式复制一个地址空间
+    /// Copy an address space using the Copy-On-Write (COW) technique.
     pub fn from_copy_on_write(user_space: &mut MemorySet) -> MemorySet {
         let mut new_memory_set = Self::new_bare(); // use 1 page (page_table root)
 
@@ -463,13 +461,13 @@ impl MemorySet {
         }
         new_memory_set.mmap_manager = user_space.mmap_manager.clone();
         for (vpn, mmap_page) in user_space.mmap_manager.mmap_map.iter() {
+            // Only perform copy-on-write on the already mapped segments.
             if mmap_page.valid {
                 let vpn = vpn.clone();
                 if let Some(pte) = parent_page_table.translate(vpn) {
                     // change the map permission of both pagetable
                     // get the former flags and ppn
 
-                    // 只对已经map过的进行cow
                     let pte_flags = pte.flags() & !PTEFlags::W;
                     let src_ppn = pte.ppn();
                     // frame_add_ref(src_ppn);
@@ -487,7 +485,7 @@ impl MemorySet {
             // change the map permission of both pagetable
             // get the former flags and ppn
 
-            // 只对已经map过的进行cow
+            // Only perform copy-on-write on the already mapped segments.
             if let Some(pte) = parent_page_table.translate(vpn) {
                 let pte_flags = pte.flags() & !PTEFlags::W;
                 let src_ppn = pte.ppn();
@@ -513,7 +511,7 @@ impl MemorySet {
             // change the map permission of both pagetable
             // get the former flags and ppn
 
-            // 只对已经map过的进行cow
+            // Only perform copy-on-write on the already mapped segments.
             if let Some(pte) = parent_page_table.translate(vpn) {
                 let pte_flags = pte.flags() & !PTEFlags::W;
                 let src_ppn = pte.ppn();
@@ -541,7 +539,6 @@ impl MemorySet {
                 // change the map permission of both pagetable
                 // get the former flags and ppn
 
-                // 只对已经map过的进行cow
                 if let Some(pte) = parent_page_table.translate(vpn) {
                     let pte_flags = pte.flags();
                     let src_ppn = pte.ppn();
@@ -563,7 +560,7 @@ impl MemorySet {
 
     #[no_mangle]
     pub fn cow_alloc(&mut self, vpn: VirtPageNum, former_ppn: PhysPageNum) -> isize {
-        // 如果只有一个引用, 那么改回 writable, 而不是重新分配 ppn
+        // If there is only one reference, change it back to writable instead of reallocating ppn.
         if enquire_refcount(former_ppn) == 1 {
             self.page_table.reset_cow(vpn);
             // change the flags of the src_pte
@@ -573,20 +570,21 @@ impl MemorySet {
             );
             return 0;
         }
-        // 如果有多个引用, 那么分配一个新的物理页, 将内容复制过去
+        // If there are multiple references, allocate a new physical page and copy the content to it.
         let frame = alloc_frame().unwrap();
         let ppn = frame.ppn;
         self.remap_cow(vpn, ppn, former_ppn);
 
-        // 注意: 这里通过 BTreeMap insert() 减少了引用计数
+        // Note: Here, the reference count is reduced using the insert() method of BTreeMap.
         for area in self.vm_areas.iter_mut() {
             let head_vpn = area.vpn_range.get_start();
             let tail_vpn = area.vpn_range.get_end();
             if vpn < tail_vpn && vpn >= head_vpn {
-                // BTreeMap insert 之前, enqueue_refcount(former_ppn) > 1
+                // Before the BTreeMap insert, enqueue_refcount(former_ppn) > 1
                 area.frame_map.insert(vpn, frame);
-                // BTreeMap insert 之后, 由于在 from_copy_on_write() 时已经在 frame_map 中插入 vpn key,
-                // insert 会返回旧的 value, 原有 FrameTracker drop, 减少 former_ppn 的引用计数
+                // After the BTreeMap insert, since vpn key has already been inserted in
+                // frame_map during from_copy_on_write(), the insert will return the old value,
+                // the original FrameTracker will be dropped, reducing the reference count of former_ppn.
                 return 0;
             }
         }
@@ -627,31 +625,25 @@ impl MemorySet {
         0
     }
 
-    /// 根据多级页表和 vpn 查找页表项
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.page_table.translate(vpn)
     }
 
-    /// 回收应用地址空间
+    /// Reclaim the application address space.
     ///
-    /// 将地址空间中的逻辑段列表 areas 清空(即执行 Vec 向量清空),
-    /// 这将导致应用地址空间被回收(即进程的数据和代码对应的物理页帧都被回收),
-    /// 但用来存放页表的那些物理页帧此时还不会被回收(会由父进程最后回收子进程剩余的占用资源)
+    /// Clear the list of logical segments areas (i.e., perform a clear
+    /// operation on the Vec vector).
+    /// This will result in the application address space being reclaimed
+    /// (i.e., the physical page frames corresponding to the process's data
+    /// and code will be reclaimed).
+    /// However, the physical page frames used to store the page tables will
+    /// not be reclaimed at this point (they will be reclaimed by the parent
+    /// process as it cleans up the remaining resources of the child process).
     #[allow(unused)]
     pub fn recycle_data_pages(&mut self) {
         //*self = Self::new_bare();
         self.vm_areas.clear();
     }
-
-    /// 在地址空间中插入一个空的离散逻辑段
-    ///
-    /// - 已确定:
-    ///     - 起止虚拟地址
-    ///     - 映射方式: Framed
-    ///     - map_perm
-    /// - 留空:
-    ///     - vpn_table
-    ///     - data_frames
 
     pub fn check_va_range(&self, start_va: VirtAddr, len: usize) -> bool {
         let end_va = VirtAddr::from(start_va.0 + len);

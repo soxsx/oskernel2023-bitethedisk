@@ -6,12 +6,12 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use nix::{MmapFlags, MmapProts};
 
-/// mmap 块管理器
+/// Mmap Block Manager
 ///
-/// - `mmap_start`: 地址空间中 mmap 区块起始虚地址
-/// - `mmap_top`: 地址空间中已用的最高的 mmap 区块的虚地址
-/// - `mmap_map`: 虚拟页号 -> mmap页
-/// - `frame_trackers`: 虚拟页号 -> 物理页帧
+/// - mmap_start: Starting virtual address of mmap blocks in the address space.
+/// - mmap_top: Highest used virtual address of mmap blocks in the address space.
+/// - mmap_map: Virtual page number to mmap page mapping.
+/// - frame_trackers: Virtual page number to physical page frame mapping.
 #[derive(Clone)]
 pub struct MmapManager {
     pub mmap_start: VirtAddr,
@@ -64,22 +64,22 @@ impl MmapManager {
     }
 }
 
-/// mmap 块
+/// Mmap Block
 ///
-/// 用于记录 mmap 空间信息, mmap数据并不存放在此
+/// Used to record information about mmap space. Mmap data is not stored here.
 #[derive(Clone)]
 pub struct MmapPage {
-    /// mmap 空间起始虚拟地址
+    /// Starting virtual address of mmap space
     pub vpn: VirtPageNum,
-    /// mmap 空间有效性
+    /// Mmap space validity
     pub valid: bool,
-    /// mmap 空间权限
+    /// Mmap space permissions
     pub prot: MmapProts,
-    /// 映射方式
+    /// Mapping flags
     pub flags: MmapFlags,
-    /// 文件描述符
+    /// File descriptor
     pub file: Option<Arc<dyn File>>,
-    /// 映射文件偏移地址
+    /// Mapped file offset address
     pub offset: usize,
 }
 
