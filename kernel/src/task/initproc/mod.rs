@@ -70,7 +70,7 @@ use spin::RwLock;
 #[cfg(feature = "static-busybox")]
 lazy_static! {
     pub static ref BUSYBOX: RwLock<Busybox> = RwLock::new({
-        info!("### busybox init ###");
+        info!("Start Static BusyBox");
         extern "C" {
             fn busybox_entry();
             fn busybox_tail();
