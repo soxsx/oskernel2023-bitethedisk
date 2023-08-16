@@ -28,7 +28,6 @@
 #[cfg(not(feature = "no-page-cache"))]
 mod feature_no_page_cache {
     pub use crate::consts::PAGE_SIZE;
-    pub use crate::drivers::BLOCK_DEVICE;
     pub use crate::fs::PageCache;
     pub use alloc::collections::BTreeMap;
     pub use spin::RwLock;
@@ -36,6 +35,7 @@ mod feature_no_page_cache {
 #[cfg(not(feature = "no-page-cache"))]
 use feature_no_page_cache::*;
 
+use crate::drivers::BLOCK_DEVICE;
 use crate::fs::{ino_alloc, CreateMode, File, OpenFlags};
 use crate::mm::UserBuffer;
 use crate::return_errno;
@@ -54,10 +54,16 @@ use spin::{Mutex, MutexGuard};
 pub const INODE_CACHE_LIMIT: usize = 1024;
 
 /// InodeCache is used to cache the Inode of the file. Mainly used for the Open syscall.
-#[cfg(not(feature = "no-page-cache"))]
+#[cfg(all(not(feature = "no-page-cache"), not(feature = "hash-inode-cache")))]
 pub struct InodeCache(pub RwLock<BTreeMap<AbsolutePath, Arc<Inode>>>);
-#[cfg(not(feature = "no-page-cache"))]
+#[cfg(all(not(feature = "no-page-cache"), feature = "hash-inode-cache"))]
+pub struct InodeCache(pub RwLock<hashbrown::HashMap<AbsolutePath, Arc<Inode>>>);
+#[cfg(all(not(feature = "no-page-cache"), not(feature = "hash-inode-cache")))]
 pub static INODE_CACHE: InodeCache = InodeCache(RwLock::new(BTreeMap::new()));
+#[cfg(all(not(feature = "no-page-cache"), feature = "hash-inode-cache"))]
+lazy_static! {
+    pub static ref INODE_CACHE: InodeCache = InodeCache(RwLock::new(hashbrown::HashMap::new()));
+}
 #[cfg(not(feature = "no-page-cache"))]
 #[allow(unused)]
 impl InodeCache {
@@ -120,12 +126,14 @@ pub struct Inode {
 }
 
 #[cfg(feature = "inode-drop")]
+use crate::fs::DataState;
+#[cfg(feature = "inode-drop")]
+use fat32::BLOCK_SIZE;
+#[cfg(feature = "inode-drop")]
 impl Drop for Inode {
     // Actually, all the tests create files in memory, read and write files,
     // and do not need to be written back to the file system.
     fn drop(&mut self) {
-        use crate::fs::DataState;
-        use fat32::BLOCK_SIZE;
         let mut page_set: Vec<Arc<FilePage>> = Vec::new();
         let pages = &self.page_cache.lock().as_ref().cloned().unwrap().pages;
         for (_, page) in pages.read().iter() {
@@ -374,6 +382,7 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<A
                 });
                 #[cfg(feature = "no-page-cache")]
                 let inode = Arc::new(Inode {
+                    fid,
                     file: Mutex::new(file),
                 });
 
@@ -418,6 +427,7 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<A
                             });
                             #[cfg(feature = "no-page-cache")]
                             let inode = Arc::new(Inode {
+                                fid,
                                 file: Mutex::new(Arc::new(file)),
                             });
                             let res = Arc::new(KFile::new(
@@ -462,6 +472,7 @@ pub fn open(path: AbsolutePath, flags: OpenFlags, _mode: CreateMode) -> Result<A
                 });
                 #[cfg(feature = "no-page-cache")]
                 let inode = Arc::new(Inode {
+                    fid,
                     file: Mutex::new(file),
                 });
                 let res = Arc::new(KFile::new(
