@@ -3,10 +3,11 @@
 //! The kernel uniformly borrows the VirtFile provided by the fat32 file system
 //! as the object for the kernel to operate files.
 //!
-//! Due to the coupling between our kernel's files and the FAT32 file system
-//! (the kernel files are based on FAT32), for certain tests that require specific
-//! files/directories to be present in the kernel, they must be created in advance
-//! at this location.
+//! Due to the fact that files within the kernel actually encapsulate the VirtFile
+//! provided by FAT32 into KFile, resulting in data being synchronized to the disk
+//! every time it is written (the kernel file system is based on FAT32), it is necessary
+//! to create the required files/directories in advance for certain tests that demand
+//! the presence of such files in the kernel.
 //! A more reasonable solution would be to implement a tempfs within the kernel.
 //! However, as we are about to enter the second stage of the national competition,
 //! there is currently no time to improve the kernel file system.

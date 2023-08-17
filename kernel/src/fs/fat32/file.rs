@@ -11,8 +11,10 @@
 //!       After the first stage, we conducted our own analysis and addressed the issue of inefficient cluster chain lookup in the FAT32 library.
 //!       However, we were still troubled by the efficiency problems caused by direct disk/SD card read/write operations.
 //!       That's when we came across TitanixOS, which was developed by contestants of the same session.
-//!     - We greatly admire the design of TitanixOS, as its file and file system structure and functionality are excellent.
-//!       In comparison, our kernel file design appears relatively simplistic, mainly due to its strong coupling with the FAT32 file system.
+//!     - We greatly appreciate the design of TitanixOS. Its file and file system structure, as well as its functional design,
+//!       are exceptionally excellent. In comparison, our kernel file design appears somewhat rudimentary:
+//!       In our kernel, the files actually encapsulate the VirtFile provided by FAT32 into KFile,
+//!       which results in data being synchronized to the disk every time it is written.
 //!       However, after studying TitanixOS's PageCache design, we introduced a page caching mechanism for kernel files,
 //!       effectively creating a virtual tempfs and significantly improving execution efficiency.
 //! 3. Regarding the file_size field (storing the file size in the Inode):
