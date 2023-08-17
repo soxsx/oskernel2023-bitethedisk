@@ -11,7 +11,12 @@ use libd::{
     syscall::{exec, execve, exit, fork, sys_exec, waitpid},
 };
 
-const BUSYBOX_PID: isize = 2;
+// 根据是否开启 static-busybox 来看, 内核默认开启, 见 Kernal Cargo.toml 文件;
+// initporc pid = 0;
+// 开启 static-busybox 时: static-busybox pid = 1; busybox sh pid = 2;
+// 未开启 static-busybox 时: busybox sh pid = 1;
+// BUSYBOX_SH_PID 用于 exit 退出 shell
+const BUSYBOX_SH_PID: isize = 2;
 
 #[no_mangle]
 fn main() -> isize {
@@ -24,7 +29,7 @@ fn main() -> isize {
         );
     } else {
         let mut exit_code = 0_i32;
-        while waitpid(-1, &mut exit_code) != BUSYBOX_PID {}
+        while waitpid(-1, &mut exit_code) != BUSYBOX_SH_PID {}
         println!("child proc exit_code: {}", exit_code);
     }
     0
