@@ -36,7 +36,7 @@ mod feature_no_page_cache {
 use feature_no_page_cache::*;
 
 use crate::drivers::BLOCK_DEVICE;
-use crate::fs::{ino_alloc, CreateMode, File, OpenFlags};
+use crate::fs::{ino_alloc, CreateMode, File, OpenFlags, FilePage};
 use crate::mm::UserBuffer;
 use crate::return_errno;
 use crate::syscall::impls::Errno;
