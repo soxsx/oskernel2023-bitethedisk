@@ -27,14 +27,17 @@ use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use super::initproc::{STATIC_BUSYBOX_AUX, STATIC_BUSYBOX_ENTRY};
 
 pub struct TaskControlBlock {
+    // immutable
     pub pid: PidHandle,
     pub tgid: usize,
     pub kernel_stack: KernelStack,
 
+    // mutable according to clone flags
     pub sigactions: Arc<RwLock<[SigAction; MAX_SIGNUM as usize]>>,
     pub memory_set: Arc<RwLock<MemorySet>>,
     pub fd_table: Arc<RwLock<FDTable>>,
 
+    // mutable
     inner: RwLock<TaskControlBlockInner>,
 }
 
