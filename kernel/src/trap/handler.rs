@@ -10,7 +10,7 @@ use crate::{
     },
     timer::{check_interval_timer, get_timeval, set_next_trigger},
 };
-use nix::SigMask;
+use nix::SigSet;
 use riscv::register::{
     scause::{self, Exception, Interrupt, Trap},
     stval,
@@ -63,12 +63,12 @@ pub fn user_trap_handler() -> ! {
             let va: VirtAddr = (stval as usize).into();
             if va > TRAMPOLINE.into() {
                 // println!("[kernel trap] VirtAddr out of range!");
-                current_add_signal(SigMask::SIGSEGV);
+                current_add_signal(SigSet::SIGSEGV);
             }
             let task = current_task().unwrap();
             let lazy = task.check_lazy(va);
             if lazy != 0 {
-                current_add_signal(SigMask::SIGSEGV);
+                current_add_signal(SigSet::SIGSEGV);
             }
         }
 
@@ -77,13 +77,13 @@ pub fn user_trap_handler() -> ! {
             let task = current_task();
             // debug!("{:?} in application {}, bad addr = {:#x}, bad instruction = {:#x}.",scause.cause(),task.pid.0,stval,current_trap_cx().sepc);
             drop(task);
-            current_add_signal(SigMask::SIGSEGV);
+            current_add_signal(SigSet::SIGSEGV);
         }
 
         Trap::Exception(Exception::IllegalInstruction) => {
             // let sepc = riscv::register::sepc::read();
             // println!("[Kernel] IllegalInstruction at 0x{:x}, stval:0x{:x}", sepc, stval);
-            current_add_signal(SigMask::SIGILL);
+            current_add_signal(SigSet::SIGILL);
         }
 
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
