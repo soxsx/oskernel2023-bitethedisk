@@ -1,8 +1,15 @@
 use core::fmt::{self, Write};
 
+use spin::Mutex;
+
 use crate::sbi::console_putchar;
 
 struct Stdout;
+
+#[cfg(feature = "multi-harts")]
+lazy_static! {
+    static ref CONSOLE_PRINT_LOCK: Mutex<()> = Mutex::new(());
+}
 
 impl Write for Stdout {
     fn write_str(&mut self, s: &str) -> fmt::Result {
@@ -14,7 +21,11 @@ impl Write for Stdout {
 }
 
 pub fn print(args: fmt::Arguments<'_>) {
+    #[cfg(feature = "multi-harts")]
+    let lck = CONSOLE_PRINT_LOCK.lock();
     Stdout.write_fmt(args).unwrap();
+    #[cfg(feature = "multi-harts")]
+    drop(lck);
 }
 
 #[macro_export]

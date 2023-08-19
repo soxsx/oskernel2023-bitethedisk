@@ -47,10 +47,8 @@ pub fn sys_futex(
     let ret = match option {
         FUTEX_WAIT => {
             // val2 is a timespec
-            // error!("FUTEX_WAIT");
             let time = if val2 as usize != 0 {
                 let mut ts = TimeSpec::empty();
-                // INFO: 这里改成使用 copyin 了
                 copyin(token, &mut ts, val2 as *const TimeSpec);
                 ts.into_ns()
             } else {
@@ -59,12 +57,10 @@ pub fn sys_futex(
             futex_wait(uaddr as usize, val, time)
         }
         FUTEX_WAKE => {
-            // error!("FUTEX_WAKE");
             futex_wake(uaddr as usize, val)
         }
         FUTEX_REQUEUE => {
             // val2 is a limit
-            // error!("REQUEUE");
             futex_requeue(uaddr as usize, val, uaddr2 as usize, val2 as u32)
         }
         _ => panic!("ENOSYS"),
