@@ -1,10 +1,5 @@
 target/
 build/
 temp/
-sbi-qemu
-kernel-qemu
-temp
-*.log
-*.nim
-rustsbi-qemu.bin
+tmp/
 .vscode/
