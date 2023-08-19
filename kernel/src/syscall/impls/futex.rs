@@ -96,14 +96,17 @@ pub fn futex_wait(uaddr: usize, val: u32, timeout: usize) -> Result {
 
     // futex_wait_queue_me
     let task = current_task().unwrap();
+    let mut task_inner = task.inner_mut();
     let timeout_time = get_time_ns().saturating_add(timeout);
     fq_lock.push_back(FutexWaiter::new(task.clone(), get_time_ns(), timeout));
+    let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
+    task_inner.task_status = TaskStatus::Blocking;
+    block_task(task.clone());
+    drop(task_inner);
+    drop(task);
     drop(fq_lock);
     drop(fq_writer);
-    drop(task);
-    // warning: Auto waking-up has not been implemented yet
-
-    block_current_and_run_next();
+    schedule(task_cx_ptr);
 
     if get_time_ns() >= timeout_time {
         return_errno!(Errno::ETIMEDOUT);

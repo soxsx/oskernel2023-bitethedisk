@@ -21,7 +21,8 @@ pub fn check_hanging() -> Option<Arc<TaskControlBlock>> {
     TASK_MANAGER.lock().check_hanging()
 }
 pub fn check_futex_interupt_or_expire() -> Option<Arc<TaskControlBlock>> {
-    TASK_MANAGER.lock().check_futex_interupt_or_expire()
+    let futex_queue = FUTEX_QUEUE.write();
+    TASK_MANAGER.lock().check_futex_interupt_or_expire(futex_queue)
 }
 pub fn unblock_task(task: Arc<TaskControlBlock>) {
     TASK_MANAGER.lock().unblock_task(task);

@@ -50,7 +50,10 @@ impl TaskManager {
         }
     }
     /// Check if there are signals that have been processed in the process/thread interrupted by the signal or woken up by futex_wait
-    pub fn check_futex_interupt_or_expire(&mut self) -> Option<Arc<TaskControlBlock>> {
+    pub fn check_futex_interupt_or_expire(
+        &mut self,
+        mut global_futex_queue: RwLockWriteGuard<HashMap<usize, FutexQueue>>,
+    ) -> Option<Arc<TaskControlBlock>> {
         for tcb in self.waiting_queue.iter() {
             let lock = tcb.inner_ref();
             // { info!("[check_interupt] pid: {:?}, pending_signals: {:?}, sigmask: {:?}", tcb.pid(), lock.pending_signals, lock.sigmask); }
@@ -58,8 +61,7 @@ impl TaskManager {
                 return Some(tcb.clone());
             }
         }
-        let mut global_futex_que = FUTEX_QUEUE.write();
-        for (_, futex_queue) in global_futex_que.iter_mut() {
+        for (_, futex_queue) in global_futex_queue.iter_mut() {
             if let Some(task) = futex_queue.pop_expire_waiter() {
                 return Some(task.clone());
             }
