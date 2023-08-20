@@ -26,7 +26,7 @@ use crate::{
 use alloc::sync::Arc;
 use fat32::sync_all;
 
-use self::{
+pub use self::{
     initproc::INITPROC,
     processor::{acquire_processor, schedule},
 };

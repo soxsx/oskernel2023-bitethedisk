@@ -1,6 +1,8 @@
 mod hanging_task;
 mod task_manager;
 
+use crate::syscall::impls::FUTEX_QUEUE;
+
 use super::TaskControlBlock;
 use alloc::{collections::BTreeMap, sync::Arc};
 pub use hanging_task::*;
@@ -22,7 +24,9 @@ pub fn check_hanging() -> Option<Arc<TaskControlBlock>> {
 }
 pub fn check_futex_interupt_or_expire() -> Option<Arc<TaskControlBlock>> {
     let futex_queue = FUTEX_QUEUE.write();
-    TASK_MANAGER.lock().check_futex_interupt_or_expire(futex_queue)
+    TASK_MANAGER
+        .lock()
+        .check_futex_interupt_or_expire(futex_queue)
 }
 pub fn unblock_task(task: Arc<TaskControlBlock>) {
     TASK_MANAGER.lock().unblock_task(task);

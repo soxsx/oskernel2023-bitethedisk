@@ -12,7 +12,10 @@ use crate::mm::{copyin, translated_ref};
 use crate::return_errno;
 use crate::syscall::errno;
 use crate::syscall::futex::{FutexQueue, FutexWaiter};
-use crate::task::{block_current_and_run_next, current_task, current_user_token, unblock_task};
+use crate::task::{
+    block_current_and_run_next, block_task, current_task, current_user_token, schedule,
+    unblock_task, TaskContext, TaskStatus,
+};
 use crate::timer::get_time_ns;
 
 use super::Result;
@@ -56,9 +59,7 @@ pub fn sys_futex(
             };
             futex_wait(uaddr as usize, val, time)
         }
-        FUTEX_WAKE => {
-            futex_wake(uaddr as usize, val)
-        }
+        FUTEX_WAKE => futex_wake(uaddr as usize, val),
         FUTEX_REQUEUE => {
             // val2 is a limit
             futex_requeue(uaddr as usize, val, uaddr2 as usize, val2 as u32)

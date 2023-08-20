@@ -1264,3 +1264,14 @@ pub fn sys_statfs(path: *const u8, buf: *const u8) -> Result {
     userbuf.write(Statfs::new().as_bytes());
     Ok(0)
 }
+
+pub fn sys_copy_file_range(
+    fd_in: i32,
+    off_in: *mut u64,
+    fd_out: i32,
+    off_out: *mut u64,
+    len: usize,
+    flags: u32,
+) -> Result {
+    Ok(0)
+}
