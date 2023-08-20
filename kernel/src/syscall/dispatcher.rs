@@ -250,6 +250,14 @@ pub fn syscall(id: usize, args: [usize; 6]) -> isize {
             args[3] as *mut itimerval,
         ),
         SyscallId::SYS_TIMER_GETOVERRUN => Ok(0),
+        SyscallId::SYS_COPY_FILE_RANGE => sys_copy_file_range(
+            args[0] as i32,
+            args[1] as *mut u64,
+            args[2] as i32,
+            args[3] as *mut u64,
+            args[4] as usize,
+            args[5] as u32,
+        ),
     };
 
     match ret {
