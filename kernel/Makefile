@@ -15,7 +15,7 @@ NCPU = 2
 
 RUST_LOG := debug
 
-# Available features: no-page-cache,static-busybox,inode-drop,fu740,dev, hash-inode-cache
+# Available features: no-page-cache,static-busybox,inode-drop,fu740,dev,hash-inode-cache,multi-harts
 FEATURES ?= --features static-busybox
 
 DEV ?= false
