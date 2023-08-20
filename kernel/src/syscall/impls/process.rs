@@ -132,6 +132,9 @@ pub fn sys_exec(path: *const u8, mut argv: *const usize, mut envp: *const usize)
     let inner = task.inner_mut();
     let new_path = inner.cwd.clone().cd(path);
     let app_inode = open(new_path.clone(), OpenFlags::O_RDONLY, CreateMode::empty())?;
+    if app_inode.file_size() < 64 {
+        return_errno!(Errno::ENOEXEC);
+    }
     drop(inner);
     task.exec(app_inode, args_vec, envs_vec);
     Ok(0)
