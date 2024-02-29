@@ -12,9 +12,15 @@ mod qemu;
 use fu740::BlockDeviceImpl;
 #[cfg(not(feature = "fu740"))]
 use qemu::BlockDeviceImpl;
+use qemu::VirtIOGpuWrapper;
+use qemu::GpuDevice;
 
 lazy_static! {
     pub static ref BLOCK_DEVICE: Arc<dyn BlockDevice> = Arc::new(BlockDeviceImpl::new());
+}
+
+lazy_static! {
+    pub static ref GPU_DEVICE: Arc<dyn GpuDevice> = Arc::new(VirtIOGpuWrapper::new());
 }
 
 /// Initialize platform specific device drivers.

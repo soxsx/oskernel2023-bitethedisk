@@ -9,7 +9,7 @@ use virtio_drivers::{
     transport::mmio::{MmioTransport, VirtIOHeader},
 };
 
-const VIRTIO0: usize = 0x10001000;
+const VIRTIO0: usize = 0x10008000;
 
 pub struct VirtIOBlock(Mutex<VirtIOBlk<HalImpl, MmioTransport>>);
 
@@ -35,7 +35,7 @@ impl VirtIOBlock {
         let header = NonNull::new(VIRTIO0 as *mut VirtIOHeader).unwrap();
         let blk = match unsafe { MmioTransport::new(header) } {
             Err(e) => {
-                panic!("Error creating VirtIO MMIO transport: {}", e)
+                panic!("Error creating BLOCK VirtIO MMIO transport: {}", e)
             }
             Ok(transport) => VirtIOBlk::<HalImpl, MmioTransport>::new(transport)
                 .expect("failed to create blk driver"),
