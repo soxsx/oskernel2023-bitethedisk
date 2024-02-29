@@ -40,3 +40,6 @@ path = { path = "../crates/path" }
 time_tracer = { path = "../crates/time_tracer" }
 fu740-pac = { path = "../crates/fu740-pac" }
 fu740-hal = { path = "../crates/fu740-hal" }
+
+embedded-graphics = "0.7.1"
+tinybmp = "0.3.1"

@@ -31,9 +31,8 @@ define run-board-qemu
 		-smp 2 \
 		-bios default \
 		-drive file=$(SDCARD),if=none,format=raw,id=x0 \
-		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
-		-device virtio-net-device,netdev=net \
-		-netdev user,id=net
+		-device virtio-blk-device,drive=x0 \
+		-device virtio-gpu-device
 endef
 define run-board-fu740
 	 @(QEMU) \
@@ -64,7 +63,7 @@ else
 	@RUST_LOG=error cargo build --release --offline $(FEATURES)
 endif
 
-run: kernel-dev sdcard
+run: kernel-dev
 ifeq ($(BOARD), qemu)
 	@$(run-board-qemu)
 else ifeq ($(BOARD), fu740)
@@ -79,7 +78,7 @@ endif
 kernel-debug: initproc
 	@RUST_LOG=$(RUST_LOG) cargo build
 
-debug-server: kernel-debug sdcard
+debug-server: kernel-debug
 	@$(QEMU) \
 	 	-machine virt \
 		-kernel $(KERNEL_ELF_DBG) \
@@ -87,7 +86,8 @@ debug-server: kernel-debug sdcard
 		-nographic \
 		-smp $(NCPU) \
 		-drive file=$(SDCARD),if=none,format=raw,id=x0 \
-		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
+		-device virtio-blk-device,drive=x0 \
+		-device virtio-gpu-device \
 		-s -S
 
 debug:

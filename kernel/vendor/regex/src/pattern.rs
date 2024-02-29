@@ -1,8 +1,7 @@
-use core::str::pattern::{Pattern, SearchStep, Searcher};
+use std::str::pattern::{Pattern, SearchStep, Searcher};
 
-use crate::{Matches, Regex};
+use re_unicode::{Matches, Regex};
 
-#[derive(Debug)]
 pub struct RegexSearcher<'r, 't> {
     haystack: &'t str,
     it: Matches<'r, 't>,
@@ -15,7 +14,7 @@ impl<'r, 't> Pattern<'t> for &'r Regex {
 
     fn into_searcher(self, haystack: &'t str) -> RegexSearcher<'r, 't> {
         RegexSearcher {
-            haystack,
+            haystack: haystack,
             it: self.find_iter(haystack),
             last_step_end: 0,
             next_match: None,

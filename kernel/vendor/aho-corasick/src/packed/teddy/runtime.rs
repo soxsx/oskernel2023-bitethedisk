@@ -48,18 +48,13 @@
 //
 // All variants are fairly heavily tested in src/packed/tests.rs.
 
-use core::{arch::x86_64::*, mem};
+use std::arch::x86_64::*;
+use std::mem;
 
-use alloc::vec::Vec;
-
-use crate::{
-    packed::{
-        pattern::{PatternID, Patterns},
-        teddy::compile,
-        vector,
-    },
-    util::search::Match,
-};
+use packed::pattern::{PatternID, Patterns};
+use packed::teddy::compile;
+use packed::vector::*;
+use Match;
 
 /// The Teddy runtime.
 ///
@@ -166,15 +161,6 @@ impl Teddy {
                 Exec::TeddyFat3Mask256(ref e) => {
                     e.find_at(pats, self, haystack, at)
                 }
-                Exec::TeddySlim4Mask128(ref e) => {
-                    e.find_at(pats, self, haystack, at)
-                }
-                Exec::TeddySlim4Mask256(ref e) => {
-                    e.find_at(pats, self, haystack, at)
-                }
-                Exec::TeddyFat4Mask256(ref e) => {
-                    e.find_at(pats, self, haystack, at)
-                }
             }
         }
     }
@@ -195,16 +181,13 @@ impl Teddy {
             Exec::TeddyFat2Mask256(_) => 17,
             Exec::TeddySlim3Mask128(_) => 18,
             Exec::TeddySlim3Mask256(_) => 34,
-            Exec::TeddyFat3Mask256(_) => 18,
-            Exec::TeddySlim4Mask128(_) => 19,
-            Exec::TeddySlim4Mask256(_) => 35,
-            Exec::TeddyFat4Mask256(_) => 19,
+            Exec::TeddyFat3Mask256(_) => 34,
         }
     }
 
     /// Returns the approximate total amount of heap used by this searcher, in
     /// units of bytes.
-    pub fn memory_usage(&self) -> usize {
+    pub fn heap_bytes(&self) -> usize {
         let num_patterns = self.max_pattern_id as usize + 1;
         self.buckets.len() * mem::size_of::<Vec<PatternID>>()
             + num_patterns * mem::size_of::<PatternID>()
@@ -227,12 +210,12 @@ impl Teddy {
         at: usize,
         cand: __m128i,
     ) -> Option<Match> {
-        debug_assert!(!vector::is_all_zeroes128(cand));
+        debug_assert!(!is_all_zeroes128(cand));
         debug_assert_eq!(8, self.buckets.len());
 
         // Convert the candidate into 64-bit chunks, and then verify each of
         // those chunks.
-        let parts = vector::unpack64x128(cand);
+        let parts = unpack64x128(cand);
         for (i, &part) in parts.iter().enumerate() {
             let pos = at + i * 8;
             if let Some(m) = self.verify64(pats, 8, haystack, pos, part) {
@@ -259,27 +242,17 @@ impl Teddy {
         at: usize,
         cand: __m256i,
     ) -> Option<Match> {
-        debug_assert!(!vector::is_all_zeroes256(cand));
+        debug_assert!(!is_all_zeroes256(cand));
         debug_assert_eq!(8, self.buckets.len());
 
         // Convert the candidate into 64-bit chunks, and then verify each of
         // those chunks.
-        let parts = vector::unpack64x256(cand);
-        let mut pos = at;
-        if let Some(m) = self.verify64(pats, 8, haystack, pos, parts[0]) {
-            return Some(m);
-        }
-        pos += 8;
-        if let Some(m) = self.verify64(pats, 8, haystack, pos, parts[1]) {
-            return Some(m);
-        }
-        pos += 8;
-        if let Some(m) = self.verify64(pats, 8, haystack, pos, parts[2]) {
-            return Some(m);
-        }
-        pos += 8;
-        if let Some(m) = self.verify64(pats, 8, haystack, pos, parts[3]) {
-            return Some(m);
+        let parts = unpack64x256(cand);
+        for (i, &part) in parts.iter().enumerate() {
+            let pos = at + i * 8;
+            if let Some(m) = self.verify64(pats, 8, haystack, pos, part) {
+                return Some(m);
+            }
         }
         None
     }
@@ -302,7 +275,7 @@ impl Teddy {
         at: usize,
         cand: __m256i,
     ) -> Option<Match> {
-        debug_assert!(!vector::is_all_zeroes256(cand));
+        debug_assert!(!is_all_zeroes256(cand));
         debug_assert_eq!(16, self.buckets.len());
 
         // This is a bit tricky, but we basically want to convert our
@@ -340,7 +313,7 @@ impl Teddy {
         // of the low 64-bit integers. All we care about are the low 128-bit
         // lanes of r1 and r2. Combined, they contain all our 16-bit bitsets
         // laid out in the desired order, as described above.
-        let parts = vector::unpacklo64x256(r1, r2);
+        let parts = unpacklo64x256(r1, r2);
         for (i, &part) in parts.iter().enumerate() {
             let pos = at + i * 4;
             if let Some(m) = self.verify64(pats, 16, haystack, pos, part) {
@@ -401,7 +374,7 @@ impl Teddy {
             start: usize,
             end: usize,
         ) -> Match {
-            Match::must(pati as usize, start..end)
+            Match::from_span(pati as usize, start, end)
         }
 
         // N.B. The bounds check for this bucket lookup *should* be elided
@@ -444,9 +417,6 @@ pub enum Exec {
     TeddySlim3Mask128(TeddySlim3Mask128),
     TeddySlim3Mask256(TeddySlim3Mask256),
     TeddyFat3Mask256(TeddyFat3Mask256),
-    TeddySlim4Mask128(TeddySlim4Mask128),
-    TeddySlim4Mask256(TeddySlim4Mask256),
-    TeddyFat4Mask256(TeddyFat4Mask256),
 }
 
 // Most of the code below remains undocumented because they are effectively
@@ -475,7 +445,7 @@ impl TeddySlim1Mask128 {
         let len = haystack.len();
         while at <= len - 16 {
             let c = self.candidate(haystack, at);
-            if !vector::is_all_zeroes128(c) {
+            if !is_all_zeroes128(c) {
                 if let Some(m) = teddy.verify128(pats, haystack, at, c) {
                     return Some(m);
                 }
@@ -485,7 +455,7 @@ impl TeddySlim1Mask128 {
         if at < len {
             at = len - 16;
             let c = self.candidate(haystack, at);
-            if !vector::is_all_zeroes128(c) {
+            if !is_all_zeroes128(c) {
                 if let Some(m) = teddy.verify128(pats, haystack, at, c) {
                     return Some(m);
                 }
@@ -498,7 +468,7 @@ impl TeddySlim1Mask128 {
     unsafe fn candidate(&self, haystack: &[u8], at: usize) -> __m128i {
         debug_assert!(haystack[at..].len() >= 16);
 
-        let chunk = vector::loadu128(haystack, at);
+        let chunk = loadu128(haystack, at);
         members1m128(chunk, self.mask1)
     }
 }
@@ -525,7 +495,7 @@ impl TeddySlim1Mask256 {
         let len = haystack.len();
         while at <= len - 32 {
             let c = self.candidate(haystack, at);
-            if !vector::is_all_zeroes256(c) {
+            if !is_all_zeroes256(c) {
                 if let Some(m) = teddy.verify256(pats, haystack, at, c) {
                     return Some(m);
                 }
@@ -535,7 +505,7 @@ impl TeddySlim1Mask256 {
         if at < len {
             at = len - 32;
             let c = self.candidate(haystack, at);
-            if !vector::is_all_zeroes256(c) {
+            if !is_all_zeroes256(c) {
                 if let Some(m) = teddy.verify256(pats, haystack, at, c) {
                     return Some(m);
                 }
@@ -548,7 +518,7 @@ impl TeddySlim1Mask256 {
     unsafe fn candidate(&self, haystack: &[u8], at: usize) -> __m256i {
         debug_assert!(haystack[at..].len() >= 32);
 
-        let chunk = vector::loadu256(haystack, at);
+        let chunk = loadu256(haystack, at);
         members1m256(chunk, self.mask1)
     }
 }
@@ -575,7 +545,7 @@ impl TeddyFat1Mask256 {
         let len = haystack.len();
         while at <= len - 16 {
             let c = self.candidate(haystack, at);
-            if !vector::is_all_zeroes256(c) {
+            if !is_all_zeroes256(c) {
                 if let Some(m) = teddy.verify_fat256(pats, haystack, at, c) {
                     return Some(m);
                 }
@@ -585,7 +555,7 @@ impl TeddyFat1Mask256 {
         if at < len {
             at = len - 16;
             let c = self.candidate(haystack, at);
-            if !vector::is_all_zeroes256(c) {
+            if !is_all_zeroes256(c) {
                 if let Some(m) = teddy.verify_fat256(pats, haystack, at, c) {
                     return Some(m);
                 }
@@ -598,8 +568,7 @@ impl TeddyFat1Mask256 {
     unsafe fn candidate(&self, haystack: &[u8], at: usize) -> __m256i {
         debug_assert!(haystack[at..].len() >= 16);
 
-        let chunk =
-            _mm256_broadcastsi128_si256(vector::loadu128(haystack, at));
+        let chunk = _mm256_broadcastsi128_si256(loadu128(haystack, at));
         members1m256(chunk, self.mask1)
     }
 }
@@ -626,10 +595,10 @@ impl TeddySlim2Mask128 {
 
         at += 1;
         let len = haystack.len();
-        let mut prev0 = vector::ones128();
+        let mut prev0 = ones128();
         while at <= len - 16 {
             let c = self.candidate(haystack, at, &mut prev0);
-            if !vector::is_all_zeroes128(c) {
+            if !is_all_zeroes128(c) {
                 if let Some(m) = teddy.verify128(pats, haystack, at - 1, c) {
                     return Some(m);
                 }
@@ -638,10 +607,10 @@ impl TeddySlim2Mask128 {
         }
         if at < len {
             at = len - 16;
-            prev0 = vector::ones128();
+            prev0 = ones128();
 
             let c = self.candidate(haystack, at, &mut prev0);
-            if !vector::is_all_zeroes128(c) {
+            if !is_all_zeroes128(c) {
                 if let Some(m) = teddy.verify128(pats, haystack, at - 1, c) {
                     return Some(m);
                 }
@@ -659,7 +628,7 @@ impl TeddySlim2Mask128 {
     ) -> __m128i {
         debug_assert!(haystack[at..].len() >= 16);
 
-        let chunk = vector::loadu128(haystack, at);
+        let chunk = loadu128(haystack, at);
         let (res0, res1) = members2m128(chunk, self.mask1, self.mask2);
         let res0prev0 = _mm_alignr_epi8(res0, *prev0, 15);
         _mm_and_si128(res0prev0, res1)
@@ -688,10 +657,10 @@ impl TeddySlim2Mask256 {
 
         at += 1;
         let len = haystack.len();
-        let mut prev0 = vector::ones256();
+        let mut prev0 = ones256();
         while at <= len - 32 {
             let c = self.candidate(haystack, at, &mut prev0);
-            if !vector::is_all_zeroes256(c) {
+            if !is_all_zeroes256(c) {
                 if let Some(m) = teddy.verify256(pats, haystack, at - 1, c) {
                     return Some(m);
                 }
@@ -700,10 +669,10 @@ impl TeddySlim2Mask256 {
         }
         if at < len {
             at = len - 32;
-            prev0 = vector::ones256();
+            prev0 = ones256();
 
             let c = self.candidate(haystack, at, &mut prev0);
-            if !vector::is_all_zeroes256(c) {
+            if !is_all_zeroes256(c) {
                 if let Some(m) = teddy.verify256(pats, haystack, at - 1, c) {
                     return Some(m);
                 }
@@ -721,9 +690,9 @@ impl TeddySlim2Mask256 {
     ) -> __m256i {
         debug_assert!(haystack[at..].len() >= 32);
 
-        let chunk = vector::loadu256(haystack, at);
+        let chunk = loadu256(haystack, at);
         let (res0, res1) = members2m256(chunk, self.mask1, self.mask2);
-        let res0prev0 = vector::alignr256_15(res0, *prev0);
+        let res0prev0 = alignr256_15(res0, *prev0);
         let res = _mm256_and_si256(res0prev0, res1);
         *prev0 = res0;
         res
@@ -752,10 +721,10 @@ impl TeddyFat2Mask256 {
 
         at += 1;
         let len = haystack.len();
-        let mut prev0 = vector::ones256();
+        let mut prev0 = ones256();
         while at <= len - 16 {
             let c = self.candidate(haystack, at, &mut prev0);
-            if !vector::is_all_zeroes256(c) {
+            if !is_all_zeroes256(c) {
                 if let Some(m) = teddy.verify_fat256(pats, haystack, at - 1, c)
                 {
                     return Some(m);
@@ -765,10 +734,10 @@ impl TeddyFat2Mask256 {
         }
         if at < len {
             at = len - 16;
-            prev0 = vector::ones256();
+            prev0 = ones256();
 
             let c = self.candidate(haystack, at, &mut prev0);
-            if !vector::is_all_zeroes256(c) {
+            if !is_all_zeroes256(c) {
                 if let Some(m) = teddy.verify_fat256(pats, haystack, at - 1, c)
                 {
                     return Some(m);
@@ -787,8 +756,7 @@ impl TeddyFat2Mask256 {
     ) -> __m256i {
         debug_assert!(haystack[at..].len() >= 16);
 
-        let chunk =
-            _mm256_broadcastsi128_si256(vector::loadu128(haystack, at));
+        let chunk = _mm256_broadcastsi128_si256(loadu128(haystack, at));
         let (res0, res1) = members2m256(chunk, self.mask1, self.mask2);
         let res0prev0 = _mm256_alignr_epi8(res0, *prev0, 15);
         let res = _mm256_and_si256(res0prev0, res1);
@@ -820,10 +788,10 @@ impl TeddySlim3Mask128 {
 
         at += 2;
         let len = haystack.len();
-        let (mut prev0, mut prev1) = (vector::ones128(), vector::ones128());
+        let (mut prev0, mut prev1) = (ones128(), ones128());
         while at <= len - 16 {
             let c = self.candidate(haystack, at, &mut prev0, &mut prev1);
-            if !vector::is_all_zeroes128(c) {
+            if !is_all_zeroes128(c) {
                 if let Some(m) = teddy.verify128(pats, haystack, at - 2, c) {
                     return Some(m);
                 }
@@ -832,11 +800,11 @@ impl TeddySlim3Mask128 {
         }
         if at < len {
             at = len - 16;
-            prev0 = vector::ones128();
-            prev1 = vector::ones128();
+            prev0 = ones128();
+            prev1 = ones128();
 
             let c = self.candidate(haystack, at, &mut prev0, &mut prev1);
-            if !vector::is_all_zeroes128(c) {
+            if !is_all_zeroes128(c) {
                 if let Some(m) = teddy.verify128(pats, haystack, at - 2, c) {
                     return Some(m);
                 }
@@ -855,7 +823,7 @@ impl TeddySlim3Mask128 {
     ) -> __m128i {
         debug_assert!(haystack[at..].len() >= 16);
 
-        let chunk = vector::loadu128(haystack, at);
+        let chunk = loadu128(haystack, at);
         let (res0, res1, res2) =
             members3m128(chunk, self.mask1, self.mask2, self.mask3);
         let res0prev0 = _mm_alignr_epi8(res0, *prev0, 14);
@@ -890,10 +858,10 @@ impl TeddySlim3Mask256 {
 
         at += 2;
         let len = haystack.len();
-        let (mut prev0, mut prev1) = (vector::ones256(), vector::ones256());
+        let (mut prev0, mut prev1) = (ones256(), ones256());
         while at <= len - 32 {
             let c = self.candidate(haystack, at, &mut prev0, &mut prev1);
-            if !vector::is_all_zeroes256(c) {
+            if !is_all_zeroes256(c) {
                 if let Some(m) = teddy.verify256(pats, haystack, at - 2, c) {
                     return Some(m);
                 }
@@ -902,11 +870,11 @@ impl TeddySlim3Mask256 {
         }
         if at < len {
             at = len - 32;
-            prev0 = vector::ones256();
-            prev1 = vector::ones256();
+            prev0 = ones256();
+            prev1 = ones256();
 
             let c = self.candidate(haystack, at, &mut prev0, &mut prev1);
-            if !vector::is_all_zeroes256(c) {
+            if !is_all_zeroes256(c) {
                 if let Some(m) = teddy.verify256(pats, haystack, at - 2, c) {
                     return Some(m);
                 }
@@ -925,11 +893,11 @@ impl TeddySlim3Mask256 {
     ) -> __m256i {
         debug_assert!(haystack[at..].len() >= 32);
 
-        let chunk = vector::loadu256(haystack, at);
+        let chunk = loadu256(haystack, at);
         let (res0, res1, res2) =
             members3m256(chunk, self.mask1, self.mask2, self.mask3);
-        let res0prev0 = vector::alignr256_14(res0, *prev0);
-        let res1prev1 = vector::alignr256_15(res1, *prev1);
+        let res0prev0 = alignr256_14(res0, *prev0);
+        let res1prev1 = alignr256_15(res1, *prev1);
         let res =
             _mm256_and_si256(_mm256_and_si256(res0prev0, res1prev1), res2);
         *prev0 = res0;
@@ -961,10 +929,10 @@ impl TeddyFat3Mask256 {
 
         at += 2;
         let len = haystack.len();
-        let (mut prev0, mut prev1) = (vector::ones256(), vector::ones256());
+        let (mut prev0, mut prev1) = (ones256(), ones256());
         while at <= len - 16 {
             let c = self.candidate(haystack, at, &mut prev0, &mut prev1);
-            if !vector::is_all_zeroes256(c) {
+            if !is_all_zeroes256(c) {
                 if let Some(m) = teddy.verify_fat256(pats, haystack, at - 2, c)
                 {
                     return Some(m);
@@ -974,11 +942,11 @@ impl TeddyFat3Mask256 {
         }
         if at < len {
             at = len - 16;
-            prev0 = vector::ones256();
-            prev1 = vector::ones256();
+            prev0 = ones256();
+            prev1 = ones256();
 
             let c = self.candidate(haystack, at, &mut prev0, &mut prev1);
-            if !vector::is_all_zeroes256(c) {
+            if !is_all_zeroes256(c) {
                 if let Some(m) = teddy.verify_fat256(pats, haystack, at - 2, c)
                 {
                     return Some(m);
@@ -998,8 +966,7 @@ impl TeddyFat3Mask256 {
     ) -> __m256i {
         debug_assert!(haystack[at..].len() >= 16);
 
-        let chunk =
-            _mm256_broadcastsi128_si256(vector::loadu128(haystack, at));
+        let chunk = _mm256_broadcastsi128_si256(loadu128(haystack, at));
         let (res0, res1, res2) =
             members3m256(chunk, self.mask1, self.mask2, self.mask3);
         let res0prev0 = _mm256_alignr_epi8(res0, *prev0, 14);
@@ -1008,264 +975,6 @@ impl TeddyFat3Mask256 {
             _mm256_and_si256(_mm256_and_si256(res0prev0, res1prev1), res2);
         *prev0 = res0;
         *prev1 = res1;
-        res
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct TeddySlim4Mask128 {
-    pub mask1: Mask128,
-    pub mask2: Mask128,
-    pub mask3: Mask128,
-    pub mask4: Mask128,
-}
-
-impl TeddySlim4Mask128 {
-    #[target_feature(enable = "ssse3")]
-    unsafe fn find_at(
-        &self,
-        pats: &Patterns,
-        teddy: &Teddy,
-        haystack: &[u8],
-        mut at: usize,
-    ) -> Option<Match> {
-        debug_assert!(haystack[at..].len() >= teddy.minimum_len());
-        // This assert helps eliminate bounds checks for bucket lookups in
-        // Teddy::verify_bucket, which has a small (3-4%) performance boost.
-        assert_eq!(8, teddy.buckets.len());
-
-        at += 3;
-        let len = haystack.len();
-        let mut prev0 = vector::ones128();
-        let mut prev1 = vector::ones128();
-        let mut prev2 = vector::ones128();
-        while at <= len - 16 {
-            let c = self
-                .candidate(haystack, at, &mut prev0, &mut prev1, &mut prev2);
-            if !vector::is_all_zeroes128(c) {
-                if let Some(m) = teddy.verify128(pats, haystack, at - 3, c) {
-                    return Some(m);
-                }
-            }
-            at += 16;
-        }
-        if at < len {
-            at = len - 16;
-            prev0 = vector::ones128();
-            prev1 = vector::ones128();
-            prev2 = vector::ones128();
-
-            let c = self
-                .candidate(haystack, at, &mut prev0, &mut prev1, &mut prev2);
-            if !vector::is_all_zeroes128(c) {
-                if let Some(m) = teddy.verify128(pats, haystack, at - 3, c) {
-                    return Some(m);
-                }
-            }
-        }
-        None
-    }
-
-    #[inline(always)]
-    unsafe fn candidate(
-        &self,
-        haystack: &[u8],
-        at: usize,
-        prev0: &mut __m128i,
-        prev1: &mut __m128i,
-        prev2: &mut __m128i,
-    ) -> __m128i {
-        debug_assert!(haystack[at..].len() >= 16);
-
-        let chunk = vector::loadu128(haystack, at);
-        let (res0, res1, res2, res3) = members4m128(
-            chunk, self.mask1, self.mask2, self.mask3, self.mask4,
-        );
-        let res0prev0 = _mm_alignr_epi8(res0, *prev0, 13);
-        let res1prev1 = _mm_alignr_epi8(res1, *prev1, 14);
-        let res2prev2 = _mm_alignr_epi8(res2, *prev2, 15);
-        let res = _mm_and_si128(
-            _mm_and_si128(_mm_and_si128(res0prev0, res1prev1), res2prev2),
-            res3,
-        );
-        *prev0 = res0;
-        *prev1 = res1;
-        *prev2 = res2;
-        res
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct TeddySlim4Mask256 {
-    pub mask1: Mask256,
-    pub mask2: Mask256,
-    pub mask3: Mask256,
-    pub mask4: Mask256,
-}
-
-impl TeddySlim4Mask256 {
-    #[target_feature(enable = "avx2")]
-    unsafe fn find_at(
-        &self,
-        pats: &Patterns,
-        teddy: &Teddy,
-        haystack: &[u8],
-        mut at: usize,
-    ) -> Option<Match> {
-        debug_assert!(haystack[at..].len() >= teddy.minimum_len());
-        // This assert helps eliminate bounds checks for bucket lookups in
-        // Teddy::verify_bucket, which has a small (3-4%) performance boost.
-        assert_eq!(8, teddy.buckets.len());
-
-        at += 3;
-        let len = haystack.len();
-        let mut prev0 = vector::ones256();
-        let mut prev1 = vector::ones256();
-        let mut prev2 = vector::ones256();
-        while at <= len - 32 {
-            let c = self
-                .candidate(haystack, at, &mut prev0, &mut prev1, &mut prev2);
-            if !vector::is_all_zeroes256(c) {
-                if let Some(m) = teddy.verify256(pats, haystack, at - 3, c) {
-                    return Some(m);
-                }
-            }
-            at += 32;
-        }
-        if at < len {
-            at = len - 32;
-            prev0 = vector::ones256();
-            prev1 = vector::ones256();
-            prev2 = vector::ones256();
-
-            let c = self
-                .candidate(haystack, at, &mut prev0, &mut prev1, &mut prev2);
-            if !vector::is_all_zeroes256(c) {
-                if let Some(m) = teddy.verify256(pats, haystack, at - 3, c) {
-                    return Some(m);
-                }
-            }
-        }
-        None
-    }
-
-    #[inline(always)]
-    unsafe fn candidate(
-        &self,
-        haystack: &[u8],
-        at: usize,
-        prev0: &mut __m256i,
-        prev1: &mut __m256i,
-        prev2: &mut __m256i,
-    ) -> __m256i {
-        debug_assert!(haystack[at..].len() >= 32);
-
-        let chunk = vector::loadu256(haystack, at);
-        let (res0, res1, res2, res3) = members4m256(
-            chunk, self.mask1, self.mask2, self.mask3, self.mask4,
-        );
-        let res0prev0 = vector::alignr256_13(res0, *prev0);
-        let res1prev1 = vector::alignr256_14(res1, *prev1);
-        let res2prev2 = vector::alignr256_15(res2, *prev2);
-        let res = _mm256_and_si256(
-            _mm256_and_si256(
-                _mm256_and_si256(res0prev0, res1prev1),
-                res2prev2,
-            ),
-            res3,
-        );
-        *prev0 = res0;
-        *prev1 = res1;
-        *prev2 = res2;
-        res
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct TeddyFat4Mask256 {
-    pub mask1: Mask256,
-    pub mask2: Mask256,
-    pub mask3: Mask256,
-    pub mask4: Mask256,
-}
-
-impl TeddyFat4Mask256 {
-    #[target_feature(enable = "avx2")]
-    unsafe fn find_at(
-        &self,
-        pats: &Patterns,
-        teddy: &Teddy,
-        haystack: &[u8],
-        mut at: usize,
-    ) -> Option<Match> {
-        debug_assert!(haystack[at..].len() >= teddy.minimum_len());
-        // This assert helps eliminate bounds checks for bucket lookups in
-        // Teddy::verify_bucket, which has a small (3-4%) performance boost.
-        assert_eq!(16, teddy.buckets.len());
-
-        at += 3;
-        let len = haystack.len();
-        let mut prev0 = vector::ones256();
-        let mut prev1 = vector::ones256();
-        let mut prev2 = vector::ones256();
-        while at <= len - 16 {
-            let c = self
-                .candidate(haystack, at, &mut prev0, &mut prev1, &mut prev2);
-            if !vector::is_all_zeroes256(c) {
-                if let Some(m) = teddy.verify_fat256(pats, haystack, at - 3, c)
-                {
-                    return Some(m);
-                }
-            }
-            at += 16;
-        }
-        if at < len {
-            at = len - 16;
-            prev0 = vector::ones256();
-            prev1 = vector::ones256();
-            prev2 = vector::ones256();
-
-            let c = self
-                .candidate(haystack, at, &mut prev0, &mut prev1, &mut prev2);
-            if !vector::is_all_zeroes256(c) {
-                if let Some(m) = teddy.verify_fat256(pats, haystack, at - 3, c)
-                {
-                    return Some(m);
-                }
-            }
-        }
-        None
-    }
-
-    #[inline(always)]
-    unsafe fn candidate(
-        &self,
-        haystack: &[u8],
-        at: usize,
-        prev0: &mut __m256i,
-        prev1: &mut __m256i,
-        prev2: &mut __m256i,
-    ) -> __m256i {
-        debug_assert!(haystack[at..].len() >= 16);
-
-        let chunk =
-            _mm256_broadcastsi128_si256(vector::loadu128(haystack, at));
-        let (res0, res1, res2, res3) = members4m256(
-            chunk, self.mask1, self.mask2, self.mask3, self.mask4,
-        );
-        let res0prev0 = _mm256_alignr_epi8(res0, *prev0, 13);
-        let res1prev1 = _mm256_alignr_epi8(res1, *prev1, 14);
-        let res2prev2 = _mm256_alignr_epi8(res2, *prev2, 15);
-        let res = _mm256_and_si256(
-            _mm256_and_si256(
-                _mm256_and_si256(res0prev0, res1prev1),
-                res2prev2,
-            ),
-            res3,
-        );
-        *prev0 = res0;
-        *prev1 = res1;
-        *prev2 = res2;
         res
     }
 }
@@ -1492,82 +1201,4 @@ unsafe fn members3m256(
         _mm256_shuffle_epi8(mask3.hi, hhi),
     );
     (res0, res1, res2)
-}
-
-/// Return candidates for Slim 128-bit Teddy, where `chunk` corresponds
-/// to a 16-byte window of the haystack (where the least significant byte
-/// corresponds to the start of the window), and the masks correspond to a
-/// low/high mask for the first, second, third and fourth bytes of all patterns
-/// that are being searched. The vectors returned correspond to candidates for
-/// the first, second, third and fourth bytes in the patterns represented by
-/// the masks.
-#[target_feature(enable = "ssse3")]
-unsafe fn members4m128(
-    chunk: __m128i,
-    mask1: Mask128,
-    mask2: Mask128,
-    mask3: Mask128,
-    mask4: Mask128,
-) -> (__m128i, __m128i, __m128i, __m128i) {
-    let lomask = _mm_set1_epi8(0xF);
-    let hlo = _mm_and_si128(chunk, lomask);
-    let hhi = _mm_and_si128(_mm_srli_epi16(chunk, 4), lomask);
-    let res0 = _mm_and_si128(
-        _mm_shuffle_epi8(mask1.lo, hlo),
-        _mm_shuffle_epi8(mask1.hi, hhi),
-    );
-    let res1 = _mm_and_si128(
-        _mm_shuffle_epi8(mask2.lo, hlo),
-        _mm_shuffle_epi8(mask2.hi, hhi),
-    );
-    let res2 = _mm_and_si128(
-        _mm_shuffle_epi8(mask3.lo, hlo),
-        _mm_shuffle_epi8(mask3.hi, hhi),
-    );
-    let res3 = _mm_and_si128(
-        _mm_shuffle_epi8(mask4.lo, hlo),
-        _mm_shuffle_epi8(mask4.hi, hhi),
-    );
-    (res0, res1, res2, res3)
-}
-
-/// Return candidates for Slim 256-bit Teddy, where `chunk` corresponds
-/// to a 32-byte window of the haystack (where the least significant byte
-/// corresponds to the start of the window), and the masks correspond to a
-/// low/high mask for the first, second, third and fourth bytes of all patterns
-/// that are being searched. The vectors returned correspond to candidates for
-/// the first, second, third and fourth bytes in the patterns represented by
-/// the masks.
-///
-/// Note that this can also be used for Fat Teddy, where the high 128 bits in
-/// `chunk` is the same as the low 128 bits, which corresponds to a 16 byte
-/// window in the haystack.
-#[target_feature(enable = "avx2")]
-unsafe fn members4m256(
-    chunk: __m256i,
-    mask1: Mask256,
-    mask2: Mask256,
-    mask3: Mask256,
-    mask4: Mask256,
-) -> (__m256i, __m256i, __m256i, __m256i) {
-    let lomask = _mm256_set1_epi8(0xF);
-    let hlo = _mm256_and_si256(chunk, lomask);
-    let hhi = _mm256_and_si256(_mm256_srli_epi16(chunk, 4), lomask);
-    let res0 = _mm256_and_si256(
-        _mm256_shuffle_epi8(mask1.lo, hlo),
-        _mm256_shuffle_epi8(mask1.hi, hhi),
-    );
-    let res1 = _mm256_and_si256(
-        _mm256_shuffle_epi8(mask2.lo, hlo),
-        _mm256_shuffle_epi8(mask2.hi, hhi),
-    );
-    let res2 = _mm256_and_si256(
-        _mm256_shuffle_epi8(mask3.lo, hlo),
-        _mm256_shuffle_epi8(mask3.hi, hhi),
-    );
-    let res3 = _mm256_and_si256(
-        _mm256_shuffle_epi8(mask4.lo, hlo),
-        _mm256_shuffle_epi8(mask4.hi, hhi),
-    );
-    (res0, res1, res2, res3)
 }
