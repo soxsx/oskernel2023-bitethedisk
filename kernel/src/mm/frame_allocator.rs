@@ -63,6 +63,7 @@ impl Clone for FrameTracker {
 trait FrameAllocator {
     fn new() -> Self;
     fn alloc(&mut self) -> Option<PhysPageNum>;
+    fn alloc_more(&mut self, pages: usize) -> Option<Vec<PhysPageNum>>;
     fn dealloc(&mut self, ppn: PhysPageNum);
     fn add_ref(&mut self, ppn: PhysPageNum);
     fn enquire_ref(&self, ppn: PhysPageNum) -> usize;
@@ -105,6 +106,20 @@ impl FrameAllocator for StackFrameAllocator {
             self.current += 1;
             self.refcounter.insert(self.current - 1, 0);
             Some((self.current - 1).into())
+        }
+    }
+    fn alloc_more(&mut self, pages: usize) -> Option<Vec<PhysPageNum>> {
+        if self.current + pages >= self.end {
+            None
+        } else {
+            let mut v: Vec<PhysPageNum> = (self.current..self.current + pages)
+                .map(|ppn| {
+                    self.refcounter.insert(ppn, 0);
+                    ppn.into()
+                })
+                .collect();
+            self.current += pages;
+            Some(v)
         }
     }
     fn dealloc(&mut self, ppn: PhysPageNum) {
@@ -171,6 +186,11 @@ pub fn alloc_frame() -> Option<FrameTracker> {
     let ppn = FRAME_ALLOCATOR.lock().alloc()?;
     Some(FrameTracker::new(ppn))
 }
+pub fn alloc_frame_more(num: usize) -> Option<Vec<FrameTracker>> {
+    let ppn_vec = FRAME_ALLOCATOR.lock().alloc_more(num);
+    ppn_vec.map(|x| x.iter().map(|&ppn| FrameTracker::new(ppn)).collect())
+}
+
 pub fn dealloc_frame(ppn: PhysPageNum) {
     FRAME_ALLOCATOR.lock().dealloc(ppn);
 }

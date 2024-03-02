@@ -21,21 +21,16 @@ pub struct HalImpl;
 unsafe impl Hal for HalImpl {
     #[no_mangle]
     fn dma_alloc(pages: usize, _direction: BufferDirection) -> (PhysAddr, NonNull<u8>) {
-        let mut ppn_base = PhysPageNum(0);
-        for i in 0..pages {
-            let frame = alloc_frame().unwrap();
-            if i == 0 {
-                ppn_base = frame.ppn;
-            }
-            assert_eq!(frame.ppn.0, ppn_base.0 + i);
-            DMA_PADDR.lock().push(frame);
-        }
+        let mut frames = alloc_frame_more(pages).unwrap();
+        assert!(frames.first().unwrap().ppn.0 <= frames.last().unwrap().ppn.0);
+        let ppn_base = frames.first().unwrap().ppn;
+        DMA_PADDR.lock().append(&mut frames);
         let kpaddr: KPhysAddr = ppn_base.into();
         let paddr: PhysAddr = kpaddr.0;
-
         let vaddr = NonNull::new(paddr as _).unwrap();
         (paddr, vaddr)
     }
+
     #[no_mangle]
     unsafe fn dma_dealloc(paddr: PhysAddr, _vaddr: NonNull<u8>, pages: usize) -> i32 {
         let pa: KPhysAddr = paddr.into();
