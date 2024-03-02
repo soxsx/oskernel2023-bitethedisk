@@ -12,8 +12,8 @@ mod qemu;
 use fu740::BlockDeviceImpl;
 #[cfg(not(feature = "fu740"))]
 use qemu::BlockDeviceImpl;
-use qemu::VirtIOGpuWrapper;
 use qemu::GpuDevice;
+use qemu::VirtIOGpuWrapper;
 
 lazy_static! {
     pub static ref BLOCK_DEVICE: Arc<dyn BlockDevice> = Arc::new(BlockDeviceImpl::new());

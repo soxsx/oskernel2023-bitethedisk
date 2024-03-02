@@ -4,7 +4,7 @@ mod virtio_impl;
 
 use virtio_blk::*;
 
-use virtio_gpu::*;
-pub use virtio_gpu::VirtIOGpuWrapper;
 pub use virtio_gpu::GpuDevice;
+pub use virtio_gpu::VirtIOGpuWrapper;
+use virtio_gpu::*;
 pub type BlockDeviceImpl = VirtIOBlock;

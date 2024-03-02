@@ -6,8 +6,8 @@ use lazy_static::lazy_static;
 use virtio_drivers::{BufferDirection, Hal, PhysAddr};
 
 use crate::mm::{
-    acquire_kvmm, alloc_frame, dealloc_frame, FrameTracker, PageTable, PhysAddr as KPhysAddr,
-    PhysPageNum, Step,
+    acquire_kvmm, alloc_frame, alloc_frame_more, dealloc_frame, FrameTracker, PageTable,
+    PhysAddr as KPhysAddr, PhysPageNum, Step,
 };
 use alloc::vec::Vec;
 use spin::Mutex;
