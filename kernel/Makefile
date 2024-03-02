@@ -30,6 +30,7 @@ define run-board-qemu
 		-nographic \
 		-smp 2 \
 		-bios default \
+		-vnc :0	\
 		-drive file=$(SDCARD),if=none,format=raw,id=x0 \
 		-device virtio-blk-device,drive=x0 \
 		-device virtio-gpu-device

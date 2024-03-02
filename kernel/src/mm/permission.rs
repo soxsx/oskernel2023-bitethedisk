@@ -6,6 +6,8 @@ use nix::MmapProts;
 pub enum MapType {
     Identical,
     Framed,
+    /// offset of page num
+    Linear(isize),
 }
 
 bitflags! {

@@ -95,6 +95,16 @@ impl VmArea {
                     page_table.map(vpn, ppn, flags);
                 });
             }
+            MapType::Linear(pn_offset) => {
+                self.vpn_range.into_iter().for_each(|vpn| {
+                    // check for sv39
+                    assert!(vpn.0 < (1usize << 27));
+
+                    let ppn = PhysPageNum((vpn.0 as isize + pn_offset) as usize);
+                    let flags = PTEFlags::from_bits(self.permission.bits()).unwrap();
+                    page_table.map(vpn, ppn, flags);
+                });
+            }
         }
     }
 
@@ -191,6 +201,11 @@ impl VmArea {
                 } else {
                     panic!("No more memory!");
                 }
+            }
+            MapType::Linear(pn_offset) => {
+                // check for sv39
+                assert!(vpn.0 < (1usize << 27));
+                ppn = PhysPageNum((vpn.0 as isize + pn_offset) as usize);
             }
         }
         let pte_flags = PTEFlags::from_bits(self.permission.bits()).unwrap();

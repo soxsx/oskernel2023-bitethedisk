@@ -32,6 +32,8 @@ const SYS_UNAME: usize = 160;
 const SYS_SCHED_YIELD: usize = 124;
 const SYS_GETTIMEOFDAY: usize = 169;
 const SYS_NANOSLEEP: usize = 101;
+const SYS_FRAMEBUFFER: usize = 2000;
+const SYS_FRAMEBUFFER_FLUSH: usize = 2001;
 
 #[inline(always)]
 pub fn syscall(id: usize, args: [usize; 3]) -> isize {
@@ -71,4 +73,12 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
 
 pub fn sys_sched_yield() {
     syscall(SYS_SCHED_YIELD, [0, 0, 0]);
+}
+
+pub fn sys_framebuffer() -> isize {
+    syscall(SYS_FRAMEBUFFER, [0, 0, 0])
+}
+
+pub fn sys_framebuffer_flush() -> isize {
+    syscall(SYS_FRAMEBUFFER_FLUSH, [0, 0, 0])
 }

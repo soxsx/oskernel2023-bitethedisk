@@ -29,3 +29,10 @@ pub fn yield_() {
 pub fn waitpid(pid: isize, exit_code: &mut i32) -> isize {
     sys_waitpid(pid, exit_code)
 }
+
+pub fn framebuffer() -> isize {
+    sys_framebuffer()
+}
+pub fn framebuffer_flush() -> isize {
+    sys_framebuffer_flush()
+}

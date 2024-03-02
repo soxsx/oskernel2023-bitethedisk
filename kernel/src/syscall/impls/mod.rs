@@ -1,11 +1,13 @@
 pub mod fs;
 pub mod futex;
+pub mod gui;
 pub mod mm;
 pub mod others;
 pub mod process;
 
 pub use fs::*;
 pub use futex::*;
+pub use gui::*;
 pub use mm::*;
 pub use others::*;
 pub use process::*;

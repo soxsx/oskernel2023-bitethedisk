@@ -258,6 +258,8 @@ pub fn syscall(id: usize, args: [usize; 6]) -> isize {
             args[4] as usize,
             args[5] as u32,
         ),
+        SyscallId::SYS_FRAMEBUFFER => sys_framebuffer(),
+        SyscallId::SYS_FRAMEBUFFER_FLUSH => sys_framebuffer_flush(),
     };
 
     match ret {
